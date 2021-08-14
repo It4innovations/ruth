@@ -1,0 +1,4 @@
+py-probduration @ git+ssh://git@code.it4i.cz/everest/py-probduration.git
+redis
+click
+tqdm
