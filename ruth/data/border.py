@@ -32,8 +32,8 @@ class Border(metaclass=Singleton):
         name: str,
         geocode: dict,
         kind: BorderType,
-        data_dir="./data",
-        load_from_cache=True,
+        data_dir,
+        load_from_cache,
     ):
 
         self.name = name
