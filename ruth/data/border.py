@@ -50,6 +50,14 @@ class Border(metaclass=Singleton):
         if fresh_data:
             self._store()
 
+    def __eq__(self, other):
+        return self.name == other.name and self.geocode == other.geocode and self.kind == other.kind
+
+    def __hash__(self):
+        return hash((self.name,
+                     tuple(sorted(self.geocode.items(), key=lambda kv: kv[0])),
+                     self.kind))
+
     @property
     def super_area(self):
         return self._super_area
