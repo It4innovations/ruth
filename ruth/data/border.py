@@ -3,6 +3,7 @@ from enum import Enum
 from pathlib import Path
 from functools import reduce
 from typing import Optional, List
+from lazy_object_proxy import Proxy as LazyProxy
 
 import geopandas as gpd
 from osmnx import geocode_to_gdf
@@ -46,9 +47,7 @@ class Border(metaclass=Singleton):
 
         if not os.path.exists(data_dir):
             os.mkdir(data_dir)
-        self.data, fresh_data = self._load(load_from_cache)
-        if fresh_data:
-            self._store()
+        self.data = self._load(load_from_cache)
 
     def __eq__(self, other):
         return self.name == other.name and self.geocode == other.geocode and self.kind == other.kind
@@ -73,8 +72,9 @@ class Border(metaclass=Singleton):
     def add(self, areas: List["Border"]):
         for area in areas:
             assert area.admin_level > self.admin_level, (
-                "The added area has to be of lower administration level"
-                " than the one to which is added."
+                f"The added area ({area.name}/{area.admin_level}) has to be of lower"
+                " administration level"
+                f" than the one to which is added ({self.name}/{self.admin_level})."
             )
 
             if area.super_area is not None:
@@ -134,21 +134,23 @@ class Border(metaclass=Singleton):
         return ax
 
     def _load(self, load_from_cache):  # TODO: load asynchrnously
-        if os.path.exists(self.file_path) and load_from_cache:
+        def load_from_file():
             cl.info(f"Loading data for '{self.name}' from localy stored data.")
-            return (
-                gpd.read_file(self.file_path, driver="GeoJSON"),
-                False,
-            )  # TODO: store driver info in a config
-        else:
-            cl.info(f"Loading data for '{self.name}' via the OSM API.")
-            return (geocode_to_gdf(self.geocode), True)
+            return gpd.read_file(self.file_path, driver="GeoJSON"),
 
-    def _store(
-        self,
-    ):
-        if self.data is not None:
-            self.data.to_file(self.file_path, driver="GeoJSON")
+        def download_from_rest_api():
+            cl.info(f"Loading data for '{self.name}' via the OSM API.")
+            data = geocode_to_gdf(self.geocode)
+            self._store(data)
+            return data
+
+        if os.path.exists(self.file_path) and load_from_cache:
+            return LazyProxy(load_from_file)  # TODO: store driver info in a config
+        return LazyProxy(download_from_rest_api)
+
+    def _store(self, data):
+        if data is not None:
+            data.to_file(self.file_path, driver="GeoJSON")
             cl.info(f"Border of '{self.name}' saved into: '{self.file_path}'.")
 
     def __len__(self):

@@ -1,4 +1,5 @@
 py-probduration @ git+ssh://git@code.it4i.cz/everest/py-probduration.git
+lazy-object-proxy
 redis
 click
 tqdm
