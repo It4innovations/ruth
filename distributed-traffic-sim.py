@@ -1,5 +1,6 @@
 """A distributed traffic simulator."""
 
+import os
 import click
 import random
 import pandas as pd
@@ -7,6 +8,7 @@ import dask.dataframe as dd
 from dask.distributed import Client
 from dataclasses import fields
 from datetime import datetime, timedelta
+from cluster import cluster
 
 from probduration import HistoryHandler, Route, probable_duration
 
@@ -17,7 +19,6 @@ from ruth.pandasdataclasses import DataFrameRow
 
 @click.command()
 @click.argument("input_csv", type=click.Path(exists=True))
-@click.argument("n-workers", type=int)
 @click.option("--departure-time",
               type=click.DateTime(),
               default=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
@@ -45,17 +46,63 @@ from ruth.pandasdataclasses import DataFrameRow
               type=int,
               default=8786,
               help="A port of the dask scheduler.")
+@click.option("--out", type=str, default="out.pickle")
+@click.option("--intermediate-results",
+              type=click.Path(),
+              help="A path to the folder with intermediate results.")
 def simulate_cmd(input_csv,
-             n_workers,
              departure_time,
              k_routes,
              n_samples,
              seed,
              gv_update_period,
              dask_scheduler,
-             dask_scheduler_port):
+             dask_scheduler_port,
+             out,
+             intermediate_results):
 
-    simulate(input_csv, n_workers, departure_time, k_routes, n_samples, seed, gv_update_period, dask_scheduler, dask_scheduler_port)
+
+    conda_path = "/apps/all/Anaconda3/2021.05/etc/profile.d/conda.sh"
+
+
+    pbs_nodefile = os.getenv("PBS_NODEFILE")
+    if intermediate_results is None:
+        basename = os.path.basename(pbs_nodefile)
+        os.mkdir(basename)
+        intermediate_results = os.path.abspath(basename)
+
+    with open(pbs_nodefile) as f:
+        hosts = f.readlines()
+        nodes = [host.strip() for host in hosts]
+        
+    cluster.start_process(["dask-scheduler",
+                           "--preload",
+                           "/home/sur096/ruth/add-to-syspath.py"],
+                          host=nodes[0],
+                          init_cmd=[f"source {conda_path} && conda activate ox"])
+
+    for node in nodes[1:]:
+        cluster.start_process(["dask-worker",
+                               f"{nodes[0]}:{dask_scheduler_port}",
+                               "--preload",
+                               "/home/sur096/ruth/add-to-syspath.py"],
+                              host=node,
+                              init_cmd=[f"source {conda_path} && conda activate ox"])
+
+    final_state_df = simulate(input_csv,
+                              len(nodes) - 1,
+                              departure_time,
+                              k_routes,
+                              n_samples,
+                              seed,
+                              gv_update_period,
+                              dask_scheduler,
+                              dask_scheduler_port,
+                              intermediate_results)
+
+    out_path = os.path.abspath(out)
+    final_state_df.to_pickle(out_path)
+    print("Simulation done.")
 
 
 def simulate(input_csv,
@@ -66,7 +113,8 @@ def simulate(input_csv,
              seed,
              gv_update_period,
              dask_scheduler,
-             dask_scheduler_port):
+             dask_scheduler_port,
+             intermediate_results):
     """Distributed traffic simulator."""
 
     if seed is not None:
@@ -80,6 +128,7 @@ def simulate(input_csv,
     types = dict(map(lambda field: (field.name, field.type), fields(Vehicle)))
     affected_columns = list(types.keys())
     active = True
+    idx = 0
     while active:
         ddf = dd.from_pandas(df, npartitions=n_workers)
         ddf = c.persist(ddf)
@@ -106,11 +155,12 @@ def simulate(input_csv,
 
             ddf[affected_columns] = ddf[affected_columns].mask(cond, new_values)
         df = ddf.compute()
+        idx += 1
+        df.to_pickle(f"{intermediate_results}/df{idx}.pickle")
         # print(df)
         active = df["active"].any()
 
-    print(df)
-    print(f"computed in: {(datetime.now() - departure_time) / timedelta(seconds=1)} s")
+    return df
 
 
 @DataFrameRow(Vehicle)
