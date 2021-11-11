@@ -12,7 +12,7 @@ from ..metaclasses import Singleton
 class Map(metaclass=Singleton):
     """Routing map."""
 
-    def __init__(self, border, data_dir="./data"):
+    def __init__(self, border, data_dir="./data", with_speeds=False):
         """Initialize a map via the border.
 
         If `data_dir` provided, the map is loaded from locally stored maps preferably.
@@ -20,6 +20,8 @@ class Map(metaclass=Singleton):
         self.border = border
         self.data_dir = data_dir
         self.network, fresh_data = self._load()
+        if with_speeds:
+            self.network = ox.add_edge_speeds(self.network)
         if fresh_data:
             self._store()
 
