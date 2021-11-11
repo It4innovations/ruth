@@ -3,3 +3,6 @@ lazy-object-proxy
 redis
 click
 tqdm
+dask
+distributed
+bokeh
