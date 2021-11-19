@@ -7,7 +7,7 @@ from ruth.preprocessing import *
 @click.command()
 @click.argument("in_path", type=click.Path(exists=True))
 @click.option("--out", type=str, default="out.pickle")
-def preprocess(in_path, out):
+def main(in_path, out):
     out_path = os.path.abspath(out)
     df = pd.read_csv(in_path, delimiter=';')
     df = assign_border(df)
@@ -17,4 +17,4 @@ def preprocess(in_path, out):
     print(f"preprocessed data stored in: {out_path}")
 
 if __name__ == "__main__":
-    preprocess()
+    main()
