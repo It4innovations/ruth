@@ -1,5 +1,6 @@
 """A distributed traffic simulator."""
 
+import os
 import random
 import pandas as pd
 import dask.dataframe as dd
@@ -22,11 +23,18 @@ def simulate(input_csv,
              gv_update_period,
              dask_scheduler,
              dask_scheduler_port,
-             intermediate_results):
+             intermediate_results,
+             checkpoint_period):
     """Distributed traffic simulator."""
 
     if seed is not None:
         random.seed(seed)  # used for tests: 660277
+
+    if intermediate_results is not None:
+        intermediate_results = os.path.abspath(intermediate_results)
+
+        if not os.path.exists(intermediate_results):
+            os.mkdir(intermediate_results)
 
     c = Client(f"{dask_scheduler}:{dask_scheduler_port}")
 
@@ -35,8 +43,9 @@ def simulate(input_csv,
     # TODO: get types for meta
     types = dict(map(lambda field: (field.name, field.type), fields(Vehicle)))
     affected_columns = list(types.keys())
+
+    round = 0
     active = True
-    idx = 0
     while active:
         ddf = dd.from_pandas(df, npartitions=n_workers)
         ddf = c.persist(ddf)
@@ -63,9 +72,10 @@ def simulate(input_csv,
 
             ddf[affected_columns] = ddf[affected_columns].mask(cond, new_values)
         df = ddf.compute()
-        idx += 1
-        df.to_pickle(f"{intermediate_results}/df{idx}.pickle")
-        # print(df)
+        # store intermediate results if desired
+        if intermediate_results is not None and round % checkpoint_period == 0:
+            df.to_pickle(f"{intermediate_results}/df_{round + 1}.pickle")
+        round += 1
         active = df["active"].any()
 
     return df
