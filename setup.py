@@ -24,6 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             "ruth-simulator = tools.simulator:main",
+            "ruth-data-preprocessing = tools.preprocessbenchmarkdata:main",
         ]
     }
 )
