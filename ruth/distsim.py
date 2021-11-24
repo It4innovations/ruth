@@ -40,8 +40,7 @@ def simulate(input_csv,
 
     df = pd.read_pickle(input_csv)
 
-    # TODO: get types for meta
-    types = dict(map(lambda field: (field.name, field.type), fields(Vehicle)))
+    types = dict(map(lambda field: (field.name, field.metadata['numpy_type']), fields(Vehicle)))
     affected_columns = list(types.keys())
 
     round = 0
@@ -58,17 +57,7 @@ def simulate(input_csv,
                 advance_vehicle,
                 axis=1,
                 args=(n_samples, k_routes, departure_time),
-                meta={  # TODO: solve better the meta types
-                    'id': 'int64',
-                    'time_offset': 'object',  # `object` as it is `timedelta` type
-                    'frequency': 'object',  # `object` as it is `timedelta` type
-                    'start_index': 'int64',
-                    'start_distance_offset': 'float64',
-                    'origin_node': 'int64',
-                    'dest_node': 'int64',
-                    'border_id': 'string',
-                    'osm_route': 'object',
-                    'active': 'bool'})  # NOTE: the types are important especially for objectts!
+                meta=types)
 
             ddf[affected_columns] = ddf[affected_columns].mask(cond, new_values)
         df = ddf.compute()

@@ -10,20 +10,27 @@ from probduration import SegmentPosition
 from .utils import get_map
 
 
+def set_numpy_type(name, fld=None):
+    if fld is None:
+        fld = field()
+    fld.metadata = {'numpy_type': name}
+    return fld
+
+
 @dataclass
 class Vehicle:
     """Vehicle."""
 
-    id: int
-    time_offset: timedelta
-    frequency: timedelta
-    start_index: int
-    start_distance_offset: float
-    origin_node: int
-    dest_node: int
-    border_id: str
-    osm_route: List[int]
-    active: bool
+    id: int = set_numpy_type("int64")
+    time_offset: timedelta = set_numpy_type("object")
+    frequency: timedelta = set_numpy_type("object")
+    start_index: int = set_numpy_type("int64")
+    start_distance_offset: float = set_numpy_type("float64")
+    origin_node: int = set_numpy_type("int64")
+    dest_node: int = set_numpy_type("int64")
+    border_id: str = set_numpy_type("string")
+    osm_route: List[int] = set_numpy_type("object")
+    active: bool = set_numpy_type("bool")
 
     def __post_init__(self):
         # NOTE: the routing map is not among attributes of dataclass
