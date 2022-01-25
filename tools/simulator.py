@@ -4,7 +4,7 @@ from datetime import datetime
 from cluster.cluster import Cluster, start_process, kill_process
 
 from ruth.distsim import simulate
-
+from ruth.everestsim import simulate as everest_simulate
 
 def dask_simulator(input_benchmark_data,
                    departure_time,
@@ -246,6 +246,61 @@ def pbs(input_benchmark_data,
                    intermediate_results,
                    checkpoint_period,
                    os.path.abspath(pyenv))
+
+
+@run_simulator.command()
+@click.argument("input_benchmark_data",
+                type=click.Path(exists=True))
+@click.option("--departure-time",
+              type=click.DateTime(),
+              default=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
+@click.option("--k-routes",
+              type=int,
+              default=4,
+              help="A number of alterantive routes routed between two points.")
+@click.option("--n-samples",
+              type=int,
+              default=1000,
+              help="A number of samples of monte carlo simulation.")
+@click.option("--seed",
+              type=int,
+              help=("A fixed seed for random number generator"
+                    "enusiring the same behaviour in the next run."))
+@click.option("--gv-update-period",
+              type=int,
+              default=10,
+              help="An 'n' consecutive steps performed between update of the global view.")
+@click.option("--out", type=str, default="out.pickle")
+@click.option("--intermediate-results",
+              type=click.Path(),
+              help="A path to the folder with intermediate results.")
+@click.option("--checkpoint-period",
+              type=int,
+              default=1,
+              help="A period in which the intermediate results are stored.")
+def everest(input_benchmark_data,
+            departure_time,
+            k_routes,
+            n_samples,
+            seed,
+            gv_update_period,
+            out,
+            intermediate_results,
+            checkpoint_period):
+    """Generic command calling the simulator within dask environment."""
+
+    final_state_df = everest_simulate(input_benchmark_data,
+                                      departure_time,
+                                      k_routes,
+                                      n_samples,
+                                      seed,
+                                      gv_update_period,
+                                      intermediate_results,
+                                      checkpoint_period)
+
+    #out_path = os.path.abspath(out)
+    #final_state_df.to_pickle(out_path)
+
 
 
 def main():
