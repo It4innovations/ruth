@@ -11,6 +11,7 @@ from probduration import HistoryHandler, Route, probable_duration
 
 from ruth.utils import osm_route_to_segments
 from ruth.vehicle import Vehicle
+from ruth.globalview import GlobalView
 from ruth.pandasdataclasses import DataFrameRow
 
 
@@ -31,7 +32,7 @@ def simulate(input_csv,
         random.seed(seed)  # used for tests: 660277
 
     if intermediate_results is not None:
-        intermediate_results = os.path.abspath(intermediate_results)
+        intermediate_results = os.path.abspath(sintermediate_results)
 
         if not os.path.exists(intermediate_results):
             os.mkdir(intermediate_results)
@@ -42,6 +43,8 @@ def simulate(input_csv,
 
     types = dict(map(lambda field: (field.name, field.metadata['numpy_type']), fields(Vehicle)))
     affected_columns = list(types.keys())
+
+    gv = GlobalView()
 
     round = 0
     active = True
@@ -62,10 +65,9 @@ def simulate(input_csv,
             ddf[affected_columns] = ddf[affected_columns].mask(cond, new_values)
         df = ddf.compute()
 
-        # TODO: process leap history
-        # two things: 1) make an aggregation (take the last appearence(?)) and update global view
-        #             2) collect the raw fcds and return them as one of the resiutls
-
+        # process the leap history to global view
+        df.apply(lambda row: gv.add(row["id"], row["leap_history"]), axis=1)
+        df["leap_history"] = [[]] * len(df)  # empty the leap history
 
         # store intermediate results if desired
         if intermediate_results is not None and round % checkpoint_period == 0:
@@ -73,6 +75,7 @@ def simulate(input_csv,
         round += 1
         active = df["active"].any()
 
+    gv.store("gv.pickle")
     return df  # TODO: return both dataframe with current state of cars and history of each car
 
 
