@@ -40,6 +40,9 @@ def simulate(input_path: str,
                     new_vehicle = advance_vehicle(vehicle, n_samples, k_routes, departure_time)
                     if new_vehicle.active:
                         new_active_vehicles.append(vehicle)
+                else:
+                    # I cannot skip the vehicles that time_offset is higher then min_offset and still active
+                    new_active_vehicles.append(vehicle)
             active_vehicles = new_active_vehicles
             if not active_vehicles:
                 break
