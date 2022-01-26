@@ -51,6 +51,9 @@ def simulate(input_csv,
     while active:
         ddf = dd.from_pandas(df, npartitions=n_workers)
         ddf = c.persist(ddf)
+
+        # TODO is there a better way? At least send only an update but how to keep data at workers during run.
+        dist_gv = c.scatter(gv, broadcast=True)
         for _ in range(gv_update_period): # compute the cars' leap
             min_offset = ddf["time_offset"].min()
 
@@ -59,7 +62,7 @@ def simulate(input_csv,
             new_values = ddf.loc[cond, affected_columns].apply(
                 advance_vehicle,
                 axis=1,
-                args=(n_samples, k_routes, departure_time),
+                args=(n_samples, k_routes, departure_time, dist_gv),
                 meta=types)
 
             ddf[affected_columns] = ddf[affected_columns].mask(cond, new_values)
@@ -80,7 +83,7 @@ def simulate(input_csv,
 
 
 @DataFrameRow(Vehicle)
-def advance_vehicle(vehicle, samples, k_routes, departure_time):
+def advance_vehicle(vehicle, samples, k_routes, departure_time, dist_gv):
     """Advance a vehicle on a route."""
 
     # compute the k shortest paths and compose driving rotes from them
