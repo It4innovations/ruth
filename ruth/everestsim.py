@@ -1,5 +1,6 @@
 
 import logging
+import sys
 import pandas as pd
 import random
 from ruth.vehicle import Vehicle
@@ -16,6 +17,7 @@ def load_vehicles(input_path: str):
     return [Vehicle(**row.to_dict()) for (_, row) in df.iterrows()]
 
 
+"""
 def simulate(input_path: str,
              departure_time,
              k_routes,
@@ -51,6 +53,48 @@ def simulate(input_path: str,
             # TODO: Save vehicles
             pass
         step += 1
+"""
+
+
+import dask.bag as db
+
+
+def simulate(input_path: str,
+             departure_time,
+             k_routes,
+             n_samples,
+             seed,
+             gv_update_period,
+             intermediate_results,
+             checkpoint_period):
+
+    vehicles = db.from_sequence(load_vehicles(input_path))
+
+    step = 0
+    while True:
+        logger.info("Starting step %s", step)
+
+        def compute_min(partition):
+            return min((v.time_offset for v in partition), default=float("inf"))
+
+        min_offset = vehicles.reduction(compute_min, min).compute()
+
+        if min_offset == float("inf"):
+            # No active cars
+            break
+
+        def advance(vehicle):
+            if vehicle.active:
+                return advance_vehicle(vehicle, n_samples, k_routes, departure_time)
+            else:
+                return vehicle
+
+        vehicles = vehicles.map(advance).persist()
+        step += 1
+
+        if intermediate_results is not None and step % (checkpoint_period * gv_update_period) == 0:
+            # TODO: Save vehicles
+            pass
 
 
 # EXACTLY SAME FUNCTION as in distsim, but decorator has been removed
