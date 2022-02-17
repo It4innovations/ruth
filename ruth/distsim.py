@@ -48,7 +48,7 @@ def simulate(input_csv,
     while active:
         ddf = dd.from_pandas(df, npartitions=n_workers)
         ddf = c.persist(ddf)
-        for _ in range(gv_update_period):
+        for _ in range(gv_update_period): # compute the cars' leap
             min_offset = ddf["time_offset"].min()
 
             cond = (ddf["time_offset"] == min_offset) & (ddf["active"])
@@ -61,13 +61,19 @@ def simulate(input_csv,
 
             ddf[affected_columns] = ddf[affected_columns].mask(cond, new_values)
         df = ddf.compute()
+
+        # TODO: process leap history
+        # two things: 1) make an aggregation (take the last appearence(?)) and update global view
+        #             2) collect the raw fcds and return them as one of the resiutls
+
+
         # store intermediate results if desired
         if intermediate_results is not None and round % checkpoint_period == 0:
             df.to_pickle(f"{intermediate_results}/df_{round + 1}.pickle")
         round += 1
         active = df["active"].any()
 
-    return df
+    return df  # TODO: return both dataframe with current state of cars and history of each car
 
 
 @DataFrameRow(Vehicle)
@@ -103,12 +109,18 @@ def advance_vehicle(vehicle, samples, k_routes, departure_time):
         dt, vehicle.segment_position, history, random.random())
     d = time - dt
 
+    # NOTE: _assumtion_: the car stays on a single segment within one call of the `advance`
+    #       method on the driving route
+
+    if segment_pos.index < len(driving_route):  # NOTE: the segment position index may end out of segments
+        vehicle.store_fcd(dt, d, driving_route[segment_pos.index])
+
     # update the vehicle
     vehicle.time_offset += d
     vehicle.set_position(segment_pos)
 
     if vehicle.current_node == vehicle.dest_node:
-        # stop the processing in case the car reached the end
+        # stop the processing in case the ca    r reached the end
         vehicle.active = False
 
     return vehicle

@@ -1,4 +1,4 @@
-py-probduration @ git+ssh://git@code.it4i.cz/everest/py-probduration.git
+py-probduration @ git+ssh://git@code.it4i.cz/everest/py-probduration.git@indexing-route
 cluster @ git+ssh://git@code.it4i.cz/def/cluster.git
 osmnx
 lazy-object-proxy
@@ -8,3 +8,4 @@ tqdm
 dask
 distributed
 bokeh
+scikit-learn

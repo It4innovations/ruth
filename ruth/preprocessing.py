@@ -35,14 +35,17 @@ def compute_osm_nodes_id(df: pd.DataFrame) -> pd.DataFrame:
 
 def prepare_vehicle_state(df: pd.DataFrame) -> pd.DataFrame:
     # rename the columns
-    df[["time_offset", "frequency"]] = \
-      df[["start_offset_s", "route_step_s"]].applymap(lambda seconds: timedelta(seconds=seconds))
+    df[["time_offset", "frequency", "fcd_sampling_period"]] = \
+      df[["start_offset_s", "route_step_s", "log_step_s"]].applymap(lambda seconds: timedelta(seconds=seconds))
 
     # set segment position
     df[["start_index", "start_distance_offset"]] = (0, 0.0)
 
-    # set default route
-    df["osm_route"] = np.empty((len(df), 0)).tolist()  # empty list for each route
+    # each car starts with an empty route, only origin and destination is known at that point
+    df["osm_route"] = np.empty((len(df), 0)).tolist()  # empty list
+
+    # a history of a one leap, i.e., a series of smaller steps in simulation
+    df["leap_history"] = np.empty((len(df), 0)).tolist()  # empty list
 
     return df[list(map(lambda field: field.name, fields(Vehicle)))]
 
