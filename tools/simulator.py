@@ -1,7 +1,7 @@
 import os
 import click
 from datetime import datetime
-from cluster import cluster
+from cluster.cluster import Cluster, start_process, kill_process
 
 from ruth.distsim import simulate
 
@@ -57,17 +57,19 @@ def dask_simulator(input_benchmark_data,
         If `None` it is supposed that the package is installed in the user space.
     """
 
-    cluster.start_process(["dask-scheduler",
-                           "--port",
-                           dask_scheduler_port],
-                          host=dask_scheduler,
-                          pyenv=pyenv)
+    work_dir = os.getcwd()
+    cluster = Cluster(work_dir)
+    cluster.add(start_process(["dask-scheduler",
+                               "--port",
+                               str(dask_scheduler_port)],
+                              hostname=dask_scheduler,
+                              pyenv=pyenv))
 
     for worker in dask_workers:
-        cluster.start_process(["dask-worker",
-                               f"{dask_scheduler}:{dask_scheduler_port}"],
-                              host=worker,
-                              pyenv=pyenv)
+        cluster.add(start_process(["dask-worker",
+                                   f"{dask_scheduler}:{dask_scheduler_port}"],
+                                  hostname=worker,
+                                  pyenv=pyenv))
 
     final_state_df = simulate(input_benchmark_data,
                               len(dask_workers),
@@ -83,6 +85,8 @@ def dask_simulator(input_benchmark_data,
 
     out_path = os.path.abspath(out)
     final_state_df.to_pickle(out_path)
+
+    cluster.kill()
 
 
 run_simulator = click.Group()
