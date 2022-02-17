@@ -1,5 +1,4 @@
 py-probduration @ git+ssh://git@code.it4i.cz/everest/py-probduration.git@refined-duration
-cluster @ git+ssh://git@code.it4i.cz/def/cluster.git
 osmnx
 lazy-object-proxy
 redis
