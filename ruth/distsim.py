@@ -1,29 +1,37 @@
 """A distributed traffic simulator."""
 
+import logging
 import os
 import random
 import pandas as pd
-import dask.dataframe as dd
+import dask.bag as db
+from copy import copy
 from dask.distributed import Client
-from dataclasses import fields
 
 from probduration import HistoryHandler, Route, probable_duration
 
 from ruth.utils import osm_route_to_segments
 from ruth.vehicle import Vehicle
 from ruth.globalview import GlobalView
-from ruth.pandasdataclasses import DataFrameRow
 
 
-def simulate(input_csv,
-             n_workers,
+logger = logging.getLogger(__name__)
+
+
+def load_vehicles(input_path: str):
+    logger.info("Loading data ... %s", input_path)
+    df = pd.read_pickle(input_path)
+    return [Vehicle(**row.to_dict()) for (_, row) in df.iterrows()]
+
+
+def simulate(input_path: str,
+             scheduler: str,
+             scheduler_port: int,
              departure_time,
              k_routes,
              n_samples,
              seed,
              gv_update_period,
-             dask_scheduler,
-             dask_scheduler_port,
              intermediate_results,
              checkpoint_period):
     """Distributed traffic simulator."""
@@ -37,52 +45,84 @@ def simulate(input_csv,
         if not os.path.exists(intermediate_results):
             os.mkdir(intermediate_results)
 
-    c = Client(f"{dask_scheduler}:{dask_scheduler_port}")
-
-    df = pd.read_pickle(input_csv)
-
-    types = dict(map(lambda field: (field.name, field.metadata['numpy_type']), fields(Vehicle)))
-    affected_columns = list(types.keys())
-
     gv = GlobalView()
+    c = Client(f"{scheduler}:{scheduler_port}")
+    dist_gv = c.scatter(gv, broadcast=True)
 
-    round = 0
-    active = True
-    while active:
-        ddf = dd.from_pandas(df, npartitions=n_workers)
-        ddf = c.persist(ddf)
+    vehicles = db.from_sequence(load_vehicles(input_path))
 
-        # TODO is there a better way? At least send only an update but how to keep data at workers during run.
-        dist_gv = c.scatter(gv, broadcast=True)
-        for _ in range(gv_update_period): # compute the cars' leap
-            min_offset = ddf["time_offset"].min()
+    step = 0
+    while True:
+        logger.info("Starting step %s", step)
 
-            cond = (ddf["time_offset"] == min_offset) & (ddf["active"])
+        def compute_min(partitions): # TODO: why the method is created in each cycle?
+            return min((v.time_offset for v in partitions), default=float("inf"))
 
-            new_values = ddf.loc[cond, affected_columns].apply(
-                advance_vehicle,
-                axis=1,
-                args=(n_samples, k_routes, departure_time, dist_gv),
-                meta=types)
+        min_offset = vehicles.reduction(compute_min, min).compute()
 
-            ddf[affected_columns] = ddf[affected_columns].mask(cond, new_values)
-        df = ddf.compute()
+        def gather_active(partitions):
+            return all((v.active for v in partitions))
 
-        # process the leap history to global view
-        df.apply(lambda row: gv.add(row["id"], row["leap_history"]), axis=1)
-        df["leap_history"] = [[]] * len(df)  # empty the leap history
+        active = vehicles.reduction(gather_active, all).compute()
 
-        # store intermediate results if desired
-        if intermediate_results is not None and round % checkpoint_period == 0:
-            df.to_pickle(f"{intermediate_results}/df_{round + 1}.pickle")
-        round += 1
-        active = df["active"].any()
+        if not active:
+            # No active cars
+            break
 
-    gv.store("gv.pickle")
-    return df  # TODO: return both dataframe with current state of cars and history of each car
+        def advance(vehicle, gv):
+            if vehicle.time_offset == min_offset:
+                return advance_vehicle(vehicle, n_samples, k_routes, departure_time, gv)
+            else:
+                return vehicle
+
+        vehicles = vehicles.map(advance, dist_gv).persist()
+
+        if intermediate_results is not None and step % (checkpoint_period * gv_update_periodl) == 0:
+            # TODO: Save vehicles
+            pass
+
+        # process the leap history
+        def process_leap_history(acc, vehicle):
+            leap_history_update = acc[:]
+
+            print(">> ", vehicle)
+
+            leap_history_update.append((vehicle.id, vehicle.leap_history[:]))
+            vehicle.leap_history.clear()
+
+            return leap_history_update
+
+        def join_leap_histories(acc, lh_update):
+            leap_history = acc[:]
+            leap_history += lh_update
+
+            return leap_history
+
+        # list of (vehicle id, leap_history)
+        leap_history_update = vehicles.fold( # TODO: why the folding does not work and nondeterministically place instead of vehilce the string: "("
+            process_leap_history,
+            join_leap_histories,
+            initial=[]
+        ).compute()
+
+        print(leap_history_update)
+
+        dist_lhu = c.scatter(leap_history_update, broadcast=True)
+
+        def update_gv(gv, lhus):
+            gv = copy(gv)
+            for vehicle_id, lhu in lhus:
+                gv.add(vehicle_id, lhu)
+            return gv
+
+        dist_gv = c.submit(update_gv, dist_gv, dist_lhu)
+        # dist_gv = c.persist(dist_gv) # TODO: cannot persit custom collection
+
+        step += 1
+
+    return vehicles
 
 
-@DataFrameRow(Vehicle)
 def advance_vehicle(vehicle, samples, k_routes, departure_time, dist_gv):
     """Advance a vehicle on a route."""
 
