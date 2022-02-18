@@ -7,6 +7,7 @@ import pandas as pd
 import dask.bag as db
 from copy import copy
 from dask.distributed import Client
+from dataclasses import asdict
 
 from probduration import HistoryHandler, Route, probable_duration
 
@@ -81,42 +82,43 @@ def simulate(input_path: str,
             # TODO: Save vehicles
             pass
 
-        # process the leap history
-        def process_leap_history(acc, vehicle):
-            leap_history_update = acc[:]
-
-            print(">> ", vehicle)
-
-            leap_history_update.append((vehicle.id, vehicle.leap_history[:]))
-            vehicle.leap_history.clear()
-
+        def process_leap_history(partitions):
+            leap_history_update = []
+            for vehicle in partitions:
+                if vehicle.leap_history:
+                    # process only non-empty history
+                    leap_history_update.append((vehicle.id, vehicle.leap_history[:]))
             return leap_history_update
 
-        def join_leap_histories(acc, lh_update):
-            leap_history = acc[:]
-            leap_history += lh_update
-
+        def join_leap_histories(lh_updates):
+            leap_history = []
+            for lh_update in lh_updates:
+                leap_history += lh_update
             return leap_history
 
-        # list of (vehicle id, leap_history)
-        leap_history_update = vehicles.fold( # TODO: why the folding does not work and nondeterministically place instead of vehilce the string: "("
+        leap_history_update = vehicles.reduction(
             process_leap_history,
-            join_leap_histories,
-            initial=[]
+            join_leap_histories
         ).compute()
 
-        print(leap_history_update)
+        if leap_history_update: # update only if there is data
+            dist_lhu = c.scatter(leap_history_update, broadcast=True)
 
-        dist_lhu = c.scatter(leap_history_update, broadcast=True)
+            def update_gv(gv, lhus):
+                gv = copy(gv)
+                for vehicle_id, lhu in lhus:
+                    gv.add(vehicle_id, lhu)
+                return gv
 
-        def update_gv(gv, lhus):
-            gv = copy(gv)
-            for vehicle_id, lhu in lhus:
-                gv.add(vehicle_id, lhu)
-            return gv
+            dist_gv = c.submit(update_gv, dist_gv, dist_lhu)
+            # TODO: do I need to persist the data on the workers?
 
-        dist_gv = c.submit(update_gv, dist_gv, dist_lhu)
-        # dist_gv = c.persist(dist_gv) # TODO: cannot persit custom collection
+        def clear_leap_history(vehicle):
+            data = asdict(vehicle)
+            data["leap_history"] = []
+            return Vehicle(**data)
+
+        vehicles = vehicles.map(clear_leap_history).persist()
 
         step += 1
 
