@@ -7,6 +7,7 @@ import pandas as pd
 import dask.bag as db
 from copy import copy
 from dask.distributed import Client
+from dataclasses import asdict
 
 from probduration import HistoryHandler, Route, probable_duration
 
@@ -112,7 +113,6 @@ def simulate(input_path: str,
             for vehicle in partitions:
                 print ("VEHICLE: ", vehicle)
                 leap_history_update.append((vehicle.id, vehicle.leap_history[:]))
-                vehicle.leap_history.clear()
             return leap_history_update
 
         def join_leap_histories(lh_updates):
@@ -125,6 +125,13 @@ def simulate(input_path: str,
             process_leap_history,
             join_leap_histories
         ).compute()
+
+        def clear_leap_history(vehicle):
+            data = asdict(vehicle)
+            data["leap_history"] = []
+            return Vehicle(**data)
+
+        vehicles = vehicles.map(clear_leap_history).persist()
 
         print(leap_history_update)
 
