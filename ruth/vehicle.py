@@ -3,7 +3,7 @@
 import pandas as pd
 import numpy as np
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import List, Tuple
 from datetime import timedelta, datetime
 from probduration import SegmentPosition
@@ -39,7 +39,6 @@ class Vehicle:
                                                                   #       well there are two things: 1) after each leap I need to make an aggregation and update global view
                                                                   #                                  2) collect raw fcds for latter aggregation and creating the prob profiles
 
-
     def __post_init__(self):
         # NOTE: the routing map is not among attributes of dataclass
         # => does not affect the conversion to pandas.Series
@@ -50,6 +49,13 @@ class Vehicle:
             # At the beginning the _start_index_ and _starting_distance_offset_ are 0 and 0.0,
             # hence the *current starting node* with *index* will be the _origin_node_ and 0.
             self.osm_route = [self.origin_node, self.dest_node]
+
+    def __getstate__(self):
+        return asdict(self)
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.__post_init__()
 
     @property
     def next_routing_start_node_with_index(self):
