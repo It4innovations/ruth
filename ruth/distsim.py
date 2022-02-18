@@ -82,27 +82,48 @@ def simulate(input_path: str,
             pass
 
         # process the leap history
-        def process_leap_history(acc, vehicle):
-            leap_history_update = acc[:]
+        # def process_leap_history(acc, vehicle):
+        #     leap_history_update = acc[:]
 
-            print(">> ", vehicle)
+        #     print(">> ", vehicle)
 
-            leap_history_update.append((vehicle.id, vehicle.leap_history[:]))
-            vehicle.leap_history.clear()
+        #     leap_history_update.append((vehicle.id, vehicle.leap_history[:]))
+        #     vehicle.leap_history.clear()
 
+        #     return leap_history_update
+
+        # def join_leap_histories(acc, lh_update):
+        #     leap_history = acc[:]
+        #     leap_history += lh_update
+
+        #     return leap_history
+
+        # # list of (vehicle id, leap_history)
+        # leap_history_update = vehicles.fold( # TODO: why the folding does not work and nondeterministically place instead of vehilce the string: "("
+        #     process_leap_history,
+        #     join_leap_histories,
+        #     initial=[]
+        # ).compute()
+        # << The fold is not working properly it crashes nondeterministically during the run
+
+        def process_leap_history(partitions):
+            leap_history_update = []
+            print ("PARTITIONS: ", partitions)
+            for vehicle in partitions:
+                print ("VEHICLE: ", vehicle)
+                leap_history_update.append((vehicle.id, vehicle.leap_history[:]))
+                vehicle.leap_history.clear()
             return leap_history_update
 
-        def join_leap_histories(acc, lh_update):
-            leap_history = acc[:]
-            leap_history += lh_update
-
+        def join_leap_histories(lh_updates):
+            leap_history = []
+            for lh_update in lh_updates:
+                leap_history += lh_update
             return leap_history
 
-        # list of (vehicle id, leap_history)
-        leap_history_update = vehicles.fold( # TODO: why the folding does not work and nondeterministically place instead of vehilce the string: "("
+        leap_history_update = vehicles.reduction(
             process_leap_history,
-            join_leap_histories,
-            initial=[]
+            join_leap_histories
         ).compute()
 
         print(leap_history_update)
