@@ -112,7 +112,9 @@ def simulate(input_path: str,
             print ("PARTITIONS: ", partitions)
             for vehicle in partitions:
                 print ("VEHICLE: ", vehicle)
-                leap_history_update.append((vehicle.id, vehicle.leap_history[:]))
+                if vehicle.leap_history:
+                    # process only non-empty history
+                    leap_history_update.append((vehicle.id, vehicle.leap_history[:]))
             return leap_history_update
 
         def join_leap_histories(lh_updates):
