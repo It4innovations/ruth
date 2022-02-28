@@ -61,9 +61,9 @@ def simulate(input_path: str,
         min_offset = vehicles.reduction(compute_min, min).compute()
 
         def gather_active(partitions):
-            return all((v.active for v in partitions))
+            return any(v.active for v in partitions)
 
-        active = vehicles.reduction(gather_active, all).compute()
+        active = vehicles.reduction(gather_active, any).compute()
 
         if not active:
             # No active cars
