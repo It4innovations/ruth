@@ -105,13 +105,12 @@ def simulate(input_path: str,
         #     join_leap_histories,
         #     initial=[]
         # ).compute()
-        # << The fold is not working properly it crashes nondeterministically during the run
+        # << Fold variant of processing the leap history
+
 
         def process_leap_history(partitions):
             leap_history_update = []
-            print ("PARTITIONS: ", partitions)
             for vehicle in partitions:
-                print ("VEHICLE: ", vehicle)
                 if vehicle.leap_history:
                     # process only non-empty history
                     leap_history_update.append((vehicle.id, vehicle.leap_history[:]))
@@ -128,25 +127,24 @@ def simulate(input_path: str,
             join_leap_histories
         ).compute()
 
+        if leap_history_update: # update only if there is data
+            dist_lhu = c.scatter(leap_history_update, broadcast=True)
+
+            def update_gv(gv, lhus):
+                gv = copy(gv)
+                for vehicle_id, lhu in lhus:
+                    gv.add(vehicle_id, lhu)
+                return gv
+
+            dist_gv = c.submit(update_gv, dist_gv, dist_lhu)
+            # TODO: do I need to persist the data on the workers?
+
         def clear_leap_history(vehicle):
             data = asdict(vehicle)
             data["leap_history"] = []
             return Vehicle(**data)
 
         vehicles = vehicles.map(clear_leap_history).persist()
-
-        print(leap_history_update)
-
-        dist_lhu = c.scatter(leap_history_update, broadcast=True)
-
-        def update_gv(gv, lhus):
-            gv = copy(gv)
-            for vehicle_id, lhu in lhus:
-                gv.add(vehicle_id, lhu)
-            return gv
-
-        dist_gv = c.submit(update_gv, dist_gv, dist_lhu)
-        # dist_gv = c.persist(dist_gv) # TODO: cannot persit custom collection
 
         step += 1
 
