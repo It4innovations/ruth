@@ -11,13 +11,16 @@ class GlobalView:
     SEGMENT_ID = "segment_id"
     VEHICLE_ID = "vehicle_id"
 
-    def __init__(self):
-        self.data = pd.DataFrame({
-            GlobalView.TIMESTAMP: pd.Series(dtype="datetime64[s]"),
-            GlobalView.SEGMENT_ID: pd.Series(dtype="str"),
-            GlobalView.VEHICLE_ID: pd.Series(dtype="int64"),
-        })
-        self.data.set_index([GlobalView.TIMESTAMP, GlobalView.SEGMENT_ID], inplace=True)
+    def __init__(self, data=None):
+        if data is None:
+            self.data = pd.DataFrame({
+                GlobalView.TIMESTAMP: pd.Series(dtype="datetime64[s]"),
+                GlobalView.SEGMENT_ID: pd.Series(dtype="str"),
+                GlobalView.VEHICLE_ID: pd.Series(dtype="int64"),
+            })
+            self.data.set_index([GlobalView.TIMESTAMP, GlobalView.SEGMENT_ID], inplace=True)
+        else:
+            self.data = data
 
     def add(self, car_id, hrs: List[Tuple[datetime, str]]):
         midx = pd.MultiIndex.from_tuples(
@@ -44,3 +47,9 @@ class GlobalView:
 
     def load(self, path):
         pass # TODO: implement laoading maybe as param of init
+
+    def __len__(self):
+        return len(self.data)
+
+    def raw_data(self):
+        return self.data
