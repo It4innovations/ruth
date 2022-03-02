@@ -86,8 +86,6 @@ def simulate(input_path: str,
         # def process_leap_history(acc, vehicle):
         #     leap_history_update = acc[:]
 
-        #     print(">> ", vehicle)
-
         #     leap_history_update.append((vehicle.id, vehicle.leap_history[:]))
         #     vehicle.leap_history.clear()
 
@@ -105,8 +103,7 @@ def simulate(input_path: str,
         #     join_leap_histories,
         #     initial=[]
         # ).compute()
-        # << Fold variant of processing the leap history
-
+        # << Fold variant of processing the leap history; which does not work properly; it crashes non-deterministically
 
         def process_leap_history(partitions):
             leap_history_update = []
