@@ -163,7 +163,7 @@ def advance_vehicle(vehicle, samples, k_routes, departure_time, dist_gv):
 
     # pick the driving route with the smallest deylay
     if len(possible_driving_routes) > 1:
-        delays = map(lambda driving_route: probable_duration(  # TODO: rename probable durations to probable delays
+        delays = map(lambda driving_route: probable_duration(
             driving_route, dt, history, samples), possible_driving_routes)
         indexed_delays = sorted(enumerate(delays), key=lambda indexed_delay: indexed_delay[1])
 
