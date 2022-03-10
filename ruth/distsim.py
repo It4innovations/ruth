@@ -9,7 +9,7 @@ from copy import copy
 from dask.distributed import Client
 from dataclasses import asdict
 
-from probduration import HistoryHandler, Route, probable_duration
+from probduration import HistoryHandler, Route, SegmentPosition, probable_duration
 
 from ruth.utils import osm_route_to_segments
 from ruth.vehicle import Vehicle
@@ -148,7 +148,7 @@ def simulate(input_path: str,
     return vehicles
 
 
-def advance_vehicle(vehicle, samples, k_routes, departure_time, dist_gv):
+def advance_vehicle(vehicle, samples, k_routes, departure_time, gv):
     """Advance a vehicle on a route."""
 
     # compute the k shortest paths and compose driving rotes from them
@@ -163,8 +163,10 @@ def advance_vehicle(vehicle, samples, k_routes, departure_time, dist_gv):
 
     # pick the driving route with the smallest deylay
     if len(possible_driving_routes) > 1:
+        start_pos = SegmentPosition(0, 0.0)  # TODO: the start will be given by a prefix for which was used the global view
+                                             #       + departure time has corresponds
         delays = map(lambda driving_route: probable_duration(
-            driving_route, dt, history, samples), possible_driving_routes)
+            driving_route, start_pos, dt, history, samples), possible_driving_routes)
         indexed_delays = sorted(enumerate(delays), key=lambda indexed_delay: indexed_delay[1])
 
         best_route_index, _ = indexed_delays[0]
@@ -177,7 +179,7 @@ def advance_vehicle(vehicle, samples, k_routes, departure_time, dist_gv):
     # advance the vehicle on the driving route
     driving_route = possible_driving_routes[best_route_index]
     time, segment_pos = driving_route.advance(
-        dt, vehicle.segment_position, history, random.random())
+        vehicle.segment_position, dt, 1.0)  # TODO: here will be used LoS only from global view!
     d = time - dt
 
     # NOTE: _assumtion_: the car stays on a single segment within one call of the `advance`
