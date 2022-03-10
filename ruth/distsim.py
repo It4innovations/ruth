@@ -125,16 +125,10 @@ def simulate(input_path: str,
         ).compute()
 
         if leap_history_update: # update only if there is data
-            dist_lhu = c.scatter(leap_history_update, broadcast=True)
+            for vehicle_id, lhu in leap_history_update:
+                gv.add(vehicle_id, lhu)
 
-            def update_gv(gv, lhus):
-                gv = copy(gv)
-                for vehicle_id, lhu in lhus:
-                    gv.add(vehicle_id, lhu)
-                return gv
-
-            dist_gv = c.submit(update_gv, dist_gv, dist_lhu)
-            # TODO: do I need to persist the data on the workers?
+            dist_gv = c.scatter(gv, broadcast=True)
 
         def clear_leap_history(vehicle):
             data = asdict(vehicle)
