@@ -42,6 +42,40 @@ class GlobalView:
                                f"{GlobalView.TIMESTAMP} <= '{dt + tolerance}' and "
                                f"{GlobalView.SEGMENT_ID} == '{segment_id}'")
 
+    def number_of_vehicles_in_time_at_segment(self, datetime, segment_id, tolerance=None):
+        vehicles = self.vehicles_in_time_at_segment(datetime, segment_id, tolerance)
+
+        return len(set(vehicles[GlobalView.VEHICLE_ID]))
+
+    def level_of_service_in_time_at_segment(self, datetime, segment, tolerance=None):
+        mile = 1609.344 # meters
+        # density of vehicles per mile with ranges of level of service
+        # https://transportgeography.org/contents/methods/transport-technical-economic-performance-indicators/levels-of-service-road-transportation/
+        ranges = [
+            ( (0, 12), (0.0, 0.2)),
+            ((12, 20), (0.2, 0.4)),
+            ((20, 30), (0.4, 0.6)),
+            ((30, 42), (0.6, 0.8)),
+            ((42, 67), (0.8, 1.0))]
+
+        n_vehicles = self.number_of_vehicles_in_time_at_segment(datetime, segment.id, tolerance)
+        print ("#vehicles: ", n_vehicles)
+
+        # rescale density
+        n_vehicles_per_mile = n_vehicles * mile / segment.length
+        print ("#vehicles per mile: ", n_vehicles_per_mile)
+
+        los = float("inf") # in case the vehicles are stuck in traffic jam
+        for (low, high), (m, n) in ranges:
+            if n_vehicles_per_mile < high:
+                print (f"{low}/{high}/{m}/{n}")
+                d = high - low  # size of range between two densities
+                los = m + ((n_vehicles_per_mile - low) * 0.2 / d) # -low => shrink to the size of the range
+                break
+
+        # reverse the level of service 1.0 means 100% LoS, but the input table defines it in reverse
+        return los if los == float("inf") else 1.0 - los
+
     def store(self, path):
         self.data.to_pickle(path)
 
