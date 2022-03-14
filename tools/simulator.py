@@ -71,20 +71,21 @@ def dask_simulator(input_benchmark_data,
     #                               hostname=worker,
     #                               pyenv=pyenv))
 
-    final_state_df = simulate(input_benchmark_data,
-                              dask_scheduler,
-                              dask_scheduler_port,
-                              departure_time,
-                              k_routes,
-                              n_samples,
-                              seed,
-                              gv_update_period,
-                              intermediate_results,
-                              checkpoint_period)
+    (gv, final_state_df) = simulate(input_benchmark_data,
+                                    dask_scheduler,
+                                    dask_scheduler_port,
+                                    departure_time,
+                                    k_routes,
+                                    n_samples,
+                                    seed,
+                                    gv_update_period,
+                                    intermediate_results,
+                                    checkpoint_period)
 
     out_path = os.path.abspath(out)
     # TODO: solve the storing of resutl
     # final_state_df.to_pickle(out_path)
+    gv.store(out_path)
 
     for v in final_state_df:
         print (v)

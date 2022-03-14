@@ -139,7 +139,7 @@ def simulate(input_path: str,
 
         step += 1
 
-    return vehicles
+    return (gv, vehicles)
 
 
 def advance_vehicle(vehicle, samples, k_routes, departure_time, gv):
