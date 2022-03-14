@@ -34,7 +34,7 @@ class GlobalView:
         self.data = pd.concat([self.data, new_data])
         self.data.sort_index()
 
-    def cars_in_time_at_segment(self, datetime, segment_id, tolerance=None):
+    def vehicles_in_time_at_segment(self, datetime, segment_id, tolerance=None):
         dt = np.datetime64(datetime, 's')
         tolerance = np.timedelta64(tolerance if tolerance is not None else timedelta(seconds=0))
 
