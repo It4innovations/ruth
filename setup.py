@@ -25,7 +25,8 @@ setup(
         "console_scripts": [
             "ruth-simulator = tools.simulator:main",
             "ruth-data-preprocessing = tools.preprocessbenchmarkdata:main",
-            "ruth-split-segment-id = tools.splitsegmentid:main"
+            "ruth-split-segment-id = tools.splitsegmentid:main",
+            "ruth-show-gv = tools.vizglobalview:viz"
         ]
     }
 )
