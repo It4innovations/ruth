@@ -121,8 +121,10 @@ def simulate(input_path: str,
     return (gv, vehicles)
 
 
-def advance_vehicle(vehicle, departure_time, k_routes, gv, gv_distance, nsamples=1):
+def advance_vehicle(vehicle_, departure_time, k_routes, gv, gv_distance, nsamples=1):
     """Advance a vehicle on a route."""
+
+    vehicle = Vehicle(**asdict(vehicle_))  # make a copy of vehicle as the functions should be stateless
 
     dt = departure_time + vehicle.time_offset
     prob_profiles = HistoryHandler.no_limit()  # TODO: history get here or take as an argument?
