@@ -84,3 +84,6 @@ class GlobalView:
 
     def raw_data(self):
         return self.data
+
+    def copy(self):
+        return GlobalView(self.data.copy())
