@@ -10,6 +10,7 @@ class GlobalView:
     TIMESTAMP = "timestamp"
     SEGMENT_ID = "segment_id"
     VEHICLE_ID = "vehicle_id"
+    START_OFFSET = "start_offset_m"
 
     def __init__(self, data=None):
         if data is None:
@@ -17,19 +18,21 @@ class GlobalView:
                 GlobalView.TIMESTAMP: pd.Series(dtype="datetime64[s]"),
                 GlobalView.SEGMENT_ID: pd.Series(dtype="str"),
                 GlobalView.VEHICLE_ID: pd.Series(dtype="int64"),
+                GlobalView.START_OFFSET: pd.Series(dtype="float64")
             })
             self.data.set_index([GlobalView.TIMESTAMP, GlobalView.SEGMENT_ID], inplace=True)
         else:
             self.data = data
 
-    def add(self, car_id, hrs: List[Tuple[datetime, str]]):
+    def add(self, car_id, hrs: List[Tuple[datetime, str, float]]):
         midx = pd.MultiIndex.from_tuples(
             [(np.datetime64(dt, 's'), seg_id)
-             for dt, seg_id in hrs],
+             for dt, seg_id, _ in hrs],
             names=[GlobalView.TIMESTAMP, GlobalView.SEGMENT_ID])
 
+        columns = [(car_id, start_offset) for _, _, start_offset in hrs]
         new_data = pd.DataFrame(
-            np.full(len(midx), car_id), index=midx, columns=[GlobalView.VEHICLE_ID])
+            columns, index=midx, columns=[GlobalView.VEHICLE_ID, GlobalView.START_OFFSET])
 
         self.data = pd.concat([self.data, new_data])
         self.data.sort_index()

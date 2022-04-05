@@ -151,7 +151,7 @@ def advance_vehicle(vehicle_, departure_time, k_routes, gv, gv_distance, nsample
         time = dt + vehicle.frequency
         vehicle.time_offset += vehicle.frequency
     else:
-        time, segment_pos, _ = driving_route.advance(
+        time, segment_pos, assigned_speed_mps = driving_route.advance(
             vehicle.segment_position, dt, los)
         d = time - dt
 
@@ -159,7 +159,7 @@ def advance_vehicle(vehicle_, departure_time, k_routes, gv, gv_distance, nsample
         #       method on the driving route
 
         if segment_pos.index < len(driving_route):  # NOTE: the segment position index may end out of segments
-            vehicle.store_fcd(dt, d, driving_route[segment_pos.index])
+            vehicle.store_fcd(dt, d, driving_route[segment_pos.index], segment_pos.start, assigned_speed_mps)
 
         # update the vehicle
         vehicle.time_offset += d
