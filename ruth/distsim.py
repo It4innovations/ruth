@@ -172,7 +172,7 @@ def advance_vehicle(vehicle, samples, k_routes, departure_time, gv):
 
     # advance the vehicle on the driving route
     driving_route = possible_driving_routes[best_route_index]
-    time, segment_pos = driving_route.advance(
+    time, segment_pos, _ = driving_route.advance(
         vehicle.segment_position, dt, 1.0)  # TODO: here will be used LoS only from global view!
     d = time - dt
 
