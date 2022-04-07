@@ -78,7 +78,7 @@ def main_cycle(vehicles,
                     new_time = min(new_time, vehicle.time_offset)
 
         all_updates = allreduce([CycleInfo(new_time, car_updates)])
-        current_offset = min((up.time for up in all_updates), default=None)
+        current_offset = min((up.time for up in all_updates if up.time is not None), default=None)
 
         for up in all_updates:
             for vehicle_id, lhu in up.updates:
