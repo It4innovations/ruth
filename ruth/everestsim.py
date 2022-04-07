@@ -85,6 +85,7 @@ def main_cycle(vehicles,
                 gv.add(vehicle_id, lhu)
 
         step += 1
+    return gv
 
 
 def simulate(input_path: str, *args, **kwargs):
