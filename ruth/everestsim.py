@@ -42,6 +42,23 @@ class CycleInfo:
     time: object
     updates: list
 
+def update_vehicle(vehicle, current_offset, *advance_args):
+    leap_history = []
+    if vehicle.active and current_offset == vehicle.time_offset:
+        new_vehicle = advance_vehicle(vehicle, *advance_args)
+        # swap the empty history with the filled one
+        leap_history, new_vehicle.leap_history = new_vehicle.leap_history, leap_history
+    else:
+        new_vehicle = vehicle
+
+    return (new_vehicle, leap_history)
+
+
+def get_updates(vehicle, leap_history):
+    if not leap_history:
+        return None
+    return (vehicle.id, leap_history)
+
 
 def main_cycle(vehicles,
                departure_time,
@@ -67,29 +84,22 @@ def main_cycle(vehicles,
     while current_offset is not None:
         logger.info("Starting step %s", step)
 
-        car_updates = []
-        new_time = None
-        new_vehicles = []
-        for vehicle in vehicles:
-            if current_offset == vehicle.time_offset:
-                gv_near_future = 200 # 200m look ahead; make a parameter
-                new_vehicle = advance_vehicle(vehicle, departure_time, k_routes, gv, gv_near_future, n_samples)
-                car_updates.append((new_vehicle.id, new_vehicle.leap_history))
-                new_vehicle.leap_history = []
-            else:
-                new_vehicle = vehicle
+        gv_near_future = 200 # 200m look ahead; TODO: make a paramter
+        vehicles, leap_histories = zip(*map(lambda v: update_vehicle(v,
+                                                                     current_offset,
+                                                                     departure_time,
+                                                                     k_routes,
+                                                                     gv,
+                                                                     gv_near_future,
+                                                                     n_samples), vehicles))
 
-            if new_vehicle.active:
-                if new_time is None:
-                    new_time = new_vehicle.time_offset
-                else:
-                    new_time = min(new_time, new_vehicle.time_offset)
-            new_vehicles.append(new_vehicle)
-
-        vehicles = new_vehicles
+        local_min_offset = min(filter(None, map(lambda v: v.time_offset
+                                                if v.active else None, vehicles)), default=None)
+        local_updates = list(filter(None, map(lambda v_lhu: get_updates(*v_lhu),
+                                              zip(vehicles, leap_histories))))
 
         # update global view
-        all_updates = allreduce([CycleInfo(new_time, car_updates)])
+        all_updates = allreduce([CycleInfo(local_min_offset, local_updates)])
         current_offset = min((up.time for up in all_updates if up.time is not None), default=None)
 
         for up in all_updates:
