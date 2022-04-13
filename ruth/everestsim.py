@@ -69,16 +69,25 @@ def main_cycle(vehicles,
 
         car_updates = []
         new_time = None
+        new_vehicles = []
         for vehicle in vehicles:
             if current_offset == vehicle.time_offset:
-                advance_vehicle(vehicle, n_samples, k_routes, departure_time, gv)
-                car_updates.append((vehicle.id, vehicle.leap_history))
-            if vehicle.active:
-                if new_time is None:
-                    new_time = vehicle.time_offset
-                else:
-                    new_time = min(new_time, vehicle.time_offset)
+                gv_near_future = 200 # 200m look ahead; make a parameter
+                new_vehicle = advance_vehicle(vehicle, departure_time, k_routes, gv, gv_near_future, n_samples)
+                car_updates.append((new_vehicle.id, new_vehicle.leap_history))
+            else:
+                new_vehicle = vehicle
 
+            if new_vehicle.active:
+                if new_time is None:
+                    new_time = new_vehicle.time_offset
+                else:
+                    new_time = min(new_time, new_vehicle.time_offset)
+            new_vehicles.append(new_vehicle)
+
+        vehicles = new_vehicles
+
+        # update global view
         all_updates = allreduce([CycleInfo(new_time, car_updates)])
         current_offset = min((up.time for up in all_updates if up.time is not None), default=None)
 
@@ -87,6 +96,7 @@ def main_cycle(vehicles,
                 gv.add(vehicle_id, lhu)
 
         step += 1
+
     return gv
 
 
