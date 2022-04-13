@@ -75,6 +75,7 @@ def main_cycle(vehicles,
                 gv_near_future = 200 # 200m look ahead; make a parameter
                 new_vehicle = advance_vehicle(vehicle, departure_time, k_routes, gv, gv_near_future, n_samples)
                 car_updates.append((new_vehicle.id, new_vehicle.leap_history))
+                new_vehicle.leap_history = []
             else:
                 new_vehicle = vehicle
 
