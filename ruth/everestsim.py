@@ -44,12 +44,13 @@ class CycleInfo:
 
 def main_cycle(vehicles,
                departure_time,
-             k_routes,
-             n_samples,
-             seed,
-             gv_update_period,
-             intermediate_results,
-             checkpoint_period):
+               k_routes,
+               n_samples,
+               seed,
+               gv_update_period,
+               intermediate_results,
+               checkpoint_period):
+
     if intermediate_results is not None:
         intermediate_results = os.path.abspath(intermediate_results)
 
