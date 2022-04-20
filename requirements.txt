@@ -1,4 +1,5 @@
-py-probduration @ git+ssh://git@code.it4i.cz/everest/py-probduration.git@refined-duration
+py-probduration @ git+https://project_1143_bot:glpat-QdQC3BdsxSKr7zZnQ2vt@code.it4i.cz/everest/py-probduration.git
+evkit @ git+https://project_1281_bot:glpat-yhU_xHPPqi72ryGWxzwF@code.it4i.cz/everest/evkit.git@comm
 osmnx
 lazy-object-proxy
 redis
