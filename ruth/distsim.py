@@ -9,6 +9,7 @@ from copy import copy
 from dask.distributed import Client
 from dataclasses import asdict
 from datetime import timedelta
+from networkx.exception import NetworkXNoPath
 
 from probduration import HistoryHandler, Route, SegmentPosition, probable_duration
 
@@ -134,7 +135,12 @@ def advance_vehicle(vehicle_, departure_time, k_routes, gv, gv_distance, nsample
     gv_db = GlobalViewDb(gv)
 
     # advance the vehicle on the driving route
-    osm_route, driving_route = ptdr(vehicle, dt, k_routes, gv_db, gv_distance, prob_profile_db, nsamples)
+    best_route = ptdr(vehicle, dt, k_routes, gv_db, gv_distance, prob_profile_db, nsamples)
+    if best_route is None:
+        vehicle.active = False
+        return vehicle
+
+    osm_route, driving_route = best_route
 
     # update the current route
     vehicle.set_current_route(osm_route)
@@ -240,7 +246,10 @@ def route_rank(driving_route, departure_time, gv_db, gv_distance: float, prob_pr
 
 
 def ptdr(vehicle, departure_time, k_routes, gv_db, gv_distance, prob_profile_db, nsamples):
-    osm_routes = vehicle.k_shortest_paths(k_routes)  # TODO: unify usage of _path_ and _route_ terms
+    try:
+        osm_routes = vehicle.k_shortest_paths(k_routes)  # TODO: unify usage of _path_ and _route_ terms
+    except (NetworkXNoPath):
+        return None
     possible_driving_routes = list(
         map(lambda osm_route: Route(osm_route_to_segments(osm_route, vehicle.routing_map),
                                     vehicle.frequency),
