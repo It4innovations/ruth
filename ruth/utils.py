@@ -1,15 +1,22 @@
 import osmnx as ox
-
 from probduration import Segment
+
 from .data.map import Map
-from .data.cz import Boundary
+from .data.border import Border, BorderType, PolygonBorderDef
 
-boundary = Boundary()  # NOTE: ok as loading is lazy
+def get_map(polygon: str,
+            kind: BorderType,
+            name=None,
+            on_disk=False,
+            with_speeds=False,
+            data_dir="./data",
+            load_from_cache=True):
 
+    """Get map based on polygon."""
+    border_def = PolygonBorderDef(polygon)
+    border_kind = BorderType.parse(kind)
+    border = Border(f"custom_{hash(boder_def)}", border_def, border_kind, data_dir, load_from_cache)
 
-def get_map(border_id, with_speeds=False):
-    """Get map based on border id."""
-    border = getattr(boundary, border_id)
     return Map(border, with_speeds=with_speeds)
 
 

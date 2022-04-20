@@ -30,6 +30,8 @@ class Vehicle:
     origin_node: int = set_numpy_type("int64")
     dest_node: int = set_numpy_type("int64")
     border_id: str = set_numpy_type("string")
+    border: str = set_numpy_type("string")  # polygon definition
+    border_kind: str = set_numpy_type("string")
     osm_route: List[int] = set_numpy_type("object")
     active: bool = set_numpy_type("bool")
     """A period in wicht the raw FCD data are sampled"""
@@ -42,7 +44,8 @@ class Vehicle:
     def __post_init__(self):
         # NOTE: the routing map is not among attributes of dataclass
         # => does not affect the conversion to pandas.Series
-        self.routing_map = get_map(self.border_id, with_speeds=True)
+        self.routing_map = get_map(self.border, self.border_kind,
+                                   with_speeds=True, name=self.border_id)
 
         if not self.osm_route:  # empty route
             # NOTE: set dummy route consisted only from the origin and destination nodes.

@@ -9,12 +9,21 @@ from tqdm import tqdm
 
 from .vehicle import Vehicle
 from .data.geopoint import GeoPoint
+from .data.border import PolygonBorderDef
 from .utils import get_map
 
 
+# TODO: this method should be removed completely
 def assign_border(df: pd.DataFrame) -> pd.DataFrame:
-    # TODO: identify the border based on start and end GPS
-    df["border_id"] = "CZ010"
+    if "border" in df.columns:
+        df["border_id"] = df.border.apply(lambda b: f"custom_{hash(PolygonBorderDef(b))}")
+    else:
+        # default for antarex benchmark
+        df["border_id"] = "CZ010" # TODO: get rid of this
+        df["border"] = None
+
+    df["border_kind"] = "district"
+
     return df
 
 
@@ -57,7 +66,7 @@ def _compute_osm_nodes(row):
     start_ = GeoPoint(lat_from, lon_from).point()
     end_ = GeoPoint(lat_to, lon_to).point()
 
-    routing_map = get_map(row["border_id"])
+    routing_map = get_map(row["border"], row["border_kind"], name=row["border_id"])
     starting_node = ox.distance.nearest_nodes(
         routing_map.network, start_.x, start_.y)
     destination_node = ox.distance.nearest_nodes(

@@ -8,6 +8,9 @@ from lazy_object_proxy import Proxy as LazyProxy
 import geopandas as gpd
 from osmnx import geocode_to_gdf
 from shapely.geometry import Polygon
+import shapely.wkt
+from shapely.errors import WKTReadingError
+
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
@@ -26,19 +29,87 @@ class BorderType(Enum):
     def admin_level(self):
         return self.value
 
+    @classmethod
+    def parse(cls, kind):
+        kind_ = kind.lower()
+        if kind_ == "country":
+            return BorderType.COUNTRY
+        elif kind_ == "county":
+            return BorderType.COUNTY
+        elif kind_ == "district":
+            return BorderType.DISTRICT
+        elif kind_ == "town":
+            return BorderType.TOWN
+        else:
+            raise ValueError(f"Invalid kind: '{kind}'."
+                             " Allowed values are: 'country', 'county', 'district', and 'town'.")
+
+
+class BorderDefinition:
+
+    def __eq__(self, other):
+        raise NotImplementedError("Subclasses should implement this!")
+
+    def __hash__(self):
+        raise NotImplementedError("Subclasses should implement this!")
+
+    def load(self):
+        raise NotImplementedError("Subclasses should implement the data loading method!")
+
+
+class GeocodeBorderDef(BorderDefinition):
+
+    def __init__(self, geocode: dict):
+        self.geocode = geocode
+
+    def __eq__(self, other):
+        return self._get_sorted_tuple() == other._get_sorted_tuple()
+
+    def __hash__(self):
+        return hash(self._get_sorted_tuple())
+
+    def _get_sorted_tuple(self):
+        # get unique representation of the dictionary
+        return tuple(sorted(self.geocode.items(), key=lambda kv: kv[0]))
+
+    def load(self):
+        cl.info(f"Loading data for '{self.name}' via the OSM API.")
+        return geocode_to_gdf(self.geocode)
+
+
+class PolygonBorderDef(BorderDefinition):
+
+    def __init__(self, polygon: str):
+        try:
+            self.polygon = None if polygon is None else shapely.wkt.loads(polygon)
+        except WKTReadingError as e:
+            cl.error(f"Invalid polygon format: '{polygon}'")
+            raise e
+
+    def __eq__(self, other):
+        return self.polygon == other.polygon
+
+    def __hash__(self):
+        if self.polygon is None:
+            return -1
+        return hash(self.polygon.wkt)
+
+    def load(self):
+        return gpd.GeoSeries(self.polygon)
+
 
 class Border(metaclass=Singleton):
     def __init__(
         self,
         name: str,
-        geocode: dict,
+        border_def: BorderDefinition,
         kind: BorderType,
         data_dir,
         load_from_cache,
     ):
 
         self.name = name
-        self.geocode = geocode
+        self.border_def = border_def
         self.kind = kind
         self.file_path = Path(os.path.join(data_dir, f"{name}.geojson"))
 
@@ -47,15 +118,14 @@ class Border(metaclass=Singleton):
 
         if not os.path.exists(data_dir):
             os.mkdir(data_dir)
+
         self.data = self._load(load_from_cache)
 
     def __eq__(self, other):
-        return self.name == other.name and self.geocode == other.geocode and self.kind == other.kind
+        return self.name == other.name and self.border_def == other.border_def and self.kind == other.kind
 
     def __hash__(self):
-        return hash((self.name,
-                     tuple(sorted(self.geocode.items(), key=lambda kv: kv[0])),
-                     self.kind))
+        return hash((self.name, self.border_def, self.kind))
 
     @property
     def super_area(self):
@@ -134,19 +204,19 @@ class Border(metaclass=Singleton):
         return ax
 
     def _load(self, load_from_cache):  # TODO: load asynchrnously
+
         def load_from_file():
             cl.info(f"Loading data for '{self.name}' from localy stored data.")
             return gpd.read_file(self.file_path, driver="GeoJSON"),
 
-        def download_from_rest_api():
-            cl.info(f"Loading data for '{self.name}' via the OSM API.")
-            data = geocode_to_gdf(self.geocode)
+        def download_based_on_border_def():
+            data = self.border_def.load()
             self._store(data)
             return data
 
         if os.path.exists(self.file_path) and load_from_cache:
             return LazyProxy(load_from_file)  # TODO: store driver info in a config
-        return LazyProxy(download_from_rest_api)
+        return LazyProxy(download_based_on_border_def)
 
     def _store(self, data):
         if data is not None:

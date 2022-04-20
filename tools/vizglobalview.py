@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 from datetime import timedelta
 
 from ruth.globalview import GlobalView
-from ruth.data.cz import Boundary
 from ruth.data.map import Map
 from ruth import utils
 
@@ -27,11 +26,18 @@ def parse_segment_nodes(segment_id):
 @click.command()
 @click.argument("gv_path", type=click.Path(exists=True))
 @click.argument("border_id", type=str)
+@click.argument("border_kind", type=str)
 @click.argument("start_offset_s", type=int)
 @click.option("--tolerance_s", type=int, default=1, help="+- tolerance from the particular time stamp")
 @click.option("--bullet_size_factor", type=int, default=1)
 @click.option("--out", type=click.Path(), default="out.png")
-def viz(gv_path: str, border_id: str, start_offset_s: int, tolerance_s: int, bullet_size_factor, out: str):
+def viz(gv_path: str,
+        border_id: str,
+        border_kind: str,
+        start_offset_s: int,
+        tolerance_s: int,
+        bullet_size_factor, out: str):
+
     df = pd.read_pickle(gv_path)
     gv = GlobalView(data=df)
 
@@ -48,8 +54,8 @@ def viz(gv_path: str, border_id: str, start_offset_s: int, tolerance_s: int, bul
     print(unique)
     unique_ids = list(map(lambda v: v[0], unique))
 
-    b = Boundary()
-    m = utils.get_map(border_id)
+    # works only for alrady downloaded and stored data
+    m = utils.get_map(None, border_kind, name=border_id)
 
     fig, ax = ox.plot_graph(m.network, show=False)
 
