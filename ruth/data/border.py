@@ -79,7 +79,9 @@ class GeocodeBorderDef(BorderDefinition):
 
 class PolygonBorderDef(BorderDefinition):
 
-    def __init__(self, polygon: str):
+    def __init__(self, polygon: str, on_disk=False):
+        self.on_disk = on_disk
+
         try:
             self.polygon = None if polygon is None else shapely.wkt.loads(polygon)
         except WKTReadingError as e:
@@ -95,6 +97,11 @@ class PolygonBorderDef(BorderDefinition):
         return hash(self.polygon.wkt)
 
     def load(self):
+        if self.on_disk and polygon is None:
+            # fails if not present on the disk
+            raise Error("The data should be loaded from the disk. "
+                        "If not provide exisiting name of the border.")
+
         return gpd.GeoSeries(self.polygon)
 
 

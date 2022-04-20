@@ -13,9 +13,10 @@ def get_map(polygon: str,
             load_from_cache=True):
 
     """Get map based on polygon."""
-    border_def = PolygonBorderDef(polygon)
+    border_def = PolygonBorderDef(polygon, on_disk=on_disk)
     border_kind = BorderType.parse(kind)
-    border = Border(f"custom_{hash(boder_def)}", border_def, border_kind, data_dir, load_from_cache)
+    name_ = name if name is not None else f"custom_{hash(boder_def)}"
+    border = Border(name, border_def, border_kind, data_dir, load_from_cache)
 
     return Map(border, with_speeds=with_speeds)
 

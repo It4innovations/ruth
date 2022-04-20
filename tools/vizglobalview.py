@@ -55,7 +55,7 @@ def viz(gv_path: str,
     unique_ids = list(map(lambda v: v[0], unique))
 
     # works only for alrady downloaded and stored data
-    m = utils.get_map(None, border_kind, name=border_id)
+    m = utils.get_map(None, border_kind, name=border_id, on_disk=True)
 
     fig, ax = ox.plot_graph(m.network, show=False)
 
