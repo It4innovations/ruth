@@ -6,7 +6,7 @@ import pandas as pd
 @click.command()
 @click.argument("in-path", type=click.Path(exists=True))
 @click.argument("n-times", type=int)
-@click.option("--out", type=str, default="out-extend.pickle")
+@click.option("--out", type=str, default="out-extend.csv")
 def extend(in_path, n_times, out):
     out_path = os.path.abspath(out)
     df = pd.read_csv(in_path, delimiter=";")
