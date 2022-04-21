@@ -6,10 +6,10 @@ import pandas as pd
 
 @click.command()
 @click.argument("global_view", type=click.Path(exists=True))
-@click.option("--out", type=str, default="out.pickle")
+@click.option("--out", type=str, default="out.parquet")
 def main(global_view, out):
     out_path = os.path.abspath(out)
-    df = pd.read_pickle(global_view)
+    df = pd.read_parquet(global_view, engine="fastparquet")
     index_columns = df.index.names
 
     df.reset_index(inplace=True)
@@ -25,4 +25,4 @@ def main(global_view, out):
     df.set_index(index_columns, inplace=True)
     df.sort_index(inplace=True)
 
-    df.to_pickle(out_path)
+    df.to_parquet(out_path, engine="fastparquet")

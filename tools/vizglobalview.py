@@ -38,7 +38,7 @@ def viz(gv_path: str,
         tolerance_s: int,
         bullet_size_factor, out: str):
 
-    df = pd.read_pickle(gv_path)
+    df = pd.read_parquet(gv_path, engine="fastparquet")
     gv = GlobalView(data=df)
 
     df_ni = df.reset_index()

@@ -8,3 +8,5 @@ dask
 distributed
 bokeh
 scikit-learn
+pyarrow
+fastparquet

@@ -101,7 +101,7 @@ run_simulator = click.Group()
               type=int,
               default=8786,
               help="A port of the dask scheduler.")
-@click.option("--out", type=str, default="out.pickle")
+@click.option("--out", type=str, default="out.parquet")
 @click.option("--intermediate-results",
               type=click.Path(),
               help="A path to the folder with intermediate results.")
@@ -157,7 +157,7 @@ def generic(input_benchmark_data,
               type=int,
               default=10,
               help="An 'n' consecutive steps performed between update of the global view.")
-@click.option("--out", type=str, default="out.pickle")
+@click.option("--out", type=str, default="out.parquet")
 @click.option("--intermediate-results",
               type=click.Path(),
               help="A path to the folder with intermediate results.")

@@ -79,7 +79,7 @@ class GlobalView:
         return los if los == float("inf") else 1.0 - los
 
     def store(self, path):
-        self.data.to_pickle(path)
+        self.data.to_parquet(path, engine="fastparquet")
 
     def load(self, path):
         pass # TODO: implement laoading maybe as param of init

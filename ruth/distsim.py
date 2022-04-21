@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def load_vehicles(input_path: str):
     logger.info("Loading data ... %s", input_path)
-    df = pd.read_pickle(input_path)
+    df = pd.read_parquet(input_path, engine="fastparquet")
     return [Vehicle(**row.to_dict()) for (_, row) in df.iterrows()]
 
 
