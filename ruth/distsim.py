@@ -15,6 +15,7 @@ from probduration import HistoryHandler, Route, SegmentPosition, probable_durati
 from ruth.utils import osm_route_to_segments
 from ruth.vehicle import Vehicle
 from ruth.globalview import GlobalView
+from ruth.losdb import ProbProfileDb, GlobalViewDb, FreeFlowDb
 
 
 logger = logging.getLogger(__name__)
@@ -98,16 +99,16 @@ def simulate(input_path: str,
                 leap_history += lh_update
             return leap_history
 
-        # leap_history_update = vehicles.reduction(
-        #     process_leap_history,
-        #     join_leap_histories
-        # ).compute()
+        leap_history_update = vehicles.reduction(
+            process_leap_history,
+            join_leap_histories
+        ).compute()
 
-        # if leap_history_update: # update only if there is data
-        #     for vehicle_id, lhu in leap_history_update:
-        #         gv.add(vehicle_id, lhu)
+        if leap_history_update: # update only if there is data
+            for vehicle_id, lhu in leap_history_update:
+                gv.add(vehicle_id, lhu)
 
-        #     dist_gv = c.scatter(gv, broadcast=True)
+            dist_gv = c.scatter(gv, broadcast=True)
 
         def clear_leap_history(vehicle):
             data = asdict(vehicle)
@@ -127,10 +128,13 @@ def advance_vehicle(vehicle_, departure_time, k_routes, gv, gv_distance, nsample
     vehicle = Vehicle(**asdict(vehicle_))  # make a copy of vehicle as the functions should be stateless
 
     dt = departure_time + vehicle.time_offset
-    prob_profiles = HistoryHandler.no_limit()  # TODO: history get here or take as an argument?
+
+    # LoS databases
+    prob_profile_db = ProbProfileDb(HistoryHandler.no_limit())  # TODO: history get here or take as an argument?
+    gv_db = GlobalViewDb(gv)
 
     # advance the vehicle on the driving route
-    osm_route, driving_route = ptdr(vehicle, dt, k_routes, gv, gv_distance, prob_profiles, nsamples)
+    osm_route, driving_route = ptdr(vehicle, dt, k_routes, gv_db, gv_distance, prob_profile_db, nsamples)
 
     # update the current route
     vehicle.set_current_route(osm_route)
@@ -138,7 +142,7 @@ def advance_vehicle(vehicle_, departure_time, k_routes, gv, gv_distance, nsample
 
     if vehicle.segment_position.index < len(driving_route):
         segment = driving_route[vehicle.segment_position.index]
-        los = gv.level_of_service_in_time_at_segment(dt, segment, tolerance=timedelta(seconds=15))
+        los = gv_db.get(dt, segment)
     else:
         los = 1.0  # the end of the route
 
@@ -147,7 +151,7 @@ def advance_vehicle(vehicle_, departure_time, k_routes, gv, gv_distance, nsample
         time = dt + vehicle.frequency
         vehicle.time_offset += vehicle.frequency
     else:
-        time, segment_pos = driving_route.advance(
+        time, segment_pos, _ = driving_route.advance(
             vehicle.segment_position, dt, los)
         d = time - dt
 
@@ -168,23 +172,23 @@ def advance_vehicle(vehicle_, departure_time, k_routes, gv, gv_distance, nsample
     return vehicle
 
 
-def distance_duration(driving_route, departure_time, stop_ditance, los_db): # TODO: implement los db
+def distance_duration(driving_route, departure_time, stop_distance, los_db):
     # TODO: corner case what if the stop distance is longer than the entire route
 
     distance = 0.0
-    p = SegmentPositin(0, 0.0)
+    p = SegmentPosition(0, 0.0)
     dt = departure_time
     level_of_services = []
 
     while distance < stop_distance:
         seg = driving_route[p.index]
-        los = los_db.get(dt, seg)
+        los = los_db.get(dt, seg, random.random())
 
         if los == float("inf"):  # stucks in traffic jam; not moving
             return (float("inf"), None, None)
 
-        time, next_segment_pos  = driving_route.advance(p, dt, los)
-        d = time - departure_time
+        time, next_segment_pos, assigned_speed_mps  = driving_route.advance(p, dt, los)
+        d = time - dt
 
         if p.index == next_segment_pos.index:
             # movement on the same segment
@@ -197,15 +201,16 @@ def distance_duration(driving_route, departure_time, stop_ditance, los_db): # TO
         if distance > stop_distance:
             # round down to the stop distance
 
-            # deacrease the segment
+            # deacrease the distance
             dd = distance - stop_distance
             if next_segment_pos.start - dd < 0:
-                segment_pos = SegmentPosition(p.index, seg.length + (next_segment.start - dd))
+                next_segment_pos = SegmentPosition(p.index, seg.length + (next_segment_pos.start - dd))
             else:
-                segment_pos.start -= dd
+                next_segment_pos.start -= dd
 
-            # deacrease the duration => I need to know the last assigned speed
-            # TODO:
+            # deacrease the duration by overpass time
+            over_duration = dd / assigned_speed_mps
+            d -= timedelta(seconds=over_duration)
 
         level_of_services.append(los)
         dt += d
@@ -215,31 +220,26 @@ def distance_duration(driving_route, departure_time, stop_ditance, los_db): # TO
     return (dt - departure_time, p, sum(level_of_services) / len(level_of_services)) # TODO: is average ok?
 
 
-def route_rank(driving_route, departure_time, gv, gv_distance: float, prob_profiles, nsamples):
+def route_rank(driving_route, departure_time, gv_db, gv_distance: float, prob_profile_db, nsamples):
     """The smaller the rank the better."""
 
-    return 1.0
+    # driving by global view
+    dur_ff, _, _ = distance_duration(driving_route, departure_time, gv_distance, FreeFlowDb())
+    dur, continue_pos, avg_los = distance_duration(driving_route, departure_time, gv_distance, gv_db)
 
-    # TODO --- uncoment when los db will be implemented
+    if avg_los == float("inf"):
+        return float("inf")
 
-    # p = SegmentPosition(0, 0.0)
-    # dt = departure_time
+    gv_delay = dur - dur_ff
+    probable_delay = probable_duration(driving_route, continue_pos, departure_time + gv_delay, prob_profile_db.prob_profiles, nsamples)
 
-    # # driving by global view
-    # dur_ff, _, _ = distance_duration(driving_route, dt, gv_distance, None) # TODO: exchange free flow for db
-    # dur, continue_pos, avg_los = distance_duration(driving_route, dt, gv_distance, None) # TODO: exchange for global view
-
-    # if avg_los == float("inf"):
-    #     return float("inf")
-
-    # gv_delay = dur - dur_ff
-    # probable_delay = pobable_duration(driving_route, continue_pos, dt + gv_delay, prob_profiles, nsamples)
-
-    # # NOTE: the more the avg_los will be close to zero the more the probable delay will be prolonged
-    # return gv_delay + probable_delay / (1 - avg_los)
+    if avg_los < 1.0:
+        # NOTE: the more the avg_los will be close to zero the more the probable delay will be prolonged
+        return gv_delay + probable_delay / (1.0 - avg_los)
+    return gv_delay + probable_delay
 
 
-def ptdr(vehicle, departure_time, k_routes, gv, gv_distance, prob_profiles, nsamples):
+def ptdr(vehicle, departure_time, k_routes, gv_db, gv_distance, prob_profile_db, nsamples):
     osm_routes = vehicle.k_shortest_paths(k_routes)  # TODO: unify usage of _path_ and _route_ terms
     possible_driving_routes = list(
         map(lambda osm_route: Route(osm_route_to_segments(osm_route, vehicle.routing_map),
@@ -249,7 +249,7 @@ def ptdr(vehicle, departure_time, k_routes, gv, gv_distance, prob_profiles, nsam
     # pick the driving route with the smallest deylay
     if len(possible_driving_routes) > 1:
         ranks = map(lambda driving_route: route_rank(
-            driving_route, departure_time, gv, gv_distance, prob_profiles, nsamples), possible_driving_routes)
+            driving_route, departure_time, gv_db, gv_distance, prob_profile_db, nsamples), possible_driving_routes)
         indexed_ranks = sorted(enumerate(ranks), key=lambda indexed_rank: indexed_rank[1])
 
         best_route_index, _ = indexed_ranks[0]
