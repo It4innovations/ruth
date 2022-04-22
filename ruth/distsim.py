@@ -187,6 +187,9 @@ def distance_duration(driving_route, departure_time, stop_distance, los_db):
     level_of_services = []
 
     while distance < stop_distance:
+        if p.index >= len(driving_route):
+            break
+
         seg = driving_route[p.index]
         los = los_db.get(dt, seg, random.random())
 
@@ -223,7 +226,12 @@ def distance_duration(driving_route, departure_time, stop_distance, los_db):
         p = next_segment_pos
 
         # duration, next segment position, average level of service
-    return (dt - departure_time, p, sum(level_of_services) / len(level_of_services)) # TODO: is average ok?
+
+    if len(level_of_services) == 0:
+        return (float("inf"), None, None)
+
+    avg_los = sum(level_of_services) / len(level_of_services)
+    return (dt - departure_time, p, avg_los) # TODO: is average ok?
 
 
 def route_rank(driving_route, departure_time, gv_db, gv_distance: float, prob_profile_db, nsamples):
