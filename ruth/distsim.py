@@ -233,8 +233,8 @@ def route_rank(driving_route, departure_time, gv_db, gv_distance: float, prob_pr
     dur_ff, _, _ = distance_duration(driving_route, departure_time, gv_distance, FreeFlowDb())
     dur, continue_pos, avg_los = distance_duration(driving_route, departure_time, gv_distance, gv_db)
 
-    if avg_los == float("inf"):
-        return float("inf")
+    if dur == float("inf"):
+        return timedelta.max
 
     gv_delay = dur - dur_ff
     probable_delay = probable_duration(driving_route, continue_pos, departure_time + gv_delay, prob_profile_db.prob_profiles, nsamples)
