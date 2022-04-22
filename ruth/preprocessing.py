@@ -22,7 +22,7 @@ def assign_border(df: pd.DataFrame) -> pd.DataFrame:
         df["border_id"] = "CZ010" # TODO: get rid of this
         df["border"] = None
 
-    df["border_kind"] = "district"
+    df["border_kind"] = "county"
 
     return df
 
