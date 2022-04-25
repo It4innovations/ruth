@@ -1,36 +1,14 @@
 
-import logging
-import sys
-import pandas as pd
-import random
-from datetime import timedelta
-
-from evkit.comm import allreduce, distribute, init
-
-from ruth.distsim import load_vehicles, advance_vehicle
-from ruth.vehicle import Vehicle
-from probduration import HistoryHandler, Route, probable_duration
-from ruth.utils import osm_route_to_segments
-
-
-logger = logging.getLogger(__name__)
-
-
 """A distributed traffic simulator."""
 
 import logging
 import os
 import random
-import pandas as pd
-import evkit.dask.bag as db
-from copy import copy
-from dask.distributed import Client
-from dataclasses import asdict, dataclass
+from datetime import timedelta
+from dataclasses import dataclass
+from evkit.comm import allreduce, distribute, init
 
-from probduration import HistoryHandler, Route, SegmentPosition, probable_duration
-
-from ruth.utils import osm_route_to_segments
-from ruth.vehicle import Vehicle
+from ruth.distsim import load_vehicles, advance_vehicle
 from ruth.globalview import GlobalView
 
 
