@@ -11,7 +11,7 @@ from dataclasses import asdict
 from datetime import timedelta
 from networkx.exception import NetworkXNoPath
 
-from probduration import HistoryHandler, Route, SegmentPosition, probable_duration
+from probduration import HistoryHandler, Route, SegmentPosition, probable_delay
 
 from ruth.utils import osm_route_to_segments
 from ruth.vehicle import Vehicle
@@ -245,12 +245,12 @@ def route_rank(driving_route, departure_time, gv_db, gv_distance: float, prob_pr
         return timedelta.max
 
     gv_delay = dur - dur_ff
-    probable_delay = probable_duration(driving_route, continue_pos, departure_time + gv_delay, prob_profile_db.prob_profiles, nsamples)
+    prob_delay = probable_delay(driving_route, continue_pos, departure_time + gv_delay, prob_profile_db.prob_profiles, nsamples)
 
     if avg_los < 1.0:
         # NOTE: the more the avg_los will be close to zero the more the probable delay will be prolonged
-        return gv_delay + probable_delay / (1.0 - avg_los)
-    return gv_delay + probable_delay
+        return gv_delay + prob_delay / (1.0 - avg_los)
+    return gv_delay + prob_delay
 
 
 def ptdr(vehicle, departure_time, k_routes, gv_db, gv_distance, prob_profile_db, nsamples):
