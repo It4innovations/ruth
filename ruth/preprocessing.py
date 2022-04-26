@@ -16,7 +16,7 @@ from .utils import get_map
 # TODO: this method should be removed completely
 def assign_border(df: pd.DataFrame) -> pd.DataFrame:
     if "border" in df.columns:
-        df["border_id"] = df.border.apply(lambda b: f"custom_{hash(PolygonBorderDef(b))}")
+        df["border_id"] = df.border.apply(lambda b: f"custom_{PolygonBorderDef(b).md5()}")
     else:
         # default for antarex benchmark
         df["border_id"] = "CZ010" # TODO: get rid of this

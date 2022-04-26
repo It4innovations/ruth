@@ -4,6 +4,7 @@ from pathlib import Path
 from functools import reduce
 from typing import Optional, List
 from lazy_object_proxy import Proxy as LazyProxy
+from hashlib import md5
 
 import geopandas as gpd
 from osmnx import geocode_to_gdf
@@ -47,10 +48,13 @@ class BorderType(Enum):
 
 class BorderDefinition:
 
+    def __hash__(self):
+        return hash(f"{self.md5()}")
+
     def __eq__(self, other):
         raise NotImplementedError("Subclasses should implement this!")
 
-    def __hash__(self):
+    def md5(self):
         raise NotImplementedError("Subclasses should implement this!")
 
     def load(self):
@@ -62,11 +66,14 @@ class GeocodeBorderDef(BorderDefinition):
     def __init__(self, geocode: dict):
         self.geocode = geocode
 
+    def __hash__(self):
+        return super().__hash__()
+
     def __eq__(self, other):
         return self._get_sorted_tuple() == other._get_sorted_tuple()
 
-    def __hash__(self):
-        return hash(self._get_sorted_tuple())
+    def md5(self):
+        return md5(repr(self._get_sorted_tuple()).encode('UTF-8')).hexdigest()
 
     def _get_sorted_tuple(self):
         # get unique representation of the dictionary
@@ -88,13 +95,16 @@ class PolygonBorderDef(BorderDefinition):
             cl.error(f"Invalid polygon format: '{polygon}'")
             raise e
 
+    def __hash__(self):
+        return super().__hash__()
+
     def __eq__(self, other):
         return self.polygon == other.polygon
 
-    def __hash__(self):
+    def md5(self):
         if self.polygon is None:
             return -1
-        return hash(self.polygon.wkt)
+        return md5(self.polygon.wkt.encode('UTF-8')).hexdigest()
 
     def load(self):
         if self.on_disk and polygon is None:
