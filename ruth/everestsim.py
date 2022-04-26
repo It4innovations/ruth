@@ -60,7 +60,8 @@ def main_cycle(vehicles,
     step = 0
     current_offset = timedelta(seconds=0)
     while current_offset is not None:
-        logger.info("Starting step %s", step)
+        allowed_vehicles = len(list(filter(lambda v: v.active and current_offset == v.time_offset, vehicles)))
+        logger.info(f"Starting step {step} with {allowed_vehicles} vehicles")
 
         gv_near_future = 200 # 200m look ahead; TODO: make a paramter
         vehicles, leap_histories = zip(*map(lambda v: update_vehicle(v,
