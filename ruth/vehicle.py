@@ -1,5 +1,6 @@
 """The state less implementation of a vehicle."""
 
+import sys
 import pandas as pd
 import numpy as np
 
@@ -7,6 +8,7 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Tuple
 from datetime import timedelta, datetime
 from probduration import SegmentPosition
+from networkx.exception import NodeNotFound
 
 from .utils import get_map
 
@@ -95,10 +97,12 @@ class Vehicle:
         current_starting_node, segment_index = \
             self.next_routing_start_node_with_index
 
-        osm_routes = self.routing_map.k_shortest_patshs(
-            current_starting_node, self.dest_node, k)
-
-        return list(map(lambda osm_route: self.osm_route[:segment_index] + osm_route, osm_routes))
+        try:
+            osm_routes = self.routing_map.k_shortest_patshs(current_starting_node, self.dest_node, k)
+            return [self.osm_route[:segment_index] + osm_route for osm_route in osm_routes]
+        except NodeNotFound as ex:
+            print(f"vehicle: {self.id}: {ex}", file=sys.stderr)
+            return None
 
     def set_current_route(self, osm_route):
         """Set the current route."""

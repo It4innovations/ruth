@@ -256,6 +256,8 @@ def route_rank(driving_route, departure_time, gv_db, gv_distance: float, prob_pr
 def ptdr(vehicle, departure_time, k_routes, gv_db, gv_distance, prob_profile_db, nsamples):
     try:
         osm_routes = vehicle.k_shortest_paths(k_routes)  # TODO: unify usage of _path_ and _route_ terms
+        if osm_routes is None:
+            return None
     except (NetworkXNoPath):
         return None
     possible_driving_routes = list(
