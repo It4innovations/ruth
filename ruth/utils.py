@@ -1,5 +1,6 @@
 import osmnx as ox
 from probduration import Segment
+from datetime import timedelta
 
 from .data.map import Map
 from .data.border import Border, BorderType, PolygonBorderDef
@@ -35,3 +36,7 @@ def osm_route_to_segments(osm_route, routing_map):
         # NOTE: the zip is correct as the starting node_id is of the interest
         for i, ((from_, to_), data) in enumerate(zip(edges, edge_data))
     ]
+
+
+def round_timedelta(td: timedelta, freq: timedelta):
+    return freq * round(td / freq)
