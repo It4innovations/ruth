@@ -28,6 +28,13 @@ def load_vehicles(input_path: str):
     return [Vehicle(**row.to_dict()) for (_, row) in df.iterrows()]
 
 
+def save_vehicles(vehicles, output_path: str):
+    logger.info("Saving vehicles ... %s", output_path)
+
+    df = pd.DataFrame([asdict(v) for v in vehicles])
+    df.to_pickle(output_path)
+
+
 def simulate(input_path: str,
              scheduler: str,
              scheduler_port: int,
@@ -123,7 +130,7 @@ def simulate(input_path: str,
     return (gv, vehicles)
 
 
-def advance_vehicle(vehicle_, departure_time, k_routes, gv, gv_distance, nsamples=1):
+def advance_vehicle(vehicle_, osm_route, departure_time, gv, gv_distance, nsamples=1):
     """Advance a vehicle on a route."""
 
     vehicle = Vehicle(**asdict(vehicle_))  # make a copy of vehicle as the functions should be stateless
@@ -135,13 +142,14 @@ def advance_vehicle(vehicle_, departure_time, k_routes, gv, gv_distance, nsample
     gv_db = GlobalViewDb(gv)
 
     # advance the vehicle on the driving route
-    best_route = ptdr(vehicle, dt, k_routes, gv_db, gv_distance, prob_profile_db, nsamples)
-    if best_route is None:
-        vehicle.active = False
-        return vehicle
+    # best_route = ptdr(vehicle, dt, k_routes, gv_db, gv_distance, prob_profile_db, nsamples)
+    # if best_route is None:
+    #     vehicle.active = False
+    #     return vehicle
 
-    osm_route, driving_route = best_route
 
+    driving_route = Route(osm_route_to_segments(osm_route, vehicle.routing_map),
+                          vehicle.frequency)
     # update the current route
     vehicle.set_current_route(osm_route)
 
@@ -253,13 +261,17 @@ def route_rank(driving_route, departure_time, gv_db, gv_distance: float, prob_pr
     return gv_delay + prob_delay
 
 
-def ptdr(vehicle, departure_time, k_routes, gv_db, gv_distance, prob_profile_db, nsamples):
+def alternatives(vehicle, k):
     try:
-        osm_routes = vehicle.k_shortest_paths(k_routes)  # TODO: unify usage of _path_ and _route_ terms
+        osm_routes = vehicle.k_shortest_paths(k)  # TODO: unify usage of _path_ and _route_ terms
         if osm_routes is None:
-            return None
+            return (vehicle, None)
     except (NetworkXNoPath):
         return None
+
+    return (vehicle, osm_routes)
+
+def ptdr(vehicle, osm_routes, departure_time, gv_db, gv_distance, prob_profile_db, nsamples):
     possible_driving_routes = list(
         map(lambda osm_route: Route(osm_route_to_segments(osm_route, vehicle.routing_map),
                                     vehicle.frequency),
@@ -275,4 +287,4 @@ def ptdr(vehicle, departure_time, k_routes, gv_db, gv_distance, prob_profile_db,
     else:
         best_route_index = 0
 
-    return (osm_routes[best_route_index], possible_driving_routes[best_route_index])
+    return (vehicle, osm_routes[best_route_index])

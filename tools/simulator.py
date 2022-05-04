@@ -176,18 +176,19 @@ def everest(input_benchmark_data,
             checkpoint_period):
     """Generic command calling the simulator within dask environment."""
 
-    global_view = everest_simulate(input_benchmark_data,
-                                   departure_time,
-                                   k_routes,
-                                   n_samples,
-                                   seed,
-                                   gv_update_period,
-                                   intermediate_results,
-                                   checkpoint_period)
+    (global_view, step_info) = everest_simulate(input_benchmark_data,
+                                                departure_time,
+                                                k_routes,
+                                                n_samples,
+                                                seed,
+                                                gv_update_period,
+                                                intermediate_results,
+                                                checkpoint_period)
 
     out_path = os.path.abspath(out)
     global_view.store(out_path)
-
+    with open(f"step_info.csv", "w") as f:
+        f.write("\n".join(map(repr, step_info)))
 
 
 def main():
