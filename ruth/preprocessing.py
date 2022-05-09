@@ -56,6 +56,7 @@ def prepare_vehicle_state(df: pd.DataFrame) -> pd.DataFrame:
     # a history of a one leap, i.e., a series of smaller steps in simulation
     df["leap_history"] = np.empty((len(df), 0)).tolist()  # empty list
 
+    df["status"] = "not_started"
     return df[list(map(lambda field: field.name, fields(Vehicle)))]
 
 

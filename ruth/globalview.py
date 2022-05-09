@@ -12,6 +12,7 @@ class GlobalView:
     VEHICLE_ID = "vehicle_id"
     START_OFFSET = "start_offset_m"
     SPEED = "speed_mps"
+    STATUS = "status"
 
     def __init__(self, data=None):
         if data is None:
@@ -20,21 +21,25 @@ class GlobalView:
                 GlobalView.SEGMENT_ID: pd.Series(dtype="str"),
                 GlobalView.VEHICLE_ID: pd.Series(dtype="int64"),
                 GlobalView.START_OFFSET: pd.Series(dtype="float64"),
-                GlobalView.SPEED: pd.Series(dtype="float64")
+                GlobalView.SPEED: pd.Series(dtype="float64"),
+                GlobalView.STATUS: pd.Series(dtype="str")
             })
             self.data.set_index([GlobalView.TIMESTAMP, GlobalView.SEGMENT_ID], inplace=True)
         else:
             self.data = data
 
-    def add(self, car_id, hrs: List[Tuple[datetime, str, float, float]]):
+    def add(self, car_id, hrs: List[Tuple[datetime, str, float, float, str]]):
         midx = pd.MultiIndex.from_tuples(
             [(np.datetime64(dt, 's'), seg_id)
-             for dt, seg_id, _, _ in hrs],
+             for dt, seg_id, _, _, _ in hrs],
             names=[GlobalView.TIMESTAMP, GlobalView.SEGMENT_ID])
 
-        columns = [(car_id, start_offset, speed) for _, _, start_offset, speed in hrs]
+        columns = [(car_id, start_offset, speed, status) for _, _, start_offset, speed, status in hrs]
         new_data = pd.DataFrame(
-            columns, index=midx, columns=[GlobalView.VEHICLE_ID, GlobalView.START_OFFSET, GlobalView.SPEED])
+            columns, index=midx, columns=[GlobalView.VEHICLE_ID,
+                                          GlobalView.START_OFFSET,
+                                          GlobalView.SPEED,
+                                          GlobalView.STATUS])
 
         self.data = pd.concat([self.data, new_data])
         self.data.sort_index()

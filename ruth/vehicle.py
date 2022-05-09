@@ -42,6 +42,7 @@ class Vehicle:
     leap_history: List[Tuple[datetime, str, float, float]] = set_numpy_type("object")  # TODO: is it just a _leap_, isn't it the entire history? Maybe rename to raw_fcd
                                                                   #       well there are two things: 1) after each leap I need to make an aggregation and update global view
                                                                   #                                  2) collect raw fcds for latter aggregation and creating the prob profiles
+    status: str = set_numpy_type("string")
 
     def __post_init__(self):
         # NOTE: the routing map is not among attributes of dataclass
@@ -125,11 +126,11 @@ class Vehicle:
         while current_offset + self.fcd_sampling_period < end_offset:
             start += step_m
             current_offset += self.fcd_sampling_period
-            self.leap_history.append((current_offset, segment.id, start, speed_mps))
+            self.leap_history.append((current_offset, segment.id, start, speed_mps, self.status))
 
         step_m = speed_mps * ((end_offset - current_offset) / timedelta(seconds=1))
         # TODO: the question is wheather to store all the cars at the end of period or
         # rather return the difference (end_offset - _last_ current_offset) and take it as
         # a parameter for the next round of storing. In this way all the cars would be sampled
         # with an exact step (car dependent as each car can have its own sampling period)
-        self.leap_history.append((end_offset, segment.id, step_m, speed_mps))
+        self.leap_history.append((end_offset, segment.id, step_m, speed_mps, self.status))
