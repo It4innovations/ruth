@@ -43,15 +43,16 @@ class CycleInfo:
 class StepInfo:
     step: int
     n_active: int
+    gv_size: int
     time_for_alternatives: timedelta
     time_for_ptdr: timedelta
     time_for_advance: timedelta
 
     @staticmethod
-    def from_row(step, n_active, time_for_alternatives_s, time_for_ptdr_s, time_for_advance_s):
+    def from_row(step, n_active, gv_size, time_for_alternatives_s, time_for_ptdr_s, time_for_advance_s):
         time_for_ptdr = None if math.isnan(time_for_ptdr_s) else timedelta(seconds=time_for_ptdr_s)
         time_for_advance = None if math.isnan(time_for_advance_s) else timedelta(seconds=time_for_advance_s)
-        return StepInfo(step, n_active,
+        return StepInfo(step, n_active, gv_size,
                         timedelta(seconds=time_for_alternatives_s),
                         time_for_ptdr,
                         time_for_advance)
@@ -60,11 +61,11 @@ class StepInfo:
         sec = timedelta(seconds=1)
         time_for_ptdr = "" if self.time_for_ptdr is None else f"{self.time_for_ptdr / sec}"
         time_for_advance = "" if self.time_for_advance is None else f"{self.time_for_advance / sec}"
-        return f"{self.step};{self.n_active};{self.time_for_alternatives / sec};{time_for_ptdr};{time_for_advance}"
+        return f"{self.step};{self.n_active};{self.gv_size};{self.time_for_alternatives / sec};{time_for_ptdr};{time_for_advance}"
 
     def __str__(self):
         sec = timedelta(seconds=1)
-        return f"StepInfo(step={self.step}, active={self.n_active})"
+        return f"StepInfo(step={self.step}, active={self.n_active}, gv_size={self.gv_size})"
 
 
 def is_allowed(vehicle, current_offset, freq: timedelta):
@@ -166,19 +167,19 @@ def main_cycle(vehicles,
     round_freq = timedelta(seconds=gv_update_period)
 
 
-    # read the state
-    f_gv = "gv_walltime.parquet"
-    gv_df = None
+    # >> read the initial state
+    f_gv = "gv_walltime.pickle"
     if exists(f_gv):
-        gv_df = pd.read_parquet(f_gv, engine="fastparquet")
-    gv_db = GlobalViewDb(GlobalView(data=gv_df))
+        gv_history = GlobalView.load(f_gv)
+    else:
+        gv_history = GlobalView()
 
     f_step_info = "step_info_walltime.csv"
     step = 0
     step_info = []
     if exists(f_step_info):
         step_info_df = pd.read_csv(f_step_info, sep=';')
-        step_info_df.columns = ["step", "n_active", "time_for_alternatives_s", "time_for_ptdr_s", "time_for_advance_s"]
+        step_info_df.columns = ["step", "n_active", "gv_size", "time_for_alternatives_s", "time_for_ptdr_s", "time_for_advance_s"]
         step_info = [StepInfo.from_row(**row) for _, row in step_info_df.iterrows()]
         step = step_info[-1].step
 
@@ -186,10 +187,16 @@ def main_cycle(vehicles,
     if exists(f_vehicles):
         vehicles_df = pd.read_pickle(f_vehicles)
         vehicles = [Vehicle(**row.to_dict()) for (_, row) in vehicles_df.iterrows()]
+    # << end of reading the initial state
 
     process_count = 8
 
     current_offset = timedelta(seconds=0)
+    # keep the active globalview, i.e. with relevant records only
+    active_gv = GlobalView(gv_history.data[:])
+    active_gv.drop_old(departure_time + current_offset)
+
+    gv_db = GlobalViewDb(active_gv)
     with Pool(processes=process_count) as p:
         sim_start = datetime.now()
         walltime = timedelta(minutes=5)
@@ -289,13 +296,18 @@ def main_cycle(vehicles,
 
             # update global view
             for vehicle_id, lhu in updates:
+                gv_history.add(vehicle_id, lhu)
                 gv_db.gv.add(vehicle_id, lhu)
 
-            step_info.append(StepInfo(step, len(allowed_vehicles), time_for_alternatives, time_for_ptdr, time_for_advance))
+            # drop old records in active global view
+            if current_offset is not None:
+                gv_db.gv.drop_old(departure_time + current_offset)
+
+            step_info.append(StepInfo(step, len(allowed_vehicles), len(gv_db.gv), time_for_alternatives, time_for_ptdr, time_for_advance))
             logger.info(f"{step_info[-1]}")
 
             if datetime.now() - sim_start >= walltime and not walltime_saved:
-                gv_db.gv.store("gv_walltime.parquet")
+                gv_history.store("gv_walltime.pickle")
                 save_vehicles(vehicles, "vehicles_walltime.pickle")
                 with open(f"step_info_walltime.csv", "w") as f:
                     f.write("\n".join(map(repr, step_info)))

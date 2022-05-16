@@ -1,61 +1,34 @@
 import pandas as pd
 import numpy as np
+import operator
 from dataclasses import astuple
 from typing import List, Tuple
 from datetime import datetime, timedelta
+import pickle
+import random
 
 
 class GlobalView:
 
-    TIMESTAMP = "timestamp"
-    SEGMENT_ID = "segment_id"
-    VEHICLE_ID = "vehicle_id"
-    START_OFFSET = "start_offset_m"
-    SPEED = "speed_mps"
-    STATUS = "status"
-
     def __init__(self, data=None):
-        if data is None:
-            self.data = pd.DataFrame({
-                GlobalView.TIMESTAMP: pd.Series(dtype="datetime64[s]"),
-                GlobalView.SEGMENT_ID: pd.Series(dtype="str"),
-                GlobalView.VEHICLE_ID: pd.Series(dtype="int64"),
-                GlobalView.START_OFFSET: pd.Series(dtype="float64"),
-                GlobalView.SPEED: pd.Series(dtype="float64"),
-                GlobalView.STATUS: pd.Series(dtype="str")
-            })
-            self.data.set_index([GlobalView.TIMESTAMP, GlobalView.SEGMENT_ID], inplace=True)
-        else:
-            self.data = data
+        self.data = [] if data is None else data
 
-    def add(self, car_id, hrs: List[Tuple[datetime, str, float, float, str]]):
-        midx = pd.MultiIndex.from_tuples(
-            [(np.datetime64(dt, 's'), seg_id)
-             for dt, seg_id, _, _, _ in hrs],
-            names=[GlobalView.TIMESTAMP, GlobalView.SEGMENT_ID])
-
-        columns = [(car_id, start_offset, speed, status) for _, _, start_offset, speed, status in hrs]
-        new_data = pd.DataFrame(
-            columns, index=midx, columns=[GlobalView.VEHICLE_ID,
-                                          GlobalView.START_OFFSET,
-                                          GlobalView.SPEED,
-                                          GlobalView.STATUS])
-
-        self.data = pd.concat([self.data, new_data])
-        self.data.sort_index()
+    def add(self, vehicle_id, hrs):
+        rows = [(dt, seg_id, vehicle_id, start_offset, speed, status)
+               for dt, seg_id, start_offset, speed, status in hrs]
+        self.data += rows
 
     def vehicles_in_time_at_segment(self, datetime, segment_id, tolerance=None):
-        dt = np.datetime64(datetime, 's')
-        tolerance = np.timedelta64(tolerance if tolerance is not None else timedelta(seconds=0))
+        tolerance = tolerance if tolerance is not None else timedelta(seconds=0)
 
-        return self.data.query(f"{GlobalView.TIMESTAMP} >= '{dt - tolerance}' and "
-                               f"{GlobalView.TIMESTAMP} <= '{dt + tolerance}' and "
-                               f"{GlobalView.SEGMENT_ID} == '{segment_id}'")
+        return [(dt, seg_id, *rest) for dt, seg_id, *rest in self.data
+                if dt >= datetime - tolerance and dt <= datetime + tolerance and seg_id == segment_id]
 
     def number_of_vehicles_in_time_at_segment(self, datetime, segment_id, tolerance=None):
-        vehicles = self.vehicles_in_time_at_segment(datetime, segment_id, tolerance)
+        rows = self.vehicles_in_time_at_segment(datetime, segment_id, tolerance)
+        vehicles = filter(lambda row: row[2], rows)
 
-        return len(set(vehicles[GlobalView.VEHICLE_ID]))
+        return len(set(vehicles))
 
     def level_of_service_in_time_at_segment(self, datetime, segment, tolerance=None):
         mile = 1609.344 # meters
@@ -84,16 +57,25 @@ class GlobalView:
         return los if los == float("inf") else 1.0 - los
 
     def store(self, path):
-        self.data.to_parquet(path, engine="fastparquet")
+        # sort the data
+        self.data.sort(key=operator.itemgetter(0,1))
 
-    def load(self, path):
-        pass # TODO: implement laoading maybe as param of init
+        with open(path, 'wb') as f:
+            pickle.dump(self.data, f)
+
+    @staticmethod
+    def load(path):
+        with open(path, 'rb') as f:
+            data = pickle.load(f)
+            return GlobalView(data=data)
 
     def __len__(self):
         return len(self.data)
 
-    def raw_data(self):
-        return self.data
+    def drop_old(self, dt_threshold):
+        self.data.sort(key=lambda row: row[0])
 
-    def copy(self):
-        return GlobalView(self.data.copy())
+        for i, row in enumerate(self.data):
+            if row[0] >= dt_threshold:
+                self.data = self.data[i:]
+                break
