@@ -1,7 +1,8 @@
 """Routing map module."""
-
+import itertools
 import os
 
+import networkx as nx
 import osmnx as ox
 from osmnx import graph_from_polygon, load_graphml, save_graphml
 
@@ -20,6 +21,7 @@ class Map(metaclass=Singleton):
         self.border = border
         self.data_dir = data_dir
         self.network, fresh_data = self._load()
+        self.simple_network = ox.get_digraph(self.network)
         if with_speeds:
             self.network = ox.add_edge_speeds(self.network)
         if fresh_data:
@@ -62,9 +64,12 @@ class Map(metaclass=Singleton):
         """Compute shortest path between two OSM nodes."""
         return ox.shortest_path(self.network, origin, dest)
 
-    def k_shortest_patshs(self, origin, dest, k):
+    def k_shortest_paths(self, origin, dest, k):
         """Compute k-shortest paths between two OSM nodes."""
-        return ox.distance.k_shortest_paths(self.network, origin, dest, k)
+        paths_gen = nx.shortest_simple_paths(G=self.simple_network, source=origin,
+                                             target=dest)
+        for path in itertools.islice(paths_gen, 0, k):
+            yield path
 
     def _load(self):
         print(f"Map file path: {self.file_path}")

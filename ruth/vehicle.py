@@ -99,7 +99,7 @@ class Vehicle:
             self.next_routing_start_node_with_index
 
         try:
-            osm_routes = self.routing_map.k_shortest_patshs(current_starting_node, self.dest_node, k)
+            osm_routes = self.routing_map.k_shortest_paths(current_starting_node, self.dest_node, k)
             return [self.osm_route[:segment_index] + osm_route for osm_route in osm_routes]
         except NodeNotFound as ex:
             print(f"vehicle: {self.id}: {ex}", file=sys.stderr)
