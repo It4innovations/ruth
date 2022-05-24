@@ -6,29 +6,31 @@ from typing import List, Tuple
 from datetime import datetime, timedelta
 import pickle
 import random
+from collections import defaultdict
 
 
 class GlobalView:
 
     def __init__(self, data=None):
         self.data = [] if data is None else data
+        self.by_segment = defaultdict(list)
 
     def add(self, vehicle_id, hrs):
         rows = [(dt, seg_id, vehicle_id, start_offset, speed, status)
                for dt, seg_id, start_offset, speed, status in hrs]
         self.data += rows
 
-    def vehicles_in_time_at_segment(self, datetime, segment_id, tolerance=None):
-        tolerance = tolerance if tolerance is not None else timedelta(seconds=0)
-
-        return [(dt, seg_id, *rest) for dt, seg_id, *rest in self.data
-                if dt >= datetime - tolerance and dt <= datetime + tolerance and seg_id == segment_id]
+        for dt, seg_id, start_offset, speed, status in hrs:
+            self.by_segment[seg_id].append((dt, vehicle_id))
 
     def number_of_vehicles_in_time_at_segment(self, datetime, segment_id, tolerance=None):
-        rows = self.vehicles_in_time_at_segment(datetime, segment_id, tolerance)
-        vehicles = filter(lambda row: row[2], rows)
+        tolerance = tolerance if tolerance is not None else timedelta(seconds=0)
 
-        return len(set(vehicles))
+        vehicles = set()
+        for (dt, vehicle_id) in self.by_segment.get(segment_id, []):
+            if dt >= datetime - tolerance and dt <= datetime + tolerance:
+                vehicles.add(vehicle_id)
+        return len(vehicles)
 
     def level_of_service_in_time_at_segment(self, datetime, segment, tolerance=None):
         mile = 1609.344 # meters
@@ -79,3 +81,8 @@ class GlobalView:
             if row[0] >= dt_threshold:
                 self.data = self.data[i:]
                 break
+
+        self.by_segment = defaultdict(list)
+        for dt, seg_id, vehicle_id, start_offset, speed, status in self.data:
+            self.by_segment[seg_id].append((dt, vehicle_id))
+
