@@ -133,10 +133,8 @@ def simulate(input_path: str,
     return (gv, vehicles)
 
 
-def advance_vehicle(vehicle_, osm_route, departure_time, gv, gv_distance, nsamples=1):
+def advance_vehicle(vehicle, osm_route, departure_time, gv, gv_distance, nsamples=1):
     """Advance a vehicle on a route."""
-
-    vehicle = Vehicle(**asdict(vehicle_))  # make a copy of vehicle as the functions should be stateless
 
     dt = departure_time + vehicle.time_offset
 
