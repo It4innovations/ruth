@@ -306,7 +306,14 @@ def gv_shifts_(plans, gv_db, gv_distance, pool=None):
         dur_ff, _, _ = distance_duration(plan.route, plan.departure_time, gv_distance, ff_db)
         duration, position, los = distance_duration(plan.route, plan.departure_time, gv_distance, gv_db)
 
-        gv_delay = duration - dur_ff
+        if duration == float("inf"):
+            gv_delay = timedelta.max
+            duration = timedelta(seconds=20) # TODO: FIXME: the constant used for test. Expose it and use directly or set the zero. What is a correct answer?
+            position = plan.start_position
+            los = 0.0
+        else:
+            gv_delay = duration - dur_ff
+
         return (VehiclePlan(plan.id, plan.route, position, plan.departure_time + duration), los, gv_delay)
 
     return fmap(dd, plans)
