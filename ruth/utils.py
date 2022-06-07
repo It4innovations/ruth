@@ -1,9 +1,11 @@
+import re
 import osmnx as ox
 from probduration import Segment
 from datetime import timedelta
 
 from .data.map import Map
 from .data.border import Border, BorderType, PolygonBorderDef
+from .metaclasses import Singleton
 
 def get_map(polygon: str,
             kind: BorderType,
@@ -36,6 +38,38 @@ def osm_route_to_segments(osm_route, routing_map):
         # NOTE: the zip is correct as the starting node_id is of the interest
         for i, ((from_, to_), data) in enumerate(zip(edges, edge_data))
     ]
+
+
+class SegmentIdParser:
+
+    def __init__(self, metaclass=Singleton):
+        self.osm_id_regex = re.compile("OSM(?P<node_from>\d+)T(?P<node_to>\d+)")
+
+    def parse(self, segment_id):
+        res = self.osm_id_regex.match(segment_id)
+        assert res is not None, \
+            "Invalid format of segment ID. It is exected the format: 'OSM<node_from>T<node_to>'"
+        node_from, node_to = res.groups()
+        return (int(node_from), int(node_to))
+
+
+def parse_segment_id(segment_id):
+    p = SegmentIdParser()
+
+    return p.parse(segment_id)
+
+
+def route_to_osm_route(route):
+    osm_route = []
+    for i in range(len(route) - 1):
+        seg = route[i]
+        node_from, _ = parse_segment_id(seg.id)
+        osm_route.append(node_from)
+    last_seg = route[-1]
+    node_from, node_to = parse_segment_id(last_seg.id)
+    osm_route.extend([node_from, node_to])
+
+    return osm_route
 
 
 def round_timedelta(td: timedelta, freq: timedelta):
