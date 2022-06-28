@@ -26,7 +26,8 @@ setup(
             "ruth-simulator = tools.simulator:main",
             "ruth-data-preprocessing = tools.preprocessbenchmarkdata:main",
             "ruth-split-segment-id = tools.splitsegmentid:main",
-            "ruth-show-gv = tools.vizglobalview:viz"
+            "ruth-show-gv = tools.vizglobalview:viz",
+            "ruth-traffic-flow-to-od-matrix = tools.trafficflow2odmatrix:convert"
         ]
     }
 )

@@ -10,3 +10,6 @@ bokeh
 scikit-learn
 pyarrow
 fastparquet
+shapely
+numpy
+pandas
