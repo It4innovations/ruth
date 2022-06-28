@@ -130,11 +130,13 @@ def rnd_time_in_range(dt1, dt2):
 
 @click.command()
 @click.argument("traffic_flow_file_path", type=click.Path(exists=True), metavar="<input_path>")
-@click.option("--frequency_s", type=int, default=20, help="A number of seconds between routing queries.")
+@click.option("--frequency_s", type=int, default=20,
+              help="A number of seconds between routing queries. Default value is 20s")
 @click.option("--fcd_sampling_period_s", type=int, default=5,
               help="A number of seconds that divides the frequency."
-                   " It is a sub-sampling period in which the FCD info is stored between queries.")
-@click.option("--out", type=click.Path(), default="out.csv")
+                   " It is a sub-sampling period in which the FCD info is stored between queries."
+                   " Default value is 5s")
+@click.option("--out", type=click.Path(), default="out.csv", help="An output file name (CSV).")
 def convert(traffic_flow_file_path, frequency_s, fcd_sampling_period_s, out):
     """The conversion tool that takes the csv file containing the traffic flow description in <input_path> and generates
      an Origin/Destination matrix. The traffic flow describes a number of devices (mobile phones)
@@ -144,6 +146,8 @@ def convert(traffic_flow_file_path, frequency_s, fcd_sampling_period_s, out):
      \b
      Expected columns of the input file are:
      =======================================
+     \b
+     NOTE: the following columns are obligatory; the order of columns can be arbitrary
      \b
        - start_time: a window start time
        - end_time: a window end time
