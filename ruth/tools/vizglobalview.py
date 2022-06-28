@@ -6,21 +6,21 @@ import osmnx as ox
 import matplotlib.pyplot as plt
 from datetime import timedelta
 
-from ruth.globalview import GlobalView
-from ruth.data.map import Map
-from ruth import utils
+from ..globalview import GlobalView
+from .. import utils
 
 
-def count_gt_zero(segment, count):
+def count_gt_zero(segment_, count):
     return count > 0
 
 
-p = re.compile("OSM(?P<from_node>[0-9]+)T(?P<to_node>[0-9]+)")
+p = re.compile("OSM(?P<from_node>\d+)T(?P<to_node>\d+)")
+
 
 def parse_segment_nodes(segment_id):
     m = p.match(segment_id)
 
-    return (int(m.group("from_node")), int(m.group("to_node")))
+    return int(m.group("from_node")), int(m.group("to_node"))
 
 
 @click.command()
@@ -54,7 +54,7 @@ def viz(gv_path: str,
     print(unique)
     unique_ids = list(map(lambda v: v[0], unique))
 
-    # works only for alrady downloaded and stored data
+    # works only for already downloaded and stored data
     m = utils.get_map(None, border_kind, name=border_id, on_disk=True)
 
     fig, ax = ox.plot_graph(m.network, show=False)
@@ -62,8 +62,6 @@ def viz(gv_path: str,
     centroids = []
     ids = []
     for u, v, data in m.network.edges(data=True):
-    # for _, edge in ox.graph_to_gdfs(m.network, nodes=False).fillna("").iterrows():
-
         osm_id = f"OSM{u}T{v}"
         if osm_id in unique_ids:
             if "geometry" in data:
@@ -87,6 +85,7 @@ def viz(gv_path: str,
         ax.annotate(f"{count}", (x[i], y[i]), c="lemonchiffon")
 
     plt.show()
+
 
 if __name__ == "__main__":
     viz()

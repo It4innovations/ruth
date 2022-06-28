@@ -3,6 +3,7 @@ import os
 import click
 import pandas as pd
 
+
 @click.command()
 @click.argument("in-path", type=click.Path(exists=True))
 @click.argument("n-times", type=int)
@@ -20,6 +21,7 @@ def extend(in_path, n_times, out):
 
     df = df.sort_values(by=["id"])
     df.to_csv(out_path, sep=";")
+
 
 if __name__ == "__main__":
     extend()

@@ -4,6 +4,7 @@ import re
 import click
 import pandas as pd
 
+
 @click.command()
 @click.argument("global_view", type=click.Path(exists=True))
 @click.option("--out", type=str, default="out.parquet")
@@ -26,3 +27,7 @@ def main(global_view, out):
     df.sort_index(inplace=True)
 
     df.to_parquet(out_path, engine="fastparquet")
+
+
+if __name__ == "__main__":
+    main()
