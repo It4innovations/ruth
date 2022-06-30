@@ -35,7 +35,7 @@ class County(Enum):
 
 class District_CZ020(Enum):  # Stredocesky kraj
     CZ0201 = "CZ0201"  # district: Benešov
-    cz0202 = "cz0202"  # district: Beroun
+    CZ0202 = "CZ0202"  # district: Beroun
     CZ0203 = "CZ0203"  # district: Kladno
     CZ0204 = "CZ0204"  # district: Kolín
     CZ0205 = "CZ0205"  # district: Kutná Hora
