@@ -40,3 +40,18 @@ def osm_route_to_segments(osm_route, routing_map):
 
 def round_timedelta(td: timedelta, freq: timedelta):
     return freq * round(td / freq)
+
+
+from contextlib import contextmanager
+import time
+
+
+@contextmanager
+def timer(name: str):
+    start = time.time()
+    try:
+        yield
+    finally:
+        end = time.time()
+        duration = end - start
+        #print(f"{name}: {duration}")
