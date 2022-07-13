@@ -10,7 +10,7 @@ from datetime import timedelta, datetime
 from probduration import SegmentPosition
 from networkx.exception import NodeNotFound
 
-from .utils import get_map
+from .utils import get_map, round_timedelta
 
 
 def set_numpy_type(name, fld=None):
@@ -134,3 +134,9 @@ class Vehicle:
         # a parameter for the next round of storing. In this way all the cars would be sampled
         # with an exact step (car dependent as each car can have its own sampling period)
         self.leap_history.append((end_offset, segment.id, step_m, speed_mps, self.status))
+
+    def is_active(self, within_offset, freq):
+        return self.active and within_offset == round_timedelta(self.time_offset, freq)
+
+    def __repr__(self):
+        return f"Vehicle(id={self.id}, active={self.active}, pos={self.segment_position})"

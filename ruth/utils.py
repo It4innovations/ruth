@@ -7,6 +7,7 @@ from .data.map import Map
 from .data.border import Border, BorderType, PolygonBorderDef
 from .metaclasses import Singleton
 
+
 def get_map(polygon: str,
             kind: BorderType,
             name=None,
@@ -18,8 +19,8 @@ def get_map(polygon: str,
     """Get map based on polygon."""
     border_def = PolygonBorderDef(polygon, on_disk=on_disk)
     border_kind = BorderType.parse(kind)
-    name_ = name if name is not None else f"custom_{boder_def.md5()}"
-    border = Border(name, border_def, border_kind, data_dir, load_from_cache)
+    name_ = name if name is not None else f"custom_{border_def.md5()}"
+    border = Border(name_, border_def, border_kind, data_dir, load_from_cache)
 
     return Map(border, with_speeds=with_speeds)
 
