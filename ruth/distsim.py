@@ -3,6 +3,7 @@
 import logging
 import os
 import random
+from typing import final
 import pandas as pd
 import dask.bag as db
 from copy import copy
@@ -11,10 +12,11 @@ from dask.distributed import Client
 from dataclasses import asdict
 from datetime import timedelta
 from networkx.exception import NetworkXNoPath
+import time
 
 from probduration import HistoryHandler, Route, SegmentPosition, probable_delay, avg_delays, VehiclePlan
 
-from ruth.utils import osm_route_to_segments
+from ruth.utils import osm_route_to_segments, timer
 from ruth.vehicle import Vehicle
 from ruth.globalview import GlobalView
 from ruth.losdb import ProbProfileDb, GlobalViewDb, FreeFlowDb
@@ -247,14 +249,16 @@ def route_rank(driving_route, departure_time, gv_db, gv_distance: float, prob_pr
     """The smaller the rank the better."""
 
     # driving by global view
-    dur_ff, _, _ = distance_duration(driving_route, departure_time, gv_distance, FreeFlowDb())
-    dur, continue_pos, avg_los = distance_duration(driving_route, departure_time, gv_distance, gv_db)
+    with timer("distance_duration"):
+        dur_ff, _, _ = distance_duration(driving_route, departure_time, gv_distance, FreeFlowDb())
+        dur, continue_pos, avg_los = distance_duration(driving_route, departure_time, gv_distance, gv_db)
 
     if dur == float("inf"):
         return timedelta.max
 
     gv_delay = dur - dur_ff
-    prob_delay = probable_delay(driving_route, continue_pos, departure_time + gv_delay, prob_profile_db.prob_profiles, nsamples)
+    with timer("probable_delay"):
+        prob_delay = probable_delay(driving_route, continue_pos, departure_time + gv_delay, prob_profile_db.prob_profiles, nsamples)
 
     if avg_los < 1.0:
         # NOTE: the more the avg_los will be close to zero the more the probable delay will be prolonged
@@ -272,11 +276,14 @@ def alternatives(vehicle, k):
 
     return (vehicle, osm_routes)
 
+
+
 def ptdr(vehicle, osm_routes, departure_time, gv_db, gv_distance, prob_profile_db, nsamples):
-    possible_driving_routes = list(
-        map(lambda osm_route: Route(osm_route_to_segments(osm_route, vehicle.routing_map),
-                                    vehicle.frequency),
-            osm_routes))
+    with timer("possible_driving_routes"):
+        possible_driving_routes = list(
+            map(lambda osm_route: Route(osm_route_to_segments(osm_route, vehicle.routing_map),
+                                        vehicle.frequency),
+                osm_routes))
 
     # pick the driving route with the smallest deylay
     if len(possible_driving_routes) > 1:
