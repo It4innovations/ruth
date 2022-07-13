@@ -13,14 +13,14 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from evkit.comm import allreduce, distribute, init
 
-from probduration import HistoryHandler
+from probduration import HistoryHandler, VehiclePlan
 
 from ruth.losdb import ProbProfileDb, GlobalViewDb
 
 from ruth.vehicle import Vehicle
-from ruth.distsim import load_vehicles, save_vehicles, advance_vehicle, alternatives, ptdr
+from ruth.distsim import load_vehicles, save_vehicles, advance_vehicle, alternatives, ptdr, gv_shifts_, ptdrs_
 from ruth.globalview import GlobalView
-from ruth.utils import round_timedelta
+from ruth.utils import round_timedelta, osm_route_to_segments
 
 
 import pickle
@@ -202,6 +202,8 @@ def main_cycle(vehicles,
         walltime = timedelta(minutes=5)
         walltime_saved = False
 
+        prob_profile_db = ProbProfileDb(HistoryHandler.no_limit())
+
         while current_offset is not None:
             round_start = datetime.now()
             current_offset_ = round_timedelta(current_offset, round_freq)
@@ -238,16 +240,34 @@ def main_cycle(vehicles,
                 # print(f"{(e - s).total_seconds()} GV transfer")
 
                 s = datetime.now()
-                # cached_ptdr = ptdr2_(departure_time, gv_db, n_samples)
-                # bests = p.map(cached_ptdr, alts)
-                bests = list(map(functools.partial(ptdr_,
-                                                   departure_time=departure_time,
-                                                   gv_db=gv_db,
-                                                   n_samples=n_samples), alts))
-                # bests = thread_pool.map(functools.partial(ptdr_,
-                #                                           departure_time=departure_time,
-                #                                           gv_db=gv_db,
-                #                                           n_samples=n_samples), alts)
+                # # cached_ptdr = ptdr2_(departure_time, gv_db, n_samples)
+                # # bests = p.map(cached_ptdr, alts)
+                # bests = list(map(functools.partial(ptdr_,
+                #                                    departure_time=departure_time,
+                #                                    gv_db=gv_db,
+                #                                    n_samples=n_samples), alts))
+                # # bests = thread_pool.map(functools.partial(ptdr_,
+                # #                                           departure_time=departure_time,
+                # #                                           gv_db=gv_db,
+                # #                                           n_samples=n_samples), alts)
+
+                # prepare plans
+                def get_plan(alt):
+                    vehicle, osm_route = alt
+                    return VehiclePlan(vehicle.id,
+                                       Route(osm_route_to_segments(osm_route,
+                                                                   vehicle.routing_map,
+                                                                   vehicle.frequency)),
+                                       SegmentPosition(0, 0.0),
+                                       departure_time)
+                plans = list(map(get_plan, alts))
+                # compute the best plans for each vehicle
+                shifted_plans = list(gv_shifts_(plans, gv_db, 200))
+                best_plans = ptdrs_(shifted_plans, prob_profile_db.prob_profiles, nsamples) # TODO: use prob_profile_db within ptdrs_
+                # align the format
+                allowed_v_dict = dict((v.id, v) for v in allowed_vehicles)
+                bests = list(map(lambda plan: (allowed_v_dict[plan.id], route_to_osm_route(plan.route), bets_plans)))
+
                 time_for_ptdr = datetime.now() - s
 
                 s = datetime.now()

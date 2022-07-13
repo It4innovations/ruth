@@ -6,12 +6,13 @@ import random
 import pandas as pd
 import dask.bag as db
 from copy import copy
+from itertools import groupby
 from dask.distributed import Client
 from dataclasses import asdict
 from datetime import timedelta
 from networkx.exception import NetworkXNoPath
 
-from probduration import HistoryHandler, Route, SegmentPosition, probable_delay
+from probduration import HistoryHandler, Route, SegmentPosition, probable_delay, avg_delays, VehiclePlan
 
 from ruth.utils import osm_route_to_segments
 from ruth.vehicle import Vehicle
@@ -288,3 +289,49 @@ def ptdr(vehicle, osm_routes, departure_time, gv_db, gv_distance, prob_profile_d
         best_route_index = 0
 
     return (vehicle, osm_routes[best_route_index])
+
+
+def gv_shifts_(plans, gv_db, gv_distance, pool=None):
+    fmap = map
+    if pool is not None:
+        fmap = pool.map
+
+    ff_db = FreeFlowDb()
+    def dd(plan):
+        dur_ff, _, _ = distance_duration(plan.route, plan.departure_time, gv_distance, ff_db)
+        duration, position, los = distance_duration(plan.route, plan.departure_time, gv_distance, gv_db)
+
+        gv_delay = duration - dur_ff
+        return (VehiclePlan(plan.id, plan.route, position, plan.departure_time + duration), los, gv_delay)
+
+    return fmap(dd, plans)
+
+
+def ptdrs_(shifted_plans, prob_profiles, nsamples):
+
+    plans, loses, gv_delays = zip(*shifted_plans)
+
+    # heavy function performed by ryon in rust
+    prob_delays = avg_delays(list(plans), prob_profiles, nsamples)
+
+    def by_plan_id(data):
+        plan, *_ = data
+        return plan.id
+
+    def by_ranks(data):
+        _, los, gv_delay, prob_delay = data
+        if los < 1.0:
+            # NOTE: the more the avg_los will be close to zero the more the probable delay will be prolonged
+            return gv_delay + prob_delay / (1.0 - los)
+        return gv_delay + prob_delay
+
+    data = groupby(sorted(zip(plans, loses, gv_delays, prob_delays), key=by_plan_id), by_plan_id)
+
+    def select_best(data):
+        plan_id, group = data
+        # returh the best plan
+        return sorted(list(group), key=by_ranks)[0][0]
+
+    bests = list(map(select_best, data))
+
+    return bests
