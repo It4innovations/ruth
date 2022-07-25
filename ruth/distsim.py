@@ -133,14 +133,13 @@ def simulate(input_path: str,
     return (gv, vehicles)
 
 
-def advance_vehicle(vehicle, osm_route, departure_time, gv, gv_distance, nsamples=1):
+def advance_vehicle(vehicle, osm_route, departure_time, gv_db):
     """Advance a vehicle on a route."""
 
     dt = departure_time + vehicle.time_offset
 
     # LoS databases
     prob_profile_db = ProbProfileDb(HistoryHandler.no_limit())  # TODO: history get here or take as an argument?
-    gv_db = GlobalViewDb(gv)
 
     # advance the vehicle on the driving route
     # best_route = ptdr(vehicle, dt, k_routes, gv_db, gv_distance, prob_profile_db, nsamples)
@@ -187,26 +186,27 @@ def advance_vehicle(vehicle, osm_route, departure_time, gv, gv_distance, nsample
     return vehicle
 
 
-def distance_duration(driving_route, departure_time, stop_distance, los_db):
-    # TODO: corner case what if the stop distance is longer than the entire route
+def distance_duration(driving_route, departure_time, los_db, stop_distance=None):
 
     distance = 0.0
     p = SegmentPosition(0, 0.0)
     dt = departure_time
     level_of_services = []
 
-    while distance < stop_distance:
+    stop_distance_ = stop_distance if stop_distance is not None else driving_route.distance_in_meters()
+
+    while distance < stop_distance_:
         if p.index >= len(driving_route):
             break
 
         seg = driving_route[p.index]
         los = los_db.get(dt, seg, random.random())
 
-        if los == float("inf"):  # stucks in traffic jam; not moving
-            return (float("inf"), None, None)
+        if los == float("inf"):  # stuck in traffic jam; not moving
+            return float("inf"), None, None
 
-        time, next_segment_pos, assigned_speed_mps  = driving_route.advance(p, dt, los)
-        d = time - dt
+        elapsed, next_segment_pos, assigned_speed_mps = driving_route.advance(p, dt, los)
+        d = elapsed - dt
 
         if p.index == next_segment_pos.index:
             # movement on the same segment
@@ -216,11 +216,11 @@ def distance_duration(driving_route, departure_time, stop_distance, los_db):
             # the rest distance of the previous segment is added.
             distance += seg.length - p.start
 
-        if distance > stop_distance:
+        if distance > stop_distance_:
             # round down to the stop distance
 
             # deacrease the distance
-            dd = distance - stop_distance
+            dd = distance - stop_distance_
             if next_segment_pos.start - dd < 0:
                 next_segment_pos = SegmentPosition(p.index, seg.length + (next_segment_pos.start - dd))
             else:
@@ -237,10 +237,10 @@ def distance_duration(driving_route, departure_time, stop_distance, los_db):
         # duration, next segment position, average level of service
 
     if len(level_of_services) == 0:
-        return (float("inf"), None, None)
+        return float("inf"), None, None
 
     avg_los = sum(level_of_services) / len(level_of_services)
-    return (dt - departure_time, p, avg_los) # TODO: is average ok?
+    return dt - departure_time, p, avg_los  # TODO: is average ok?
 
 
 def route_rank(driving_route, departure_time, gv_db, gv_distance: float, prob_profile_db, nsamples):
@@ -248,8 +248,8 @@ def route_rank(driving_route, departure_time, gv_db, gv_distance: float, prob_pr
 
     # driving by global view
     with timer("distance_duration"):
-        dur_ff, _, _ = distance_duration(driving_route, departure_time, gv_distance, FreeFlowDb())
-        dur, continue_pos, avg_los = distance_duration(driving_route, departure_time, gv_distance, gv_db)
+        dur_ff, _, _ = distance_duration(driving_route, departure_time, FreeFlowDb(), gv_distance)
+        dur, continue_pos, avg_los = distance_duration(driving_route, departure_time, gv_db, gv_distance)
 
     if dur == float("inf"):
         return timedelta.max
@@ -296,15 +296,15 @@ def ptdr(vehicle, osm_routes, departure_time, gv_db, gv_distance, prob_profile_d
     return (vehicle, osm_routes[best_route_index])
 
 
-def gv_shifts_(plans, gv_db, gv_distance, pool=None):
+def gv_shifts_(plans, gv_db, gv_distance, pool=None):  # TODO: remove! (transfered to the routeranking algorithms)
     fmap = map
     if pool is not None:
         fmap = pool.map
 
     ff_db = FreeFlowDb()
     def dd(plan):
-        dur_ff, _, _ = distance_duration(plan.route, plan.departure_time, gv_distance, ff_db)
-        duration, position, los = distance_duration(plan.route, plan.departure_time, gv_distance, gv_db)
+        dur_ff, _, _ = distance_duration(plan.route, plan.departure_time, ff_db, gv_distance)
+        duration, position, los = distance_duration(plan.route, plan.departure_time, gv_db, gv_distance)
 
         if duration == float("inf"):
             gv_delay = timedelta.max
@@ -341,7 +341,7 @@ def ptdrs_(shifted_plans, prob_profiles, nsamples):
 
     def select_best(data):
         plan_id, group = data
-        # returh the best plan
+        # return the best plan
         return sorted(list(group), key=by_ranks)[0][0]
 
     bests = list(map(select_best, data))
