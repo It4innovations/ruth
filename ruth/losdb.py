@@ -27,7 +27,7 @@ class ProbProfileDb(LoSDb):
     def __init__(self, prob_profiles):
         self.prob_profiles = prob_profiles
 
-    def get(self, datatime, segment, toss):
+    def get(self, datetime, segment, toss):
         return self.prob_profiles.level_of_service(datetime, segment.id, toss)
 
 
