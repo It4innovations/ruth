@@ -1,7 +1,9 @@
-from dataclasses import dataclass, InitVar
+import pickle
+
+from dataclasses import dataclass, field, InitVar
 from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from ..globalview import GlobalView
 from ..losdb import GlobalViewDb
@@ -94,14 +96,20 @@ class Simulation:
             self.global_view.add(update.vehicle.id, update.leap_history)
             self.history.add(update.vehicle.id, update.leap_history)
 
-        self.vehicles = vd.values()
+        self.vehicles = list(vd.values())
 
     def drop_old_records(self, offset_threshold):
         if offset_threshold is not None:
             self.global_view.drop_old(self.setting.departure_time + offset_threshold)
 
-    def state(self):  # TODO: maybe just pickle the simulation
-        pass
-
     def finished(self):
-        pass
+        return all(not v.active for v in self.vehicles)
+
+    def store(self, path):
+        with open(path, 'wb') as f:
+            pickle.dump(self, f)
+
+    @staticmethod
+    def load(path):
+        with open(path, 'rb') as f:
+            return pickle.load(f)
