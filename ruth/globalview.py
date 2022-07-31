@@ -1,11 +1,7 @@
-import pandas as pd
-import numpy as np
-import operator
-from dataclasses import astuple
-from typing import List, Tuple
-from datetime import datetime, timedelta
+
 import pickle
-import random
+import operator
+from datetime import timedelta
 from collections import defaultdict
 
 
@@ -17,7 +13,7 @@ class GlobalView:
 
     def add(self, vehicle_id, hrs):
         rows = [(dt, seg_id, vehicle_id, start_offset, speed, status)
-               for dt, seg_id, start_offset, speed, status in hrs]
+                for dt, seg_id, start_offset, speed, status in hrs]
         self.data += rows
 
         for dt, seg_id, start_offset, speed, status in hrs:
@@ -28,7 +24,7 @@ class GlobalView:
 
         vehicles = set()
         for (dt, vehicle_id) in self.by_segment.get(segment_id, []):
-            if dt >= datetime - tolerance and dt <= datetime + tolerance:
+            if datetime - tolerance <= dt <= datetime + tolerance:
                 vehicles.add(vehicle_id)
         return len(vehicles)
 
@@ -58,18 +54,22 @@ class GlobalView:
         # reverse the level of service 1.0 means 100% LoS, but the input table defines it in reverse
         return los if los == float("inf") else 1.0 - los
 
-    def store(self, path):
-        # sort the data
-        self.data.sort(key=operator.itemgetter(0,1))
+    def __getstate__(self):
+        self.data.sort(key=operator.itemgetter(0, 1))
+        return pickle.dumps(self.data)
 
+    def __setstate__(self, state):
+        data = pickle.loads(state)
+        self.__init__(data=data)
+
+    def store(self, path):
         with open(path, 'wb') as f:
-            pickle.dump(self.data, f)
+            pickle.dump(self, f)
 
     @staticmethod
     def load(path):
         with open(path, 'rb') as f:
-            data = pickle.load(f)
-            return GlobalView(data=data)
+            return pickle.load(f)
 
     def __len__(self):
         return len(self.data)
