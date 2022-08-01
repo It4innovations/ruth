@@ -13,10 +13,10 @@ from itertools import product
 
 from probduration import HistoryHandler, Route, SegmentPosition, probable_delay
 
-from ..utils import osm_route_to_segments, timer
+from ..utils import osm_route_to_segments
 from ..vehicle import Vehicle
 from ..globalview import GlobalView
-from ..losdb import ProbProfileDb, FreeFlowDb
+from ..losdb import ProbProfileDb
 
 
 logger = logging.getLogger(__name__)
@@ -260,28 +260,6 @@ def distance_duration(driving_route, departure_time, los_db, stop_distance=None)
     return dt - departure_time, p, avg_los  # TODO: is average ok?
 
 
-def route_rank(driving_route, departure_time, gv_db, gv_distance: float, prob_profile_db, n_samples):
-    """The smaller the rank the better."""
-
-    # driving by global view
-    with timer("distance_duration"):
-        dur_ff, _, _ = distance_duration(driving_route, departure_time, FreeFlowDb(), gv_distance)
-        dur, continue_pos, avg_los = distance_duration(driving_route, departure_time, gv_db, gv_distance)
-
-    if dur == float("inf"):
-        return timedelta.max
-
-    gv_delay = dur - dur_ff
-    with timer("probable_delay"):
-        prob_delay = probable_delay(driving_route, continue_pos, departure_time + gv_delay,
-                                    prob_profile_db.prob_profiles, n_samples)
-
-    if avg_los < 1.0:
-        # NOTE: the more the avg_los will be close to zero the more the probable delay will be prolonged
-        return gv_delay + prob_delay / (1.0 - avg_los)
-    return gv_delay + prob_delay
-
-
 def alternatives(vehicle, k):
     try:
         osm_routes = vehicle.k_shortest_paths(k)
@@ -291,23 +269,3 @@ def alternatives(vehicle, k):
         return None
 
     return vehicle, osm_routes
-
-
-def ptdr(vehicle, osm_routes, departure_time, gv_db, gv_distance, prob_profile_db, nsamples):
-    with timer("possible_driving_routes"):
-        possible_driving_routes = list(
-            map(lambda osm_route: Route(osm_route_to_segments(osm_route, vehicle.routing_map),
-                                        vehicle.frequency),
-                osm_routes))
-
-    # pick the driving route with the smallest deylay
-    if len(possible_driving_routes) > 1:
-        ranks = map(lambda driving_route: route_rank(
-            driving_route, departure_time, gv_db, gv_distance, prob_profile_db, nsamples), possible_driving_routes)
-        indexed_ranks = sorted(enumerate(ranks), key=lambda indexed_rank: indexed_rank[1])
-
-        best_route_index, _ = indexed_ranks[0]
-    else:
-        best_route_index = 0
-
-    return vehicle, osm_routes[best_route_index]
