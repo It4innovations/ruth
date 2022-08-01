@@ -1,10 +1,33 @@
+
+from enum import Enum
 from datetime import timedelta
 from functools import partial
+from dataclasses import dataclass
+from typing import Any, Callable, List, Dict, Optional, NewType
 
 from probduration import VehiclePlan, avg_delays
 
 from .common import distance_duration
 from ..vehicle import Vehicle
+
+
+Comparable = NewType("Comparable", Any)
+
+
+@dataclass
+class RouteRankingAlgorithm:
+    """Route ranking algorithm with optional data preparation function.
+
+    Parameters:
+    -----------
+        rank_route: Callable[[List, Dict], Comparable]
+          A function that rank a route. The positional and keyword arguments are "algorithm specific"
+        prepare_data: Optional[Callable[[List, Dict], Any]]
+          A function that can transform input data hence perform a preprocessing for ranking function. By default
+          it is assigned identity function.
+    """
+    rank_route: Callable[[List, Dict], Comparable]
+    prepare_data: Optional[Callable[[List, Dict], Any]] = lambda data: data
 
 
 def duration_based_on_global_view(gv_db, vehicle_plan):
@@ -87,3 +110,19 @@ def probable_delay(extended_vehicle_plan):
         #       as the vehicle hit traffic jam or closed road
         return gv_delay + prob_delay / (1.0 - gv_los)
     return gv_delay + prob_delay
+
+
+class RouteRankingAlgorithms(Enum):
+    """An enumeration of available route ranking algorithm. Each algorithm can be accompanied by a data/preprocessing
+     function; by default the function is identity.
+
+    Attributes:
+    -----------
+        DURATION: RouteRankingAlgorithm
+          Compute duration on a route at a departure time based on global view.
+        PROBABLE_DELAY: RouteRankingAlgorithm
+          Compute probable delay on a route at a departure time using combination of global view for first X meters and
+          probable delay on the rest of the route. The algorithm takes advantage of Monte Carlo Simulation.
+    """
+    DURATION = RouteRankingAlgorithm(duration_based_on_global_view)
+    PROBABLE_DELAY = RouteRankingAlgorithm(probable_delay, precompute_prob_delays)
