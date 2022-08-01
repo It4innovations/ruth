@@ -1,11 +1,7 @@
 
 import logging
-import os
 import random
 import pandas as pd
-import dask.bag as db
-
-from dask.distributed import Client
 from dataclasses import asdict
 from datetime import timedelta
 from networkx.exception import NetworkXNoPath
@@ -15,7 +11,6 @@ from probduration import HistoryHandler, Route, SegmentPosition, probable_delay
 
 from ..utils import osm_route_to_segments
 from ..vehicle import Vehicle
-from ..globalview import GlobalView
 from ..losdb import ProbProfileDb
 
 
@@ -55,101 +50,6 @@ def save_vehicles(vehicles, output_path: str):
 
     df = pd.DataFrame([asdict(v) for v in vehicles])
     df.to_pickle(output_path)
-
-
-def simulate(input_path: str,
-             scheduler: str,
-             scheduler_port: int,
-             departure_time,
-             k_routes,
-             n_samples,
-             seed,
-             gv_update_period,
-             intermediate_results,
-             checkpoint_period):
-    """Distributed traffic simulator."""
-
-    if seed is not None:
-        random.seed(seed)  # used for tests: 660277
-
-    if intermediate_results is not None:
-        intermediate_results = os.path.abspath(intermediate_results)
-
-        if not os.path.exists(intermediate_results):
-            os.mkdir(intermediate_results)
-
-    gv = GlobalView()
-    c = Client(f"{scheduler}:{scheduler_port}")
-    dist_gv = c.scatter(gv, broadcast=True)
-
-    vehicles = db.from_sequence(load_vehicles(input_path))
-
-    step = 0
-    while True:
-        logger.info("Starting step %s", step)
-
-        def compute_min(partitions):  # TODO: why the method is created in each cycle?
-            return min((v.time_offset for v in partitions), default=float("inf"))
-
-        min_offset = vehicles.reduction(compute_min, min).compute()
-
-        def gather_active(partitions):
-            return any(v.active for v in partitions)
-
-        active = vehicles.reduction(gather_active, any).compute()
-
-        if not active:
-            # No active cars
-            break
-
-        def advance(vehicle, gv):
-            if vehicle.time_offset == min_offset:
-                gv_near_distance = 200  # TODO: make it as parameter
-                return advance_vehicle(vehicle, departure_time, k_routes, gv, gv_near_distance, n_samples)
-            else:
-                return vehicle
-
-        vehicles = vehicles.map(advance, dist_gv).persist()
-
-        if intermediate_results is not None and step % (checkpoint_period * gv_update_period) == 0:
-            # TODO: Save vehicles
-            pass
-
-        def process_leap_history(partitions):
-            leap_history_update = []
-            for vehicle in partitions:
-                if vehicle.leap_history:
-                    # process only non-empty history
-                    leap_history_update.append((vehicle.id, vehicle.leap_history[:]))
-            return leap_history_update
-
-        def join_leap_histories(lh_updates):
-            leap_history = []
-            for lh_update in lh_updates:
-                leap_history += lh_update
-            return leap_history
-
-        leap_history_update = vehicles.reduction(
-            process_leap_history,
-            join_leap_histories
-        ).compute()
-
-        if leap_history_update:  # update only if there is data
-            for vehicle_id, lhu in leap_history_update:
-                gv.add(vehicle_id, lhu)
-
-            dist_gv = c.scatter(gv, broadcast=True)
-
-        def clear_leap_history(vehicle):
-            data = asdict(vehicle)
-            data["leap_history"] = []
-            return Vehicle(**data)
-
-        vehicles = vehicles.map(clear_leap_history).persist()
-
-        step += 1
-
-    return gv, vehicles
 
 
 def advance_vehicle(vehicle, osm_route, departure_time, gv_db):
@@ -217,7 +117,7 @@ def distance_duration(driving_route, departure_time, los_db, stop_distance=None)
             break
 
         seg = driving_route[p.index]
-        los = los_db.get(dt, seg, random.random())
+        los = los_db.get(dt, seg, random.random())  # TODO: fix and use random generator from paramter
 
         if los == float("inf"):  # stuck in traffic jam; not moving
             return float("inf"), None, None
