@@ -133,7 +133,7 @@ class Vehicle:
         # rather return the difference (end_offset - _last_ current_offset) and take it as
         # a parameter for the next round of storing. In this way all the cars would be sampled
         # with an exact step (car dependent as each car can have its own sampling period)
-        self.leap_history.append((end_offset, segment.id, step_m, speed_mps, self.status))
+        self.leap_history.append((end_offset, segment.id, start + step_m, speed_mps, self.status))
 
     def is_active(self, within_offset, freq):
         return self.active and within_offset == round_timedelta(self.time_offset, freq)
