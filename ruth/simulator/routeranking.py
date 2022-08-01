@@ -16,20 +16,21 @@ def duration_based_on_global_view(gv_db, vehicle_plan):
         vehicle_plan: Tuple[Vehicle, VehiclePlan]
     """
     _, plan = vehicle_plan
-    duration, *_ = distance_duration(plan.route, plan.departure_time, gv_db)
+    # NOTE: empty random generator is valid as the global view LoS database does not use it
+    duration, *_ = distance_duration(plan.route, plan.departure_time, gv_db, lambda: None)
 
-    if duration == float("inf"):
+    if duration == float('inf'):
         return timedelta.max
 
     return duration
 
 
-def adjust_plan_by_global_view(vehicle_plan: (Vehicle, VehiclePlan), distance, ff_db, gv_db):
+def adjust_plan_by_global_view(vehicle_plan: (Vehicle, VehiclePlan), distance, ff_db, gv_db, rnd_gen):
     vehicle, plan = vehicle_plan
-    ff_dur, *_ = distance_duration(plan.route, plan.departure_time, ff_db, distance)
-    duration, position, los = distance_duration(plan.route, plan.departure_time, gv_db, distance)
+    ff_dur, *_ = distance_duration(plan.route, plan.departure_time, ff_db, rnd_gen, distance)
+    duration, position, los = distance_duration(plan.route, plan.departure_time, gv_db, rnd_gen, distance)
 
-    if duration == float("inf"):
+    if duration == float('inf'):
         delay = timedelta.max
         duration = vehicle.frequency
         position = plan.start_position
@@ -40,7 +41,7 @@ def adjust_plan_by_global_view(vehicle_plan: (Vehicle, VehiclePlan), distance, f
     return vehicle, VehiclePlan(plan.id, plan.route, position, plan.departure_time + duration), los, delay
 
 
-def precompute_prob_delays(vehicle_plans, gv_db, gv_distance, ff_db, pp_db, n_samples):
+def precompute_prob_delays(vehicle_plans, gv_db, gv_distance, ff_db, pp_db, n_samples, rnd_gen):
     """ Precompute the information for `probable_delay` route-ranking function. The function returns the vehicle plans
     extended by global view LoS and delay, plus the probable delay on rest of the route.
 
@@ -56,10 +57,15 @@ def precompute_prob_delays(vehicle_plans, gv_db, gv_distance, ff_db, pp_db, n_sa
         pp_db: ProbProfileDb
         n_samples: int
           A number of samples of Monte Carlo Simulation
+        rnd_gen: Callable[[], float]
+          A random generator which returns values from 0.0..1.0 interval
     """
     # move the vehicle by specified distance and adjust its plan
     vehicles, plans, loses, gv_delays = zip(*map(partial(adjust_plan_by_global_view,
-                                                         distance=gv_distance, gv_db=gv_db, ff_db=ff_db),
+                                                         distance=gv_distance,
+                                                         gv_db=gv_db,
+                                                         ff_db=ff_db,
+                                                         rnd_gen=rnd_gen),
                                                  vehicle_plans))
 
     prob_delays = avg_delays(list(plans), pp_db.prob_profiles, n_samples)

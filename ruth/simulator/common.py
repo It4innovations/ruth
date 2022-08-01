@@ -1,6 +1,5 @@
 
 import logging
-import random
 import pandas as pd
 from dataclasses import asdict
 from datetime import timedelta
@@ -11,7 +10,6 @@ from probduration import HistoryHandler, Route, SegmentPosition, probable_delay
 
 from ..utils import osm_route_to_segments
 from ..vehicle import Vehicle
-from ..losdb import ProbProfileDb
 
 
 logger = logging.getLogger(__name__)
@@ -57,15 +55,6 @@ def advance_vehicle(vehicle, osm_route, departure_time, gv_db):
 
     dt = departure_time + vehicle.time_offset
 
-    # LoS databases
-    prob_profile_db = ProbProfileDb(HistoryHandler.no_limit())  # TODO: history get here or take as an argument?
-
-    # advance the vehicle on the driving route
-    # best_route = ptdr(vehicle, dt, k_routes, gv_db, gv_distance, prob_profile_db, nsamples)
-    # if best_route is None:
-    #     vehicle.active = False
-    #     return vehicle
-
     driving_route = Route(osm_route_to_segments(osm_route, vehicle.routing_map),
                           vehicle.frequency)
     # update the current route
@@ -79,14 +68,13 @@ def advance_vehicle(vehicle, osm_route, departure_time, gv_db):
 
     if los == float("inf"):
         # in case the vehicle is stuck in traffic jam just move the time
-        time = dt + vehicle.frequency
         vehicle.time_offset += vehicle.frequency
     else:
         time, segment_pos, assigned_speed_mps = driving_route.advance(
             vehicle.segment_position, dt, los)
         d = time - dt
 
-        # NOTE: _assumtion_: the car stays on a single segment within one call of the `advance`
+        # NOTE: _assumption_: the car stays on a single segment within one call of the `advance`
         #       method on the driving route
 
         if segment_pos.index < len(driving_route):  # NOTE: the segment position index may end out of segments
@@ -103,7 +91,7 @@ def advance_vehicle(vehicle, osm_route, departure_time, gv_db):
     return vehicle
 
 
-def distance_duration(driving_route, departure_time, los_db, stop_distance=None):
+def distance_duration(driving_route, departure_time, los_db, rnd_gen, stop_distance=None):
 
     distance = 0.0
     p = SegmentPosition(0, 0.0)
@@ -117,10 +105,10 @@ def distance_duration(driving_route, departure_time, los_db, stop_distance=None)
             break
 
         seg = driving_route[p.index]
-        los = los_db.get(dt, seg, random.random())  # TODO: fix and use random generator from paramter
+        los = los_db.get(dt, seg, rnd_gen())
 
-        if los == float("inf"):  # stuck in traffic jam; not moving
-            return float("inf"), None, None
+        if los == float('inf'):  # stuck in traffic jam; not moving
+            return float('inf'), None, None
 
         elapsed, next_segment_pos, assigned_speed_mps = driving_route.advance(p, dt, los)
         d = elapsed - dt
@@ -136,14 +124,14 @@ def distance_duration(driving_route, departure_time, los_db, stop_distance=None)
         if distance > stop_distance_:
             # round down to the stop distance
 
-            # deacrease the distance
+            # decrease the distance
             dd = distance - stop_distance_
             if next_segment_pos.start - dd < 0:
                 next_segment_pos = SegmentPosition(p.index, seg.length + (next_segment_pos.start - dd))
             else:
                 next_segment_pos.start -= dd
 
-            # deacrease the duration by overpass time
+            # decrease the duration by overpass time
             over_duration = dd / assigned_speed_mps
             d -= timedelta(seconds=over_duration)
 
@@ -151,13 +139,14 @@ def distance_duration(driving_route, departure_time, los_db, stop_distance=None)
         dt += d
         p = next_segment_pos
 
-        # duration, next segment position, average level of service
-
+    # returns:
+    # duration, next segment position, average level of service
     if len(level_of_services) == 0:
         return float("inf"), None, None
 
     avg_los = sum(level_of_services) / len(level_of_services)
-    return dt - departure_time, p, avg_los  # TODO: is average ok?
+
+    return dt - departure_time, p, avg_los
 
 
 def alternatives(vehicle, k):
