@@ -3,7 +3,7 @@ from functools import partial
 
 from probduration import VehiclePlan, avg_delays
 
-from ..distsim import distance_duration
+from .common import distance_duration
 from ..vehicle import Vehicle
 
 

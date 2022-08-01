@@ -8,10 +8,12 @@ from typing import Any, List, Dict, Tuple, Callable, NewType
 
 from probduration import VehiclePlan, Route, SegmentPosition
 
+
+from .common import alternatives, advance_vehicle
+from .routeranking import  Comparable
 from ..globalview import GlobalView
 from ..utils import osm_route_to_segments, route_to_osm_route
 from ..vehicle import Vehicle
-from ..distsim import alternatives, advance_vehicle
 from ..losdb import GlobalViewDb
 
 from .simulation import Simulation, VehicleUpdate
@@ -22,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 
 VehiclePlans = NewType("VehiclePlans", List[Tuple[Vehicle, VehiclePlan]])
-Comparable = NewType("Comparable", Any)
 
 
 class Simulator:
@@ -89,7 +90,6 @@ class Simulator:
         """
 
         current_offset = timedelta(seconds=0)
-
         while current_offset is not None:
             offset = self.sim.round_time_offset(current_offset)
             allowed_vehicles = list(filter(lambda v: self.sim.is_vehicle_within_offset(v, offset), self.sim.vehicles))
@@ -133,10 +133,6 @@ class Simulator:
             es_fn_kwargs_ = {} if es_fn_kwargs is None else es_fn_kwargs
             end_step_fn(self.sim, *es_fn_args, **es_fn_kwargs_)
         logger.info("Simulation done!")
-
-        for v in self.sim.vehicles:
-            print(v)
-            print(v.osm_route)
 
     def alternatives(self, vehicles):
         if self.pool is None:
