@@ -13,3 +13,5 @@ fastparquet
 shapely
 numpy
 pandas
+matplotlib
+networkx
