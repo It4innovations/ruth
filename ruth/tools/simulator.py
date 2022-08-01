@@ -1,199 +1,126 @@
-import os
+
 import click
-from datetime import datetime
+from datetime import datetime, timedelta
+from dataclasses import dataclass
+from contextlib import contextmanager
 
-from ruth.distsim import simulate
-from ruth.everestsim import simulate as everest_simulate
+from probduration import HistoryHandler
 
-def dask_simulator(input_benchmark_data,
-                   departure_time,
-                   k_routes,
-                   n_samples,
-                   seed,
-                   gv_update_period,
-                   dask_scheduler,
-                   dask_scheduler_port,
-                   out,
-                   intermediate_results,
-                   checkpoint_period):
-    """Run the vehicle simulator in dask environment.
+from ..simulator import Simulation, SimSetting, SingleNodeSimulator, RouteRankingAlgorithms, load_vehicles
+from ..losdb import FreeFlowDb, ProbProfileDb
 
-    Parameters:
-    -----------
-    input_benchmark_data: Path
-        An input file with benchmark data.
+
+@dataclass
+class CommonArgs:
     departure_time: datetime
-        A departure time (in format: '%Y-%m-%dT%H:%M:%S') of vehicles. Each vehicle has its
-        own `start_offset` that with combination of departure time determines the starting
-        time of the vehicle.
-    k_routes: int
-        A number of alternative routes routed between two points. Each route is ranked and the
-        _best rank_ is used for the vehicle.
-    n_samples: int
-        A number of samples of Monte Carlo simulation.
-    seed: Optional[int]
-        A fixed seed used for random generator.
-    gv_update_period: int
-        Global view update period; a number of consecutive steps perfomed between
-        the update of the global view.
-    dask_scheduler: str
-        An address of the machine where the _dask scheduler_ is running.
-    dask_scheduler_port: int
-        A port of running _dask scheduler_.
-    out: Path
-        A path of output file.
-    intermediate_results: Optional[Path]
-        A path of directory where the intermediate results are stored. If `None` the intermediate
-        results are not stored.
-    checkpoint_period: int
-        A period in which the intermediate results are stored.
+    round_frequency: timedelta
+    k_alternatives: int
+    nproc: int
+    out: str
+
+
+@contextmanager
+def prepare_simulator(common_args: CommonArgs, vehicles_path):
+    departure_time = common_args.departure_time
+    round_frequency = common_args.round_frequency
+    k_alternatives = common_args.k_alternatives
+    nproc = common_args.nproc
+
+    # TODO: solve the debug symbol
+    ss = SimSetting(departure_time, round_frequency, k_alternatives)
+    vehicles = load_vehicles(vehicles_path)
+
+    simulation = Simulation(vehicles, ss)
+
+    with SingleNodeSimulator(simulation, nproc) as simulator:
+        yield simulator
+
+
+@click.group()
+@click.option('--debug/--no-debug', default=False)  # TODO: maybe move to top-level group
+@click.option("--departure-time", type=click.DateTime(), default=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
+@click.option("--round-frequency-s", type=int, default=5,
+              help="Rounding time frequency in seconds.")
+@click.option("--k-alternatives", type=int, default=1,
+              help="Number of alternative routes.")
+@click.option("--nproc", type=int, default=1,
+              help="Number of concurrent processes.")
+@click.option("--out", type=str, default="out.pickle")
+@click.pass_context
+def single_node_simulator(ctx,
+                          debug,
+                          departure_time,
+                          round_frequency_s,
+                          k_alternatives,
+                          nproc,
+                          out):
+    # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
+    ctx.ensure_object(dict)
+
+    ctx.obj['DEBUG'] = debug
+    ctx.obj['common-args'] = CommonArgs(departure_time,
+                                        timedelta(seconds=round_frequency_s),
+                                        k_alternatives,
+                                        nproc,
+                                        out)
+
+
+@single_node_simulator.command()
+@click.argument("vehicles_path", type=click.Path(exists=True))
+@click.pass_context
+def rank_by_duration(ctx,
+                     vehicles_path):
+
+    out = ctx.obj['common-args'].out
+
+    with prepare_simulator(ctx.obj['common-args'], vehicles_path) as simulator:
+        alg = RouteRankingAlgorithms.DURATION.value
+        simulator.simulate(alg.rank_route, rr_fn_args=(simulator.state.global_view_db,))
+        simulator.state.store(out)
+
+
+@single_node_simulator.command()
+@click.argument("vehicles_path", type=click.Path(exists=True))
+@click.argument("prob_profile_path", type=click.Path(exists=True))
+@click.argument("near_distance", type=float)
+@click.argument("n_samples", type=int)
+@click.pass_context
+def rank_by_prob_delay(ctx,
+                       vehicles_path,
+                       prob_profile_path,
+                       near_distance,
+                       n_samples):
+
+    """Perform the simulation on a cluster's single node. The simulation use for ranking alternative routes
+    _probable delay_ on a route at a departure time. To compute the probable delay Monte Carlo Simulation is performed
+    with N_SAMPLES iterations and the average delay is used. During the Monte Carlo simulation the speed on segments
+    is changing according to probability profiles (PROB_PROFILE_PATH). The probability profile contains a distribution
+    of _level of service_ at each segment which is valid for certain period (e.g., for 15minutes periods).
+    NEAR_DISTANCE is used to compute the delay on route based on global view only. This can be seen as a distance
+    "driver is seeing in front of her/him".
     """
 
-    (gv, final_state_df) = simulate(input_benchmark_data,
-                                    dask_scheduler,
-                                    dask_scheduler_port,
-                                    departure_time,
-                                    k_routes,
-                                    n_samples,
-                                    seed,
-                                    gv_update_period,
-                                    intermediate_results,
-                                    checkpoint_period)
+    out = ctx.obj['common-args'].out
+    with prepare_simulator(ctx.obj['common-args'], vehicles_path) as simulator:
+        alg = RouteRankingAlgorithms.PROBABLE_DELAY.value
+        ff_db = FreeFlowDb()
+        pp_db = ProbProfileDb(HistoryHandler.open(prob_profile_path))
+        simulation = simulator.state
+        simulator.simulate(alg.rank_route,
+                           extend_plans_fn=alg.prepare_data,
+                           ep_fn_args=(simulation.global_view_db,
+                                       near_distance,
+                                       ff_db,
+                                       pp_db,
+                                       n_samples,
+                                       simulation.setting.rnd_gen))
 
-    out_path = os.path.abspath(out)
-    # TODO: solve the storing of resutl
-    # final_state_df.to_pickle(out_path)
-    gv.store(out_path)
-
-    for v in final_state_df:
-        print (v)
-
-
-run_simulator = click.Group()
-
-@run_simulator.command()
-@click.argument("input_benchmark_data",
-                type=click.Path(exists=True))
-@click.option("--departure-time",
-              type=click.DateTime(),
-              default=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
-@click.option("--k-routes",
-              type=int,
-              default=4,
-              help="A number of alterantive routes routed between two points.")
-@click.option("--n-samples",
-              type=int,
-              default=1000,
-              help="A number of samples of monte carlo simulation.")
-@click.option("--seed",
-              type=int,
-              help=("A fixed seed for random number generator"
-                    "enusiring the same behaviour in the next run."))
-@click.option("--gv-update-period",
-              type=int,
-              default=10,
-              help="An 'n' consecutive steps performed between update of the global view.")
-@click.option("--dask-scheduler",
-              type=str,
-              default="localhost",
-              help="An address of dask scheduler.")
-@click.option("--dask-scheduler-port",
-              type=int,
-              default=8786,
-              help="A port of the dask scheduler.")
-@click.option("--out", type=str, default="out.parquet")
-@click.option("--intermediate-results",
-              type=click.Path(),
-              help="A path to the folder with intermediate results.")
-@click.option("--checkpoint-period",
-              type=int,
-              default=1,
-              help="A period in which the intermediate results are stored.")
-def generic(input_benchmark_data,
-            departure_time,
-            k_routes,
-            n_samples,
-            seed,
-            gv_update_period,
-            dask_scheduler,
-            dask_scheduler_port,
-            out,
-            intermediate_results,
-            checkpoint_period):
-    """Generic command calling the simulator within dask environment."""
-
-    dask_simulator(input_benchmark_data,
-                   departure_time,
-                   k_routes,
-                   n_samples,
-                   seed,
-                   gv_update_period,
-                   dask_scheduler,
-                   dask_scheduler_port,
-                   out,
-                   intermediate_results,
-                   checkpoint_period)
-
-
-@run_simulator.command()
-@click.argument("input_benchmark_data",
-                type=click.Path(exists=True))
-@click.option("--departure-time",
-              type=click.DateTime(),
-              default=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
-@click.option("--k-routes",
-              type=int,
-              default=4,
-              help="A number of alterantive routes routed between two points.")
-@click.option("--n-samples",
-              type=int,
-              default=1000,
-              help="A number of samples of monte carlo simulation.")
-@click.option("--seed",
-              type=int,
-              help=("A fixed seed for random number generator"
-                    "enusiring the same behaviour in the next run."))
-@click.option("--gv-update-period",
-              type=int,
-              default=10,
-              help="An 'n' consecutive steps performed between update of the global view.")
-@click.option("--out", type=str, default="out.parquet")
-@click.option("--intermediate-results",
-              type=click.Path(),
-              help="A path to the folder with intermediate results.")
-@click.option("--checkpoint-period",
-              type=int,
-              default=1,
-              help="A period in which the intermediate results are stored.")
-def everest(input_benchmark_data,
-            departure_time,
-            k_routes,
-            n_samples,
-            seed,
-            gv_update_period,
-            out,
-            intermediate_results,
-            checkpoint_period):
-    """Generic command calling the simulator within dask environment."""
-
-    (global_view, step_info) = everest_simulate(input_benchmark_data,
-                                                departure_time,
-                                                k_routes,
-                                                n_samples,
-                                                seed,
-                                                gv_update_period,
-                                                intermediate_results,
-                                                checkpoint_period)
-
-    out_path = os.path.abspath(out)
-    global_view.store(out_path)
-    with open(f"step_info.csv", "w") as f:
-        f.write("\n".join(map(repr, step_info)))
+        simulation.store(out)
 
 
 def main():
-    run_simulator()
-    print("Simulation done.")
+    single_node_simulator(obj={})
+
 
 if __name__ == "__main__":
     main()
