@@ -95,37 +95,39 @@ class Simulator:
             allowed_vehicles = list(filter(lambda v: self.sim.is_vehicle_within_offset(v, offset), self.sim.vehicles))
 
             alts = self.alternatives(allowed_vehicles)
+            alt_dict = dict((v.id, (v, alt)) for v, alt in alts)
 
-            if not alts:
-                new_vehicles = []
-                for v in allowed_vehicles:
+            # collect vehicles without alternative and finish them
+            not_moved = []
+            for v in allowed_vehicles:
+                if v.id not in alt_dict:
                     v.active = False
+                    v.status = "no-route-exists"
                     leap_history, v.leap_history = v.leap_history, []
-                    new_vehicles.append(VehicleUpdate(v, leap_history))
-            else:
-                vehicle_plans = chain.from_iterable(
-                    filter(None, map(functools.partial(prepare_vehicle_plans,
-                                                       departure_time=self.sim.setting.departure_time),
-                                     alts)))
+                    not_moved.append(VehicleUpdate(v, leap_history))
 
-                selected_plans = select_plans(vehicle_plans,
-                                              route_ranking_fn, rr_fn_args, rr_fn_kwargs,
-                                              extend_plans_fn, ep_fn_args, ep_fn_kwargs)
+            vehicle_plans = chain.from_iterable(
+                filter(None, map(functools.partial(prepare_vehicle_plans,
+                                                   departure_time=self.sim.setting.departure_time),
+                                 alts)))
 
-                assert selected_plans, "Unexpected empty list of selected plans."
+            selected_plans = select_plans(vehicle_plans,
+                                          route_ranking_fn, rr_fn_args, rr_fn_kwargs,
+                                          extend_plans_fn, ep_fn_args, ep_fn_kwargs)
 
-                def transform_plan(vehicle_plan):
-                    vehicle, plan = vehicle_plan
-                    return vehicle, route_to_osm_route(plan.route)
-                bests = map(transform_plan, selected_plans)
+            assert selected_plans, "Unexpected empty list of selected plans."
 
-                new_vehicles = [self.advance_vehicle(best, offset) for best in bests]
+            def transform_plan(vehicle_plan):
+                vehicle, plan = vehicle_plan
+                return vehicle, route_to_osm_route(plan.route)
+            bests = map(transform_plan, selected_plans)
+
+            new_vehicles = [self.advance_vehicle(best, offset) for best in bests] + not_moved
 
             self.sim.update(new_vehicles)
             current_offset_new = self.sim.compute_current_offset()
             if current_offset_new == self.current_offset:
                 logger.error(f"The consecutive step with the same offset: {self.current_offset}.")
-                logger.error(allowed_vehicles)
                 break
             self.current_offset = current_offset_new
             self.sim.drop_old_records(self.current_offset)
