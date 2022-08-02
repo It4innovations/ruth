@@ -1,7 +1,7 @@
 import functools
 import logging
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from itertools import chain, groupby
 from multiprocessing import Pool
 from typing import Any, List, Dict, Tuple, Callable, NewType
@@ -90,7 +90,10 @@ class Simulator:
               Keyword arguments for end-step function
         """
 
+        step = self.sim.number_of_steps
         while self.current_offset is not None:
+            step_start_dt = datetime.now()
+
             offset = self.sim.round_time_offset(self.current_offset)
             allowed_vehicles = list(filter(lambda v: self.sim.is_vehicle_within_offset(v, offset), self.sim.vehicles))
 
@@ -132,9 +135,17 @@ class Simulator:
             self.current_offset = current_offset_new
             self.sim.drop_old_records(self.current_offset)
 
+            step_dur = datetime.now() - step_start_dt
+            self.sim.save_step_info(step, len(allowed_vehicles), step_dur)
+            logger.info(f"{step}. active: {len(allowed_vehicles)} duration: {step_dur / timedelta(milliseconds=1)} ms")
+
+            self.sim.duration += step_dur
+
             es_fn_kwargs_ = {} if es_fn_kwargs is None else es_fn_kwargs
             end_step_fn(self, *es_fn_args, **es_fn_kwargs_)
-        logger.info("Simulation done!")
+
+            step += 1
+        logger.info(f"Simulation done in {self.sim.duration}.")
 
     def alternatives(self, vehicles):
         if self.pool is None:

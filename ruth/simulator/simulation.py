@@ -20,6 +20,16 @@ class VehicleUpdate:
 
 
 @dataclass
+class StepInfo:
+    step: int
+    n_active: int
+    duration: timedelta
+
+    def __repr__(self):
+        return f"{self.step};{self.n_active};{self.duration / timedelta(milliseconds=1)}"
+
+
+@dataclass
 class SimSetting:
     """A simulation setting.
 
@@ -69,6 +79,8 @@ class Simulation:
         self.global_view = GlobalView()  # active global view
         self.vehicles = vehicles
         self.setting = setting
+        self.steps_info = []
+        self.duration = timedelta(seconds=0)
 
     @property
     def random(self):
@@ -101,6 +113,17 @@ class Simulation:
     def drop_old_records(self, offset_threshold):
         if offset_threshold is not None:
             self.global_view.drop_old(self.setting.departure_time + offset_threshold)
+
+    def save_step_info(self, step, n_active, duration):
+        self.steps_info.append(StepInfo(step, n_active, duration))
+
+    @property
+    def last_step(self):
+        return self.steps_info[-1]
+
+    @property
+    def number_of_steps(self):
+        return len(self.steps_info)
 
     def finished(self):
         return all(not v.active for v in self.vehicles)
