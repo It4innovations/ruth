@@ -10,6 +10,7 @@ class GlobalView:
     def __init__(self, data=None):
         self.data = [] if data is None else data
         self.by_segment = defaultdict(list)
+        self.traffic_jam_info = defaultdict(list)
 
     def add(self, vehicle_id, hrs):
         rows = [(dt, seg_id, vehicle_id, start_offset, speed, status)
@@ -44,15 +45,20 @@ class GlobalView:
         # rescale density
         n_vehicles_per_mile = n_vehicles * mile / segment.length
 
-        los = float("inf") # in case the vehicles are stuck in traffic jam
+        los = float("inf")  # in case the vehicles are stuck in traffic jam
         for (low, high), (m, n) in ranges:
             if n_vehicles_per_mile < high:
                 d = high - low  # size of range between two densities
-                los = m + ((n_vehicles_per_mile - low) * 0.2 / d) # -low => shrink to the size of the range
+                los = m + ((n_vehicles_per_mile - low) * 0.2 / d)  # -low => shrink to the size of the range
                 break
 
         # reverse the level of service 1.0 means 100% LoS, but the input table defines it in reverse
-        return los if los == float("inf") else 1.0 - los
+        los_ = los if los == float("inf") else 1.0 - los
+
+        # store info about traffic jam
+        if los_ == float('inf') or los_ <= 0.3:
+            self.traffic_jam_info[(datetime, segment.id)].append(los_)
+        return los_
 
     def __getstate__(self):
         self.data.sort(key=operator.itemgetter(0, 1))
