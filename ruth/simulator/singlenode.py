@@ -41,6 +41,7 @@ class Simulator:
         self.sim = sim
         self.pool = None
         self.nproc = nproc
+        self.current_offset = self.sim.compute_current_offset()
 
     def __enter__(self):
         self.pool = Pool(processes=self.nproc)
@@ -60,7 +61,7 @@ class Simulator:
                  extend_plans_fn: Callable[[VehiclePlans, List, Dict], Any] = lambda plans: plans,
                  ep_fn_args=(),
                  ep_fn_kwargs=None,
-                 end_step_fn: Callable[[Simulation, List, Dict], None] = lambda _: None,
+                 end_step_fn: Callable[[Simulation, List, Dict], None] = lambda *_: None,
                  es_fn_args=(),
                  es_fn_kwargs=None):
         """Perform the simulation.
@@ -89,9 +90,8 @@ class Simulator:
               Keyword arguments for end-step function
         """
 
-        current_offset = timedelta(seconds=0)
-        while current_offset is not None:
-            offset = self.sim.round_time_offset(current_offset)
+        while self.current_offset is not None:
+            offset = self.sim.round_time_offset(self.current_offset)
             allowed_vehicles = list(filter(lambda v: self.sim.is_vehicle_within_offset(v, offset), self.sim.vehicles))
 
             alts = self.alternatives(allowed_vehicles)
@@ -123,15 +123,15 @@ class Simulator:
 
             self.sim.update(new_vehicles)
             current_offset_new = self.sim.compute_current_offset()
-            if current_offset_new == current_offset:
-                logger.error(f"The consecutive step with the same offset: {current_offset}.")
+            if current_offset_new == self.current_offset:
+                logger.error(f"The consecutive step with the same offset: {self.current_offset}.")
                 logger.error(allowed_vehicles)
                 break
-            current_offset = current_offset_new
-            self.sim.drop_old_records(current_offset)
+            self.current_offset = current_offset_new
+            self.sim.drop_old_records(self.current_offset)
 
             es_fn_kwargs_ = {} if es_fn_kwargs is None else es_fn_kwargs
-            end_step_fn(self.sim, *es_fn_args, **es_fn_kwargs_)
+            end_step_fn(self, *es_fn_args, **es_fn_kwargs_)
         logger.info("Simulation done!")
 
     def alternatives(self, vehicles):

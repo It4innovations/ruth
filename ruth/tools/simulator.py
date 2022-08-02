@@ -3,6 +3,7 @@ import click
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from contextlib import contextmanager
+from typing import Optional
 
 from probduration import HistoryHandler
 
@@ -12,11 +13,13 @@ from ..losdb import FreeFlowDb, ProbProfileDb
 
 @dataclass
 class CommonArgs:
+    task_id: str
     departure_time: datetime
     round_frequency: timedelta
     k_alternatives: int
     nproc: int
     out: str
+    walltime: Optional[datetime] = None
 
 
 @contextmanager
@@ -36,8 +39,22 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path):
         yield simulator
 
 
+def store_simulation_at_walltime():
+    saved = False
+
+    def store(simulator: SingleNodeSimulator, walltime: timedelta, name: str):
+        nonlocal saved
+        """Store the state of the simulation at walltime."""
+        if simulator.current_offset is not None and not saved and simulator.current_offset >= walltime:
+            simulator.state.store(f"{name}-at-walltime.pickle")
+            saved = True
+
+    return store
+
+
 @click.group()
 @click.option('--debug/--no-debug', default=False)  # TODO: maybe move to top-level group
+@click.option("--task-id", type=str)
 @click.option("--departure-time", type=click.DateTime(), default=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
 @click.option("--round-frequency-s", type=int, default=5,
               help="Rounding time frequency in seconds.")
@@ -46,23 +63,31 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path):
 @click.option("--nproc", type=int, default=1,
               help="Number of concurrent processes.")
 @click.option("--out", type=str, default="out.pickle")
+@click.option("--walltime_s", type=int)
 @click.pass_context
 def single_node_simulator(ctx,
                           debug,
+                          task_id,
                           departure_time,
                           round_frequency_s,
                           k_alternatives,
                           nproc,
-                          out):
+                          out,
+                          walltime_s):
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
     ctx.ensure_object(dict)
 
     ctx.obj['DEBUG'] = debug
-    ctx.obj['common-args'] = CommonArgs(departure_time,
+    walltime = timedelta(seconds=walltime_s) if walltime_s is not None else None
+    sim_state = Simulation.load(continue_from) if continue_from is not None else None
+
+    ctx.obj['common-args'] = CommonArgs(task_id,
+                                        departure_time,
                                         timedelta(seconds=round_frequency_s),
                                         k_alternatives,
                                         nproc,
-                                        out)
+                                        out,
+                                        walltime)
 
 
 @single_node_simulator.command()
@@ -71,11 +96,17 @@ def single_node_simulator(ctx,
 def rank_by_duration(ctx,
                      vehicles_path):
 
-    out = ctx.obj['common-args'].out
+    common_args = ctx.obj['common-args']
+    out = common_args.out
+    walltime = common_args.walltime
+    task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
-    with prepare_simulator(ctx.obj['common-args'], vehicles_path) as simulator:
+    with prepare_simulator(common_args, vehicles_path) as simulator:
         alg = RouteRankingAlgorithms.DURATION.value
-        simulator.simulate(alg.rank_route, rr_fn_args=(simulator.state.global_view_db,))
+        end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
+        simulator.simulate(alg.rank_route, rr_fn_args=(simulator.state.global_view_db,),
+                           end_step_fn=end_step_fn,
+                           es_fn_args=(walltime, f"rank_by_duration{task_id}"))
         simulator.state.store(out)
 
 
@@ -100,12 +131,17 @@ def rank_by_prob_delay(ctx,
     "driver is seeing in front of her/him".
     """
 
-    out = ctx.obj['common-args'].out
+    common_args = ctx.obj['common-args']
+    out = common_args.out
+    walltime = common_args.walltime
+    task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
+
     with prepare_simulator(ctx.obj['common-args'], vehicles_path) as simulator:
         alg = RouteRankingAlgorithms.PROBABLE_DELAY.value
         ff_db = FreeFlowDb()
         pp_db = ProbProfileDb(HistoryHandler.open(prob_profile_path))
         simulation = simulator.state
+        end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
         simulator.simulate(alg.rank_route,
                            extend_plans_fn=alg.prepare_data,
                            ep_fn_args=(simulation.global_view_db,
@@ -113,7 +149,9 @@ def rank_by_prob_delay(ctx,
                                        ff_db,
                                        pp_db,
                                        n_samples,
-                                       simulation.setting.rnd_gen))
+                                       simulation.setting.rnd_gen),
+                           end_step_fn=end_step_fn,
+                           es_fn_args=(walltime, f"rank-by-prob-profile{task_id}"))
 
         simulation.store(out)
 
