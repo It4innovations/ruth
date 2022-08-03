@@ -20,6 +20,7 @@ class CommonArgs:
     nproc: int
     out: str
     walltime: Optional[datetime] = None
+    continue_from: Optional[Simulation] = None
 
 
 @contextmanager
@@ -28,12 +29,15 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path):
     round_frequency = common_args.round_frequency
     k_alternatives = common_args.k_alternatives
     nproc = common_args.nproc
+    sim_state = common_args.continue_from
 
     # TODO: solve the debug symbol
-    ss = SimSetting(departure_time, round_frequency, k_alternatives)
-    vehicles = load_vehicles(vehicles_path)
-
-    simulation = Simulation(vehicles, ss)
+    if sim_state is None:
+        ss = SimSetting(departure_time, round_frequency, k_alternatives)
+        vehicles = load_vehicles(vehicles_path)
+        simulation = Simulation(vehicles, ss)
+    else:
+        simulation = sim_state
 
     with SingleNodeSimulator(simulation, nproc) as simulator:
         yield simulator
@@ -63,7 +67,9 @@ def store_simulation_at_walltime():
 @click.option("--nproc", type=int, default=1,
               help="Number of concurrent processes.")
 @click.option("--out", type=str, default="out.pickle")
-@click.option("--walltime_s", type=int)
+@click.option("--walltime-s", type=int, help="Time limit in which the state of simulation is saved")
+@click.option("--continue-from", type=click.Path(exists=True),
+              help="Path to a saved state of simulation to continue from.")
 @click.pass_context
 def single_node_simulator(ctx,
                           debug,
@@ -73,7 +79,8 @@ def single_node_simulator(ctx,
                           k_alternatives,
                           nproc,
                           out,
-                          walltime_s):
+                          walltime_s,
+                          continue_from):
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
     ctx.ensure_object(dict)
 
@@ -87,7 +94,8 @@ def single_node_simulator(ctx,
                                         k_alternatives,
                                         nproc,
                                         out,
-                                        walltime)
+                                        walltime,
+                                        sim_state)
 
 
 @single_node_simulator.command()
