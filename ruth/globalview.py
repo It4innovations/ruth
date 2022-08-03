@@ -9,7 +9,7 @@ class GlobalView:
 
     def __init__(self, data=None):
         self.data = [] if data is None else data
-        self.by_segment = defaultdict(list)
+        self.by_segment = self.construct_by_segments_()
         self.traffic_jam_info = defaultdict(list)
 
     def add(self, vehicle_id, hrs):
@@ -60,13 +60,20 @@ class GlobalView:
             self.traffic_jam_info[(datetime, segment.id)].append(los_)
         return los_
 
+    def construct_by_segments_(self):
+        by_segment = defaultdict(list)
+        for dt, seg_id, vehicle_id, start_offset, speed, status in self.data:
+            by_segment[seg_id].append((dt, vehicle_id))
+
+        return by_segment
+
     def __getstate__(self):
         self.data.sort(key=operator.itemgetter(0, 1))
-        return pickle.dumps(self.data)
+        return self.data, self.traffic_jam_info
 
     def __setstate__(self, state):
-        data = pickle.loads(state)
-        self.__init__(data=data)
+        self.data, self.traffic_jam_info = state
+        self.by_segment = self.construct_by_segments_()
 
     def store(self, path):
         with open(path, 'wb') as f:
@@ -88,7 +95,5 @@ class GlobalView:
                 self.data = self.data[i:]
                 break
 
-        self.by_segment = defaultdict(list)
-        for dt, seg_id, vehicle_id, start_offset, speed, status in self.data:
-            self.by_segment[seg_id].append((dt, vehicle_id))
+        self.by_segment = self.construct_by_segments_()
 
