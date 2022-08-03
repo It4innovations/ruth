@@ -45,11 +45,12 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path):
 
 def store_simulation_at_walltime():
     saved = False
+    start_time = datetime.now()
 
     def store(simulator: SingleNodeSimulator, walltime: timedelta, name: str):
         nonlocal saved
         """Store the state of the simulation at walltime."""
-        if simulator.current_offset is not None and not saved and simulator.current_offset >= walltime:
+        if (datetime.now() - start_time) >= walltime and not saved:
             simulator.state.store(f"{name}-at-walltime.pickle")
             saved = True
 
