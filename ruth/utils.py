@@ -1,7 +1,7 @@
 import re
 import osmnx as ox
 from probduration import Segment
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from .data.map import Map
 from .data.border import Border, BorderType, PolygonBorderDef
@@ -75,6 +75,23 @@ def route_to_osm_route(route):
 
 def round_timedelta(td: timedelta, freq: timedelta):
     return freq * round(td / freq)
+
+
+def round_datetime(dt: datetime, freq: timedelta):
+    if freq / timedelta(hours=1) > 1:
+        assert False, "Too rough rounding frequency"
+    elif freq / timedelta(minutes=1) > 1:
+        td = timedelta(minutes=dt.minute, seconds=dt.second, microseconds=dt.microsecond)
+    elif freq / timedelta(seconds=1) > 1:
+        td = timedelta(seconds=dt.second, microseconds=dt.microsecond)
+    else:
+        assert False, "Too fine rounding frequency"
+
+    rest = dt - td
+    td_rounded = round_timedelta(td, freq)
+
+    return rest + td_rounded
+
 
 
 from contextlib import contextmanager
