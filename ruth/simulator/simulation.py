@@ -25,9 +25,6 @@ class StepInfo:
     n_active: int
     duration: timedelta
 
-    def __repr__(self):
-        return f"{self.step};{self.n_active};{self.duration / timedelta(milliseconds=1)}"
-
 
 @dataclass
 class SimSetting:
