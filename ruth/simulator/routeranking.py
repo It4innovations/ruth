@@ -43,7 +43,7 @@ def duration_based_on_global_view(gv_db, vehicle_plan):
     duration, *_ = distance_duration(plan.route, plan.departure_time, gv_db, lambda: None)
 
     if duration == float('inf'):
-        return timedelta.max
+        return timedelta.max - timedelta(days=7)
 
     return duration
 
@@ -54,7 +54,8 @@ def adjust_plan_by_global_view(vehicle_plan: (Vehicle, VehiclePlan), distance, f
     duration, position, los = distance_duration(plan.route, plan.departure_time, gv_db, rnd_gen, distance)
 
     if duration == float('inf'):
-        delay = timedelta.max
+        delay = timedelta.max - timedelta(days=7)  # NOTE: decrease the delay in order to be able to add to the number;
+                                                   #       assumption: there is no forcasted delay longer than 7 days.
         duration = vehicle.frequency
         position = plan.start_position
         los = 0.0
