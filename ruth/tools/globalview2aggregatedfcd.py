@@ -19,9 +19,10 @@ class Record:
     segment_osm_id: str
     fcd_time_calc: datetime
     los: float
+    segment_length: float
 
     def __repr__(self):
-        return f"{self.segment_osm_id};{self.fcd_time_calc.strftime('%Y-%m-%d %H:%M')};{self.los}"
+        return f"{self.segment_osm_id};{self.fcd_time_calc.strftime('%Y-%m-%d %H:%M')};{self.los};{self.segment_length}"
 
 
 def timed_segment_to_record(dt, seg_id, length, aggregated_gv):
@@ -29,7 +30,7 @@ def timed_segment_to_record(dt, seg_id, length, aggregated_gv):
     los = aggregated_gv.level_of_service_in_time_at_segment(dt, seg)
     if float('inf') == los:
         los = 0.0
-    return Record(seg_id, dt, los)
+    return Record(seg_id, dt, los, length)
 
 
 def aggregate(sim_path, round_freq_s, border_id=None, border_kind=None, out=None):
@@ -72,7 +73,7 @@ def aggregate(sim_path, round_freq_s, border_id=None, border_kind=None, out=None
     print("Data aggregated.")
 
     with open(out, "w") as csv:
-        csv.write("segment_osm_id;fcd_time_calc;los\n")
+        csv.write("segment_osm_id;fcd_time_calc;los;segment_length\n")
         csv.write("\n".join(map(repr, records)))
 
     print(f"Aggregated FCDs are written within '{out}'.")
