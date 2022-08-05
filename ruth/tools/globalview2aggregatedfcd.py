@@ -1,11 +1,10 @@
 
+import os
 import click
 import pandas as pd
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from tqdm import tqdm
-from multiprocessing import Pool, cpu_count
-from functools import partial
 
 from probduration import Segment
 
@@ -79,17 +78,56 @@ def aggregate(sim_path, round_freq_s, border_id=None, border_kind=None, out=None
     print(f"Aggregated FCDs are written within '{out}'.")
 
 
-@click.command()
+aggregate_cmd = click.Group()
+
+
+class prepare_aggregate:
+    def __init__(self, round_freq_s, border_id, border_kind):
+        self.round_freq_s = round_freq_s
+        self.border_id = border_id
+        self.border_kind = border_kind
+
+    def __call__(self, inout):
+        input_file_path, output_file_path = inout
+        print(f"Start processing: {input_file_path}...")
+        return aggregate(input_file_path, self.round_freq_s, self.border_id, self.border_kind, output_file_path)
+
+
+@aggregate_cmd.command()
 @click.argument("sim_path", type=click.Path(exists=True))
-@click.option("--round_freq_s", type=int, default=300, help="How to round date times.")
-@click.option("--border_id", type=str)
-@click.option("--border_kind", type=str)
+@click.option("--round-freq-s", type=int, default=300, help="How to round date times.")
+@click.option("--border-id", type=str)
+@click.option("--border-kind", type=str)
 @click.option("--out", type=str, default="out.csv")
-def aggregate_cmd(sim_path, round_freq_s, border_id, border_kind, out):
+def aggregate_globalview(sim_path, round_freq_s, border_id, border_kind, out):
     return aggregate(sim_path, round_freq_s, border_id, border_kind, out)
 
 
+@aggregate_cmd.command()
+@click.argument("dir_path", type=click.Path(exists=True))
+@click.option("--round-freq-s", type=int, default=300, help="How to round date times.")
+@click.option("--border-id", type=str)
+@click.option("--border-kind", type=str)
+@click.option("--out-dir", type=str, default="out")
+def aggregate_globalview_set(dir_path, round_freq_s, border_id, border_kind, out_dir):
+    dir_path_ = os.path.abspath(dir_path)
+    out_dir_ = os.path.abspath(out_dir)
 
+    if not os.path.exists(out_dir_):
+        os.makedirs(out_dir_)
+
+    for filename in os.listdir(dir_path_):
+        file_path = os.path.join(dir_path_, filename)
+        basename = os.path.basename(filename)
+        parts = basename.split('.')
+        name = parts[0]
+
+        out_file_path = os.path.join(out_dir_, f"{name}-aggregated-fcd.csv")
+        aggregate(file_path, round_freq_s, border_id, border_kind, out_file_path)
+
+
+if __name__ == "__main__":
+    aggregate_cmd()
 
 
 
