@@ -105,7 +105,7 @@ class Simulation:
             self.global_view.add(update.vehicle.id, update.leap_history)
             self.history.add(update.vehicle.id, update.leap_history)
 
-        self.vehicles = list(vd.values())
+        self.vehicles = sorted(vd.values(), key=lambda v: v.id)
 
     def drop_old_records(self, offset_threshold):
         if offset_threshold is not None:
