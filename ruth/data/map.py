@@ -10,6 +10,11 @@ from ..log import console_logger as cl
 from ..metaclasses import Singleton
 
 
+def segment_weight(n1, n2, data):
+    assert "length" in data, f"Expected the 'length' of segment to be known. ({n1}, {n2})"
+    return float(data['length']) + float(f"0.{n1}{n2}")
+
+
 class Map(metaclass=Singleton):
     """Routing map."""
 
@@ -67,7 +72,7 @@ class Map(metaclass=Singleton):
     def k_shortest_paths(self, origin, dest, k):
         """Compute k-shortest paths between two OSM nodes."""
         paths_gen = nx.shortest_simple_paths(G=self.simple_network, source=origin,
-                                             target=dest)
+                                             target=dest, weight=segment_weight)
         for path in itertools.islice(paths_gen, 0, k):
             yield path
 
