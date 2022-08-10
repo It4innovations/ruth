@@ -1,8 +1,8 @@
 """The state less implementation of a vehicle."""
 
 import sys
+
 import pandas as pd
-import numpy as np
 
 from dataclasses import dataclass, field, asdict
 from typing import List, Tuple
@@ -55,6 +55,16 @@ class Vehicle:
             # At the beginning the _start_index_ and _starting_distance_offset_ are 0 and 0.0,
             # hence the *current starting node* with *index* will be the _origin_node_ and 0.
             self.osm_route = [self.origin_node, self.dest_node]
+
+        # We want to normalize these values to datetime.timedelta, because performing operations
+        # between pandas.TimeDelta and datetime.timedelta is very slow (10x slower).
+        # The check is here because the values are pandas when initially loaded from disk,
+        # but then they are already converted to datetime when they are sent between processes
+        # and reinitialized.
+        if isinstance(self.frequency, pd.Timedelta):
+            self.frequency = self.frequency.to_pytimedelta()
+        if isinstance(self.time_offset, pd.Timedelta):
+            self.time_offset = self.time_offset.to_pytimedelta()
 
     def __getstate__(self):
         return asdict(self)
