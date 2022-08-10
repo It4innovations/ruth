@@ -12,7 +12,7 @@ from probduration import VehiclePlan, Route, SegmentPosition
 from .common import alternatives, advance_vehicle
 from .routeranking import  Comparable
 from ..globalview import GlobalView
-from ..utils import osm_route_to_segments, route_to_osm_route, timer
+from ..utils import osm_route_to_segments, route_to_osm_route, Timer, TimerSet
 from ..vehicle import Vehicle
 from ..losdb import GlobalViewDb
 
@@ -93,19 +93,20 @@ class Simulator:
         step = self.sim.number_of_steps
         while self.current_offset is not None:
             step_start_dt = datetime.now()
+            timer_set = TimerSet()
 
             offset = self.sim.round_time_offset(self.current_offset)
 
-            with timer("\tallowed_vehicles"):
+            with timer_set.get("allowed_vehicles"):
                 allowed_vehicles = [v for v in self.sim.vehicles
                                     if self.sim.is_vehicle_within_offset(v, offset)]
 
-            with timer("\talternatives"):
+            with timer_set.get("alternatives"):
                 alts = self.alternatives(allowed_vehicles)
             alt_dict = dict((v.id, (v, alt)) for v, alt in alts)
 
             # collect vehicles without alternative and finish them
-            with timer("\tcollect"):
+            with timer_set.get("collect"):
                 not_moved = []
                 for v in allowed_vehicles:
                     if v.id not in alt_dict:
@@ -114,13 +115,13 @@ class Simulator:
                         leap_history, v.leap_history = v.leap_history, []
                         not_moved.append(VehicleUpdate(v, leap_history))
 
-            with timer("\tvehicle_plans"):
+            with timer_set.get("vehicle_plans"):
                 vehicle_plans = chain.from_iterable(
                     filter(None, map(functools.partial(prepare_vehicle_plans,
                                                        departure_time=self.sim.setting.departure_time),
                                      alts)))
 
-            with timer("\tselect_plans"):
+            with timer_set.get("select_plans"):
                 selected_plans = select_plans(vehicle_plans,
                                               route_ranking_fn, rr_fn_args, rr_fn_kwargs,
                                               extend_plans_fn, ep_fn_args, ep_fn_kwargs)
@@ -131,35 +132,34 @@ class Simulator:
                 vehicle, plan = vehicle_plan
                 return vehicle, route_to_osm_route(plan.route)
 
-            with timer("\ttransform_plans"):
+            with timer_set.get("transform_plans"):
                 bests = list(map(transform_plan, selected_plans))
 
-            with timer("\tadvance_vehicle"):
+            with timer_set.get("advance_vehicle"):
                 new_vehicles = [self.advance_vehicle(best, offset) for best in bests] + not_moved
 
-            with timer("\tupdate"):
+            with timer_set.get("update"):
                 self.sim.update(new_vehicles)
 
-            with timer("\tcompute_offset"):
+            with timer_set.get("compute_offset"):
                 current_offset_new = self.sim.compute_current_offset()
                 if current_offset_new == self.current_offset:
                     logger.error(f"The consecutive step with the same offset: {self.current_offset}.")
                     break
                 self.current_offset = current_offset_new
 
-            with timer("\tdrop_old_records"):
+            with timer_set.get("drop_old_records"):
                 self.sim.drop_old_records(self.current_offset)
 
-            with timer("\tsave"):
-                step_dur = datetime.now() - step_start_dt
-                self.sim.save_step_info(step, len(allowed_vehicles), step_dur)
-                logger.info(f"{step}. active: {len(allowed_vehicles)} duration: {step_dur / timedelta(milliseconds=1)} ms")
+            step_dur = datetime.now() - step_start_dt
+            logger.info(f"{step}. active: {len(allowed_vehicles)} duration: {step_dur / timedelta(milliseconds=1)} ms")
+            self.sim.duration += step_dur
 
-                self.sim.duration += step_dur
-
-            with timer("\tend_step"):
+            with timer_set.get("end_step"):
                 es_fn_kwargs_ = {} if es_fn_kwargs is None else es_fn_kwargs
                 end_step_fn(self, *es_fn_args, **es_fn_kwargs_)
+
+            self.sim.save_step_info(step, len(allowed_vehicles), step_dur, timer_set.collect())
 
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")

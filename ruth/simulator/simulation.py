@@ -1,9 +1,10 @@
 import pickle
+import pandas as pd
 
-from dataclasses import dataclass, field, InitVar
+from dataclasses import dataclass, InitVar
 from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Dict
 
 from ..globalview import GlobalView
 from ..losdb import GlobalViewDb
@@ -24,6 +25,7 @@ class StepInfo:
     step: int
     n_active: int
     duration: timedelta
+    parts: Dict[str, float]
 
 
 @dataclass
@@ -111,8 +113,18 @@ class Simulation:
         if offset_threshold is not None:
             self.global_view.drop_old(self.setting.departure_time + offset_threshold)
 
-    def save_step_info(self, step, n_active, duration):
-        self.steps_info.append(StepInfo(step, n_active, duration))
+    def save_step_info(self, step, n_active, duration, parts):
+        self.steps_info.append(StepInfo(step, n_active, duration, parts))
+
+    def steps_info_to_dataframe(self):
+        if not self.steps_info:
+            raise Exception("Empty steps info cannot be converted to DataFrame.")
+
+        first = self.steps_info[0]
+        return pd.DataFrame([(si.step, si.n_active, si.duration / timedelta(milliseconds=1), *si.parts.values())
+                             for si in self.steps_info],
+                            columns=["step", "n_active", "duration"] + list(first.parts.keys()))
+
 
     @property
     def last_step(self):

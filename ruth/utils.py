@@ -2,7 +2,6 @@ import re
 import osmnx as ox
 from probduration import Segment
 from datetime import datetime, timedelta
-from contextlib import contextmanager
 import time
 
 from .data.map import Map
@@ -95,16 +94,33 @@ def round_datetime(dt: datetime, freq: timedelta):
     return rest + td_rounded
 
 
-@contextmanager
-def timer(name: str, enabled=False):
-    if enabled:
-        start = time.time()
-        try:
-            yield
-        finally:
-            end = time.time()
-            duration = end - start
-            duration_ms = duration * 1000
-            print(f"{name}: {duration_ms:.3f} ms")
-    else:
-        yield
+class Timer:
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __enter__(self):
+        self.start = time.time()
+        self.end = None
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.end = time.time()
+
+    @property
+    def duration_ms(self):
+        assert self.end is not None, "Trying to call duration on unfinished timer."
+        return (self.end - self.start) * 1000
+
+
+class TimerSet:
+
+    def __init__(self):
+        self.timers = []
+
+    def get(self, name):
+        self.timers.append(Timer(name))
+        return self.timers[-1]
+
+    def collect(self):
+        return dict((timer.name, timer.duration_ms) for timer in self.timers)
