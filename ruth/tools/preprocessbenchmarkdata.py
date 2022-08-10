@@ -16,7 +16,7 @@ from ..utils import get_map
 
 
 # TODO: this method should be removed completely
-def assign_border(df: pd.DataFrame) -> pd.DataFrame:
+def assign_border(df: pd.DataFrame, border_kind) -> pd.DataFrame:
     if "border" in df.columns:
         df["border_id"] = df.border.apply(lambda b: f"custom_{PolygonBorderDef(b).md5()}")
     else:
@@ -24,7 +24,7 @@ def assign_border(df: pd.DataFrame) -> pd.DataFrame:
         df["border_id"] = "CZ010" # TODO: get rid of this
         df["border"] = None
 
-    df["border_kind"] = "county"
+    df["border_kind"] = border_kind
 
     return df
 
@@ -84,11 +84,12 @@ def _is_active(row):
 
 @click.command()
 @click.argument("in_path", type=click.Path(exists=True))
+@click.option("--border-kind", type=str, default="county", help='["country", "county", "district", "town"]')
 @click.option("--out", type=str, default="out.parquet")
-def main(in_path, out):
+def main(in_path, border_kind, out):
     out_path = os.path.abspath(out)
     df = pd.read_csv(in_path, delimiter=';')
-    df = assign_border(df)
+    df = assign_border(df, border_kind)
     df = compute_osm_nodes_id(df)
     df = prepare_vehicle_state(df)
     df.to_parquet(out_path, engine="fastparquet")
