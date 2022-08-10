@@ -2,6 +2,8 @@ import re
 import osmnx as ox
 from probduration import Segment
 from datetime import datetime, timedelta
+from contextlib import contextmanager
+import time
 
 from .data.map import Map
 from .data.border import Border, BorderType, PolygonBorderDef
@@ -93,17 +95,16 @@ def round_datetime(dt: datetime, freq: timedelta):
     return rest + td_rounded
 
 
-
-from contextlib import contextmanager
-import time
-
-
 @contextmanager
-def timer(name: str):
-    start = time.time()
-    try:
+def timer(name: str, enabled=False):
+    if enabled:
+        start = time.time()
+        try:
+            yield
+        finally:
+            end = time.time()
+            duration = end - start
+            duration_ms = duration * 1000
+            print(f"{name}: {duration_ms:.3f} ms")
+    else:
         yield
-    finally:
-        end = time.time()
-        duration = end - start
-        #print(f"{name}: {duration}")

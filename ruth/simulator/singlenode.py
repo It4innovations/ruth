@@ -12,7 +12,7 @@ from probduration import VehiclePlan, Route, SegmentPosition
 from .common import alternatives, advance_vehicle
 from .routeranking import  Comparable
 from ..globalview import GlobalView
-from ..utils import osm_route_to_segments, route_to_osm_route
+from ..utils import osm_route_to_segments, route_to_osm_route, timer
 from ..vehicle import Vehicle
 from ..losdb import GlobalViewDb
 
@@ -95,54 +95,71 @@ class Simulator:
             step_start_dt = datetime.now()
 
             offset = self.sim.round_time_offset(self.current_offset)
-            allowed_vehicles = list(filter(lambda v: self.sim.is_vehicle_within_offset(v, offset), self.sim.vehicles))
 
-            alts = self.alternatives(allowed_vehicles)
+            with timer("\tallowed_vehicles"):
+                allowed_vehicles = [v for v in self.sim.vehicles
+                                    if self.sim.is_vehicle_within_offset(v, offset)]
+
+            with timer("\talternatives"):
+                alts = self.alternatives(allowed_vehicles)
             alt_dict = dict((v.id, (v, alt)) for v, alt in alts)
 
             # collect vehicles without alternative and finish them
-            not_moved = []
-            for v in allowed_vehicles:
-                if v.id not in alt_dict:
-                    v.active = False
-                    v.status = "no-route-exists"
-                    leap_history, v.leap_history = v.leap_history, []
-                    not_moved.append(VehicleUpdate(v, leap_history))
+            with timer("\tcollect"):
+                not_moved = []
+                for v in allowed_vehicles:
+                    if v.id not in alt_dict:
+                        v.active = False
+                        v.status = "no-route-exists"
+                        leap_history, v.leap_history = v.leap_history, []
+                        not_moved.append(VehicleUpdate(v, leap_history))
 
-            vehicle_plans = chain.from_iterable(
-                filter(None, map(functools.partial(prepare_vehicle_plans,
-                                                   departure_time=self.sim.setting.departure_time),
-                                 alts)))
+            with timer("\tvehicle_plans"):
+                vehicle_plans = chain.from_iterable(
+                    filter(None, map(functools.partial(prepare_vehicle_plans,
+                                                       departure_time=self.sim.setting.departure_time),
+                                     alts)))
 
-            selected_plans = select_plans(vehicle_plans,
-                                          route_ranking_fn, rr_fn_args, rr_fn_kwargs,
-                                          extend_plans_fn, ep_fn_args, ep_fn_kwargs)
+            with timer("\tselect_plans"):
+                selected_plans = select_plans(vehicle_plans,
+                                              route_ranking_fn, rr_fn_args, rr_fn_kwargs,
+                                              extend_plans_fn, ep_fn_args, ep_fn_kwargs)
 
             assert selected_plans, "Unexpected empty list of selected plans."
 
             def transform_plan(vehicle_plan):
                 vehicle, plan = vehicle_plan
                 return vehicle, route_to_osm_route(plan.route)
-            bests = map(transform_plan, selected_plans)
 
-            new_vehicles = [self.advance_vehicle(best, offset) for best in bests] + not_moved
+            with timer("\ttransform_plans"):
+                bests = list(map(transform_plan, selected_plans))
 
-            self.sim.update(new_vehicles)
-            current_offset_new = self.sim.compute_current_offset()
-            if current_offset_new == self.current_offset:
-                logger.error(f"The consecutive step with the same offset: {self.current_offset}.")
-                break
-            self.current_offset = current_offset_new
-            self.sim.drop_old_records(self.current_offset)
+            with timer("\tadvance_vehicle"):
+                new_vehicles = [self.advance_vehicle(best, offset) for best in bests] + not_moved
 
-            step_dur = datetime.now() - step_start_dt
-            self.sim.save_step_info(step, len(allowed_vehicles), step_dur)
-            logger.info(f"{step}. active: {len(allowed_vehicles)} duration: {step_dur / timedelta(milliseconds=1)} ms")
+            with timer("\tupdate"):
+                self.sim.update(new_vehicles)
 
-            self.sim.duration += step_dur
+            with timer("\tcompute_offset"):
+                current_offset_new = self.sim.compute_current_offset()
+                if current_offset_new == self.current_offset:
+                    logger.error(f"The consecutive step with the same offset: {self.current_offset}.")
+                    break
+                self.current_offset = current_offset_new
 
-            es_fn_kwargs_ = {} if es_fn_kwargs is None else es_fn_kwargs
-            end_step_fn(self, *es_fn_args, **es_fn_kwargs_)
+            with timer("\tdrop_old_records"):
+                self.sim.drop_old_records(self.current_offset)
+
+            with timer("\tsave"):
+                step_dur = datetime.now() - step_start_dt
+                self.sim.save_step_info(step, len(allowed_vehicles), step_dur)
+                logger.info(f"{step}. active: {len(allowed_vehicles)} duration: {step_dur / timedelta(milliseconds=1)} ms")
+
+                self.sim.duration += step_dur
+
+            with timer("\tend_step"):
+                es_fn_kwargs_ = {} if es_fn_kwargs is None else es_fn_kwargs
+                end_step_fn(self, *es_fn_args, **es_fn_kwargs_)
 
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
