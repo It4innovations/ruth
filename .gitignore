@@ -3,6 +3,7 @@ cache/
 dask-worker-space/
 build/
 venv/
+.idea
 *.egg-info
 **/*.pyc
 **/*.pickle
