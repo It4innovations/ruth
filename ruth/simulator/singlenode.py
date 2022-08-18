@@ -188,7 +188,7 @@ class Simulator:
             else:
                 uncached_vehicles.append(vehicle)
 
-        logging.debug(f"Alternatives hit rate: {hits}/{len(vehicles)} ({(hits / len(vehicles)) * 100:.2f}%)")
+        logger.info(f"Alternatives hit rate: {hits}/{len(vehicles)} ({(hits / len(vehicles)) * 100:.2f}%)")
 
         alts = list(filter(None, map_fn(functools.partial(alternatives, k=self.sim.setting.k_alternatives),
                            uncached_vehicles)))
