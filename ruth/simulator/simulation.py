@@ -1,7 +1,9 @@
 import pickle
+import pylru
 import pandas as pd
 
-from dataclasses import dataclass, InitVar
+from collections import defaultdict
+from dataclasses import dataclass, field, InitVar
 from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
 from typing import List, Tuple, Dict
@@ -26,6 +28,20 @@ class StepInfo:
     n_active: int
     duration: timedelta
     parts: Dict[str, float]
+
+
+@dataclass
+class CacheInfo:
+    hits: int
+    total: int
+    timestamp: datetime = field(init=False)  # TODO: maybe store only a time offset since the simulation's begging
+
+    def __post_init__(self):
+        self.timestamp = datetime.now()
+
+    @property
+    def hit_rate(self):
+        return self.hits / self.total
 
 
 @dataclass
@@ -60,6 +76,10 @@ class SimSetting:
         self.rnd_gen = random
 
 
+def get_lru_cache():
+    return pylru.lrucache(100_000)
+
+
 class Simulation:
     """A simulation state."""
 
@@ -79,6 +99,8 @@ class Simulation:
         self.vehicles = vehicles
         self.setting = setting
         self.steps_info = []
+        self.caches = defaultdict(get_lru_cache)
+        self.cache_info = defaultdict(list)
         self.duration = timedelta(seconds=0)
 
     @property
@@ -125,7 +147,6 @@ class Simulation:
                              for si in self.steps_info],
                             columns=["step", "n_active", "duration"] + list(first.parts.keys()))
 
-
     @property
     def last_step(self):
         return self.steps_info[-1]
@@ -133,6 +154,26 @@ class Simulation:
     @property
     def number_of_steps(self):
         return len(self.steps_info)
+
+    def cache(self, cache_name, key, value):
+        self.caches[cache_name][key] = value
+
+    def get_from_cache(self, cache_name, key):
+        return self.caches[cache_name].get(key)
+
+    def save_cache_info(self, cache_name, hists, total):
+        self.cache_info[cache_name].append(CacheInfo(hists, total))
+
+    @property
+    def last_cache_info(self, cache_name):
+        return self.cache_info[cache_name][:-1]
+
+    def cache_info_to_dataframe(self, cache_name):
+        if not self.cache_info[cache_name]:
+            raise Exception("Empty cache info cannot be converted into DataFrame.")
+
+        return pd.DataFrame([(ci.timestamp, ci.hits, ci.total, ci.hit_rate) for ci in self.cache_info[cache_name]],
+                            columns=["timestamp", "n_hits", "total", "hit_rate"])
 
     def finished(self):
         return all(not v.active for v in self.vehicles)

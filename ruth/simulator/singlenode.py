@@ -6,9 +6,7 @@ from itertools import chain, groupby
 from multiprocessing import Pool
 from typing import Any, List, Dict, Tuple, Callable, NewType
 
-import pylru
 from probduration import VehiclePlan, Route, SegmentPosition
-
 
 from .common import alternatives, advance_vehicle
 from .routeranking import Comparable
@@ -43,7 +41,6 @@ class Simulator:
         self.pool = None
         self.nproc = nproc
         self.current_offset = self.sim.compute_current_offset()
-        self.alternatives_cache = pylru.lrucache(100_000)
 
     def __enter__(self):
         self.pool = Pool(processes=self.nproc)
@@ -154,7 +151,7 @@ class Simulator:
                 self.sim.drop_old_records(self.current_offset)
 
             step_dur = datetime.now() - step_start_dt
-            logger.info(f"{step}. active: {len(allowed_vehicles)} duration: {step_dur / timedelta(milliseconds=1)} ms")
+            logger.info(f"{step}. active: {len(allowed_vehicles)}, duration: {step_dur / timedelta(milliseconds=1)} ms")
             self.sim.duration += step_dur
 
             with timer_set.get("end_step"):
@@ -181,19 +178,20 @@ class Simulator:
         for (index, vehicle) in enumerate(vehicles):
             by_id[vehicle.id] = index
             od = vehicle.current_od
-            result = self.alternatives_cache.get(od)
+            result = self.sim.get_from_cache("alternatives", od)
             if result is not None:
                 cached_vehicles.append((vehicle, result))
                 hits += 1
             else:
                 uncached_vehicles.append(vehicle)
 
+        self.sim.save_cache_info("alternatives", hits, len(vehicles))
         logger.info(f"Alternatives hit rate: {hits}/{len(vehicles)} ({(hits / len(vehicles)) * 100:.2f}%)")
 
         alts = list(filter(None, map_fn(functools.partial(alternatives, k=self.sim.setting.k_alternatives),
                            uncached_vehicles)))
         for (vehicle, result) in alts:
-            self.alternatives_cache[vehicle.current_od] = result
+            self.sim.cache("alternatives", vehicle.current_od, result)
 
         alts += cached_vehicles
         alts = sorted(alts, key=lambda item: by_id[item[0].id])
