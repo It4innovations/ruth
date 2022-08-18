@@ -74,6 +74,10 @@ class Vehicle:
         self.__post_init__()
 
     @property
+    def current_od(self) -> Tuple[int, int]:
+        return self.next_routing_start_node_with_index[0], self.dest_node
+
+    @property
     def next_routing_start_node_with_index(self):
         """Compute the next origin for routing.
 
@@ -110,7 +114,7 @@ class Vehicle:
 
         try:
             osm_routes = self.routing_map.k_shortest_paths(current_starting_node, self.dest_node, k)
-            return [self.osm_route[:segment_index] + osm_route for osm_route in osm_routes]
+            return list(osm_routes)
         except NodeNotFound as ex:
             print(f"vehicle: {self.id}: {ex}", file=sys.stderr)
             return None
