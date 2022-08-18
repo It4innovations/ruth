@@ -6,13 +6,14 @@ from itertools import chain, groupby
 from multiprocessing import Pool
 from typing import Any, List, Dict, Tuple, Callable, NewType
 
+import pylru
 from probduration import VehiclePlan, Route, SegmentPosition
 
 
 from .common import alternatives, advance_vehicle
-from .routeranking import  Comparable
+from .routeranking import Comparable
 from ..globalview import GlobalView
-from ..utils import osm_route_to_segments, route_to_osm_route, Timer, TimerSet
+from ..utils import osm_route_to_segments, route_to_osm_route, TimerSet
 from ..vehicle import Vehicle
 from ..losdb import GlobalViewDb
 
@@ -42,6 +43,7 @@ class Simulator:
         self.pool = None
         self.nproc = nproc
         self.current_offset = self.sim.compute_current_offset()
+        self.alternatives_cache = pylru.lrucache(100_000)
 
     def __enter__(self):
         self.pool = Pool(processes=self.nproc)
@@ -171,8 +173,34 @@ class Simulator:
         else:
             map_fn = self.pool.map
 
+        by_id = {}
+
+        hits = 0
+        cached_vehicles = []
+        uncached_vehicles = []
+        for (index, vehicle) in enumerate(vehicles):
+            by_id[vehicle.id] = index
+            od = vehicle.current_od
+            result = self.alternatives_cache.get(od)
+            if result is not None:
+                cached_vehicles.append((vehicle, result))
+                hits += 1
+            else:
+                uncached_vehicles.append(vehicle)
+
+        logging.debug(f"Alternatives hit rate: {hits}/{len(vehicles)} ({(hits / len(vehicles)) * 100:.2f}%)")
+
         alts = list(filter(None, map_fn(functools.partial(alternatives, k=self.sim.setting.k_alternatives),
-                                        vehicles)))
+                           uncached_vehicles)))
+        for (vehicle, result) in alts:
+            self.alternatives_cache[vehicle.current_od] = result
+
+        alts += cached_vehicles
+        alts = sorted(alts, key=lambda item: by_id[item[0].id])
+        alts = [(
+            vehicle,
+            [vehicle.osm_route[:vehicle.next_routing_start_node_with_index[1]] + osm_route for osm_route in osm_routes]
+        ) for (vehicle, osm_routes) in alts]
 
         if not alts:
             offsets = sorted(v.time_offset for v in vehicles)
