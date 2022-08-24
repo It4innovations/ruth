@@ -4,6 +4,7 @@ import sys
 
 import pandas as pd
 
+from collections import namedtuple
 from dataclasses import dataclass, field, asdict
 from typing import List, Tuple
 from datetime import timedelta, datetime
@@ -18,6 +19,9 @@ def set_numpy_type(name, fld=None):
         fld = field()
     fld.metadata = {'numpy_type': name}
     return fld
+
+
+IndexedNode = namedtuple("IndexedNode", ["node", "index"])
 
 
 @dataclass
@@ -75,22 +79,22 @@ class Vehicle:
 
     @property
     def next_routing_od_nodes(self) -> Tuple[int, int]:
-        return self.next_routing_start_node_with_index[0], self.dest_node
+        return self.next_routing_start.node, self.dest_node
 
     @property
-    def next_routing_start_node_with_index(self):
+    def next_routing_start(self) -> IndexedNode:
         """Compute the next origin for routing.
 
         NOTE: in case the car already started on the current segment
-              the end of the segment cannot be replaned and the only change
+              the end of the segment cannot be re-planed and the only change
               can be done in the "next end" => index + 1.
         """
-        segment_idx = (self.start_index
-                       if self.start_distance_offset == 0.0
-                       else self.start_index + 1)
-        assert segment_idx < len(self.osm_route)
+        node_idx = (self.start_index
+                    if self.start_distance_offset == 0.0
+                    else self.start_index + 1)
+        assert node_idx < len(self.osm_route)
 
-        return (self.osm_route[segment_idx], segment_idx)
+        return IndexedNode(self.osm_route[node_idx], node_idx)
 
     @property
     def current_node(self):
@@ -99,18 +103,13 @@ class Vehicle:
 
     def shortest_path(self):
         """Compute the shortest path from the current position to the end."""
-        current_starting_node, segment_index = \
-            self.next_routing_start_node_with_index
+        current_starting_node = self.next_routing_start.node
 
-        osm_route = self.routing_map.shortest_path(current_starting_node,
-                                                   self.dest_node)
-
-        return osm_route
+        return self.routing_map.shortest_path(current_starting_node, self.dest_node)
 
     def k_shortest_paths(self, k):
         """Compute k-shortest path from the current position to the end."""
-        current_starting_node, segment_index = \
-            self.next_routing_start_node_with_index
+        current_starting_node = self.next_routing_start.node
 
         try:
             osm_routes = self.routing_map.k_shortest_paths(current_starting_node, self.dest_node, k)
@@ -120,8 +119,8 @@ class Vehicle:
             return None
 
     def concat_route_with_passed_part(self, osm_route):
-        _, segment_index = self.next_routing_start_node_with_index
-        return self.osm_route[:segment_index] + osm_route
+        node_index = self.next_routing_start.index
+        return self.osm_route[:node_index] + osm_route
 
     def set_current_route(self, osm_route):
         """Set the current route."""
