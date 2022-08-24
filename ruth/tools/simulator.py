@@ -49,11 +49,11 @@ def store_simulation_at_walltime():
     saved = False
     start_time = datetime.now()
 
-    def store(simulator: SingleNodeSimulator, walltime: timedelta, name: str):
+    def store(simulation: Simulation, walltime: timedelta, name: str):
         nonlocal saved
         """Store the state of the simulation at walltime."""
         if (datetime.now() - start_time) >= walltime and not saved:
-            simulator.state.store(f"{name}-at-walltime.pickle")
+            simulation.store(f"{name}-at-walltime.pickle")
             saved = True
 
     return store

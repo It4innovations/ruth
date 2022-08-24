@@ -158,7 +158,7 @@ class Simulator:
 
             with timer_set.get("end_step"):
                 es_fn_kwargs_ = {} if es_fn_kwargs is None else es_fn_kwargs
-                end_step_fn(self, *es_fn_args, **es_fn_kwargs_)
+                end_step_fn(self.state, *es_fn_args, **es_fn_kwargs_)
 
             self.sim.save_step_info(step, len(allowed_vehicles), step_dur, timer_set.collect())
 
