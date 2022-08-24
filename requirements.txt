@@ -12,4 +12,6 @@ numpy
 pandas
 matplotlib
 networkx
-pylru==1.2.1
+pylru
+geopandas
+setuptools
