@@ -105,7 +105,7 @@ class Vehicle:
         osm_route = self.routing_map.shortest_path(current_starting_node,
                                                    self.dest_node)
 
-        return self.osm_route[:segment_index] + osm_route
+        return osm_route
 
     def k_shortest_paths(self, k):
         """Compute k-shortest path from the current position to the end."""
