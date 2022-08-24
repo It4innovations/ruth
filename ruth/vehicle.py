@@ -74,7 +74,7 @@ class Vehicle:
         self.__post_init__()
 
     @property
-    def current_od(self) -> Tuple[int, int]:
+    def next_routing_od_nodes(self) -> Tuple[int, int]:
         return self.next_routing_start_node_with_index[0], self.dest_node
 
     @property
@@ -118,6 +118,10 @@ class Vehicle:
         except NodeNotFound as ex:
             print(f"vehicle: {self.id}: {ex}", file=sys.stderr)
             return None
+
+    def concat_route_with_passed_part(self, osm_route):
+        _, segment_index = self.next_routing_start_node_with_index
+        return self.osm_route[:segment_index] + osm_route
 
     def set_current_route(self, osm_route):
         """Set the current route."""

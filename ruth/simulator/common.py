@@ -153,8 +153,9 @@ def alternatives(vehicle, k):
     try:
         osm_routes = vehicle.k_shortest_paths(k)
         if osm_routes is None:
-            return vehicle, None
+            return None
     except NetworkXNoPath:
+        # TODO: log this info
         return None
 
-    return vehicle, osm_routes
+    return osm_routes

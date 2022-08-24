@@ -11,7 +11,7 @@ from probduration import VehiclePlan, Route, SegmentPosition
 from .common import alternatives, advance_vehicle
 from .routeranking import Comparable
 from ..globalview import GlobalView
-from ..utils import osm_route_to_segments, route_to_osm_route, TimerSet
+from ..utils import osm_route_to_segments, route_to_osm_route, TimerSet, riffle_shuffle
 from ..vehicle import Vehicle
 from ..losdb import GlobalViewDb
 
@@ -102,23 +102,25 @@ class Simulator:
 
             with timer_set.get("alternatives"):
                 alts = self.alternatives(allowed_vehicles)
-            alt_dict = dict((v.id, (v, alt)) for v, alt in alts)
 
             # collect vehicles without alternative and finish them
             with timer_set.get("collect"):
                 not_moved = []
-                for v in allowed_vehicles:
-                    if v.id not in alt_dict:
+                moving = []
+                for v, alt in zip(allowed_vehicles, alts):
+                    if alt is None:
                         v.active = False
                         v.status = "no-route-exists"
                         leap_history, v.leap_history = v.leap_history, []
                         not_moved.append(VehicleUpdate(v, leap_history))
+                    else:
+                        moving.append((v, [v.concat_route_with_passed_part(osm_route) for osm_route in alt]))
 
             with timer_set.get("vehicle_plans"):
                 vehicle_plans = chain.from_iterable(
                     filter(None, map(functools.partial(prepare_vehicle_plans,
                                                        departure_time=self.sim.setting.departure_time),
-                                     alts)))
+                                     moving)))
 
             with timer_set.get("select_plans"):
                 selected_plans = select_plans(vehicle_plans,
@@ -164,41 +166,42 @@ class Simulator:
         logger.info(f"Simulation done in {self.sim.duration}.")
 
     def alternatives(self, vehicles):
+        """Provide a list of alternative routes for vehicle's current origin to destination. The resulting list has
+        the same length as the provided vehicles and keeping the order of vehicles"""
+
         if self.pool is None:
             logger.info("The alternative routes are computed without multiprocessing.")
             map_fn = map
         else:
             map_fn = self.pool.map
 
-        by_id = {}
+        # gather results from cache if possible
+        ALT_CACHE = "alternatives"
+        cache_to_origin_idx = []
 
         hits = 0
-        cached_vehicles = []
-        uncached_vehicles = []
-        for (index, vehicle) in enumerate(vehicles):
-            by_id[vehicle.id] = index
-            od = vehicle.current_od
-            result = self.sim.get_from_cache("alternatives", od)
-            if result is not None:
-                cached_vehicles.append((vehicle, result))
+        cached_alts = []
+        to_compute = []
+        for index, vehicle in enumerate(vehicles):
+            od = vehicle.next_routing_od_nodes
+            alt = self.sim.get_from_cache(ALT_CACHE, od)
+            if alt is not None:
+                cached_alts.append(alt)
+                cache_to_origin_idx.append(index)
                 hits += 1
             else:
-                uncached_vehicles.append(vehicle)
+                to_compute.append(vehicle)
+        self.sim.save_cache_info(ALT_CACHE, hits, len(vehicles))
+        logger.debug(f"Alternatives hit rate: {hits}/{len(vehicles)} ({(hits / len(vehicles)) * 100:.2f}%)")
 
-        self.sim.save_cache_info("alternatives", hits, len(vehicles))
-        logger.info(f"Alternatives hit rate: {hits}/{len(vehicles)} ({(hits / len(vehicles)) * 100:.2f}%)")
+        # compute alternatives
+        alts = list(map_fn(functools.partial(alternatives, k=self.sim.setting.k_alternatives), to_compute))
+        # save the results into cache
+        for vehicle, alt in zip(to_compute, alts):
+            self.sim.cache(ALT_CACHE, vehicle.next_routing_od_nodes, alt)
 
-        alts = list(filter(None, map_fn(functools.partial(alternatives, k=self.sim.setting.k_alternatives),
-                           uncached_vehicles)))
-        for (vehicle, result) in alts:
-            self.sim.cache("alternatives", vehicle.current_od, result)
-
-        alts += cached_vehicles
-        alts = sorted(alts, key=lambda item: by_id[item[0].id])
-        alts = [(
-            vehicle,
-            [vehicle.osm_route[:vehicle.next_routing_start_node_with_index[1]] + osm_route for osm_route in osm_routes]
-        ) for (vehicle, osm_routes) in alts]
+        # join cached results with computed ones keeping the origin order
+        alts = riffle_shuffle(cached_alts, alts, cache_to_origin_idx)
 
         if not alts:
             offsets = sorted(v.time_offset for v in vehicles)
