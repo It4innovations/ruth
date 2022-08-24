@@ -59,6 +59,8 @@ class Vehicle:
             # At the beginning the _start_index_ and _starting_distance_offset_ are 0 and 0.0,
             # hence the *current starting node* with *index* will be the _origin_node_ and 0.
             self.osm_route = [self.origin_node, self.dest_node]
+            # exchange the dummy route with a regular one. As default is used the shortest path
+            self.osm_route = self.shortest_path()
 
         # We want to normalize these values to datetime.timedelta, because performing operations
         # between pandas.TimeDelta and datetime.timedelta is very slow (10x slower).
@@ -109,11 +111,15 @@ class Vehicle:
 
     def k_shortest_paths(self, k):
         """Compute k-shortest path from the current position to the end."""
-        current_starting_node = self.next_routing_start.node
+        current_starting_node, node_index = self.next_routing_start
 
+        if self.osm_route is None:
+            # No route between origin and destination
+            return None
+
+        previous_route = self.osm_route[node_index:]  # use the last route as the first alternative route
         try:
-            osm_routes = self.routing_map.k_shortest_paths(current_starting_node, self.dest_node, k)
-            return list(osm_routes)
+            return self.routing_map.k_shortest_paths(current_starting_node, self.dest_node, k-1, previous_route)
         except NodeNotFound as ex:
             print(f"vehicle: {self.id}: {ex}", file=sys.stderr)
             return None

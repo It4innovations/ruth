@@ -183,8 +183,12 @@ class Simulator:
         cached_alts = []
         to_compute = []
         for index, vehicle in enumerate(vehicles):
-            od = vehicle.next_routing_od_nodes
-            alt = self.sim.get_from_cache(ALT_CACHE, od)
+            if vehicle.osm_route is None:
+                alt = None  # in case there is no osm_route there is no path between origin and destination
+            else:
+                od = vehicle.next_routing_od_nodes
+                alt = self.sim.get_from_cache(ALT_CACHE, od)
+
             if alt is not None:
                 cached_alts.append(alt)
                 cache_to_origin_idx.append(index)
@@ -265,7 +269,13 @@ def select_plans(vehicle_plans,
     def select_best(data):
         plan_id, group = data
         # a single group contains tuple with vehicle plan and computed duration, respectively
-        return sorted(group, key=by_rank)[0][0]
+        group = list(group)
+        prev_plan, prev_rank = group[0]  # at the first position is the path from previous step
+        best_plan, best_rank = sorted(group, key=by_rank)[0]
+        if abs(prev_rank - best_rank) > timedelta(minutes=1):  # TODO: expose 1m epsilon to the user interface
+            # TODO: collect hits: "switch from previous to the best"
+            return best_plan
+        return prev_plan
 
     return list(map(select_best, grouped_data))
 

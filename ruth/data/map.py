@@ -1,6 +1,7 @@
 """Routing map module."""
 import itertools
 import os
+from math import floor
 
 import networkx as nx
 import osmnx as ox
@@ -13,6 +14,21 @@ from ..metaclasses import Singleton
 def segment_weight(n1, n2, data):
     assert "length" in data, f"Expected the 'length' of segment to be known. ({n1}, {n2})"
     return float(data['length']) + float(f"0.{n1}{n2}")
+
+
+def path_with_similar_prefix(p1, p2, prefix_size_ratio):
+    """Compares two paths on a prefix specified as a ratio between 0.0 and 1.0. If there is a difference on the
+    nodes at the same position the paths are considered not similar otherwise they are similar. The aim is to
+    find alternatives that differ at the beginning."""
+
+    assert 0.0 <= prefix_size_ratio <= 1.0, "Prefix size ration out of range."
+    prefix_size = floor(len(p1) * prefix_size_ratio)
+    prefix_size_ = prefix_size if prefix_size < len(p2) else len(p2)
+
+    for i in range(prefix_size_):
+        if p1[i] != p2[i]:
+            return False
+    return True
 
 
 class Map(metaclass=Singleton):
@@ -69,12 +85,21 @@ class Map(metaclass=Singleton):
         """Compute shortest path between two OSM nodes."""
         return ox.shortest_path(self.network, origin, dest)
 
-    def k_shortest_paths(self, origin, dest, k):
+    def k_shortest_paths(self, origin, dest, k, default_path=None):
         """Compute k-shortest paths between two OSM nodes."""
         paths_gen = nx.shortest_simple_paths(G=self.simple_network, source=origin,
                                              target=dest, weight=segment_weight)
-        for path in itertools.islice(paths_gen, 0, k):
-            yield path
+
+        alternatives = [] if default_path is None else [default_path[:]]
+        i = 0
+        for path in paths_gen:
+            # TODO: decrease the ratio from 1.0 to something closer 0.2 to compare only a prefix
+            if all(not path_with_similar_prefix(path, other, 1.0) for other in alternatives):
+                alternatives.append(path)
+                i += 1
+            if i >= k:
+                break
+        return alternatives
 
     def _load(self):
         print(f"Map file path: {self.file_path}")
