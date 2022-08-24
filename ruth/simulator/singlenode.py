@@ -260,28 +260,28 @@ def select_plans(vehicle_plans,
         _, rank = data
         return rank
 
-    data = groupby(sorted(zip(vehicle_plans_, ranks), key=by_plan_id), by_plan_id)
+    grouped_data = groupby(sorted(zip(vehicle_plans_, ranks), key=by_plan_id), by_plan_id)
 
     def select_best(data):
         plan_id, group = data
         # a single group contains tuple with vehicle plan and computed duration, respectively
         return sorted(group, key=by_rank)[0][0]
 
-    return list(map(select_best, data))
+    return list(map(select_best, grouped_data))
 
 
-def prepare_vehicle_plans(alt, departure_time):
+def prepare_vehicle_plans(vehicle_alts, departure_time):
     """Prepare a list of vehicle plans for particular alternative. Returns a list of pairs: (`Vehicle`, `VehiclePlan`)
 
     Parameters:
     -----------
-        alt: (Vehicle, List[int])
+        vehicle_alts: (Vehicle, List[int])
           A pair of vehicle and list of alternative osm routes (one osm route is a list of node ids).
         departure_time: datetime
           A departure time of the simulation.
 
     """
-    vehicle, osm_routes = alt
+    vehicle, osm_routes = vehicle_alts
     if osm_routes is None:
         logger.debug(f"No alternative for vehicle: {vehicle.id}")
         return None
