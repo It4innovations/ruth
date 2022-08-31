@@ -15,8 +15,19 @@ from tqdm import tqdm
 from ..data.border import Border, BorderType, PolygonBorderDef
 from ..data.map import Map
 
+graph = None
 
-def gps_to_nodes(od_for_id, graph):
+def gps_to_nodes(od_for_id, poly_wkt):
+
+    global graph
+    if graph is None:
+        border_kind = "town"
+        data_dir = "./data"
+        b_def = PolygonBorderDef(poly_wkt)
+        b = Border(f"{b_def.md5()}_{border_kind}", b_def, BorderType.parse(border_kind), data_dir, True)
+        m = Map(b, data_dir=data_dir)
+        graph = m.network
+
     id, origin_lon, origin_lat, destination_lon, destination_lat, time_offset = od_for_id
 
     origin_node_id = ox.nearest_nodes(graph, origin_lon, origin_lat)
@@ -58,20 +69,16 @@ def convert(od_matrix_path, csv_separator, frequency, fcd_sampling_period, borde
         border_poly = shapely.wkt.loads(border)
 
     with Pool(processes=nproc) as p:
-        b_def = PolygonBorderDef(border_poly.wkt)
-        b = Border(f"{b_def.md5()}_{border_kind}", b_def, BorderType.parse(border_kind), data_dir, True)
-        m = Map(b, data_dir=data_dir)
-        graph = m.network
 
         od_nodes = []
         with tqdm(total=len(odm_df)) as pbar:
-            for odn in p.imap(partial(gps_to_nodes, graph=graph), odm_df[["id",
-                                                                          "origin_lon",
-                                                                          "origin_lat",
-                                                                          "destination_lon",
-                                                                          "destination_lat",
-                                                                          "time_offset"]].itertuples(index=False,
-                                                                                                     name=None)):
+            for odn in p.imap(partial(gps_to_nodes, poly_wkt=border_poly.wkt), odm_df[["id",
+                                                                                       "origin_lon",
+                                                                                       "origin_lat",
+                                                                                       "destination_lon",
+                                                                                       "destination_lat",
+                                                                                       "time_offset"]].itertuples(index=False,
+                                                                                                                  name=None)):
                 od_nodes.append(odn)
                 pbar.update()
 
@@ -80,12 +87,14 @@ def convert(od_matrix_path, csv_separator, frequency, fcd_sampling_period, borde
     df = pd.DataFrame(od_nodes, columns=["id", "origin_node", "dest_node", "time_offset"])
     df["active"] = df.apply(is_active, axis=1)
 
+    b_def = PolygonBorderDef(border_poly.wkt)
+
     df[["start_index", "start_distance_offset",
         "frequency", "fcd_sampling_period",
         "border_id", "border_kind", "border"]] = (
         0, 0.0,
         frequency, fcd_sampling_period,
-        b.name, b.kind.name.lower(), b.polygon().wkt)
+        f"{b_def.md5()}_{border_kind}", border_kind, border_poly.wkt)
     df["osm_route"] = np.empty((len(odm_df), 0)).tolist()
     df["leap_history"] = np.empty((len(odm_df), 0)).tolist()
     df["status"] = "not_started"
