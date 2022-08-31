@@ -61,6 +61,9 @@ class Vehicle:
             self.osm_route = [self.origin_node, self.dest_node]
             # exchange the dummy route with a regular one. As default is used the shortest path
             self.osm_route = self.shortest_path()
+            if self.osm_route is None:
+                self.active = False
+                self.status = "No route between origin and destination."
 
         # We want to normalize these values to datetime.timedelta, because performing operations
         # between pandas.TimeDelta and datetime.timedelta is very slow (10x slower).
