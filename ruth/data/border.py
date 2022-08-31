@@ -107,10 +107,10 @@ class PolygonBorderDef(BorderDefinition):
         return md5(self.polygon.wkt.encode('UTF-8')).hexdigest()
 
     def load(self):
-        if self.on_disk and polygon is None:
+        if self.on_disk and self.polygon is None:
             # fails if not present on the disk
-            raise Error("The data should be loaded from the disk. "
-                        "If not provide exisiting name of the border.")
+            raise Exception("The data should be loaded from the disk. "
+                            "If not provide exisiting name of the border.")
 
         return gpd.GeoSeries(self.polygon)
 
