@@ -150,11 +150,13 @@ def rank_by_prob_delay(ctx,
     walltime = common_args.walltime
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
+    data_loading_start = datetime.now()
     with prepare_simulator(ctx.obj['common-args'], vehicles_path) as simulator:
         alg = RouteRankingAlgorithms.PROBABLE_DELAY.value
         ff_db = FreeFlowDb()
         pp_db = ProbProfileDb(HistoryHandler.open(prob_profile_path))
         simulation = simulator.state
+        time_for_data_loading = datetime.now() - data_loading_start
         end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
         simulator.simulate(alg.rank_route,
                            extend_plans_fn=alg.prepare_data,
@@ -165,7 +167,7 @@ def rank_by_prob_delay(ctx,
                                        n_samples,
                                        simulation.setting.rnd_gen),
                            end_step_fn=end_step_fn,
-                           es_fn_args=(walltime, f"rank-by-prob-profile{task_id}"))
+                           es_fn_args=(walltime - time_for_data_loading, f"rank-by-prob-profile{task_id}"))
 
         simulation.store(out)
 
