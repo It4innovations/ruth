@@ -54,17 +54,6 @@ class Vehicle:
         self.routing_map = get_map(self.border, self.border_kind,
                                    with_speeds=True, name=self.border_id)
 
-        if not self.osm_route:  # empty route
-            # NOTE: set dummy route consisted only from the origin and destination nodes.
-            # At the beginning the _start_index_ and _starting_distance_offset_ are 0 and 0.0,
-            # hence the *current starting node* with *index* will be the _origin_node_ and 0.
-            self.osm_route = [self.origin_node, self.dest_node]
-            # exchange the dummy route with a regular one. As default is used the shortest path
-            self.osm_route = self.shortest_path()
-            if self.osm_route is None:
-                self.active = False
-                self.status = "No route between origin and destination."
-
         # We want to normalize these values to datetime.timedelta, because performing operations
         # between pandas.TimeDelta and datetime.timedelta is very slow (10x slower).
         # The check is here because the values are pandas when initially loaded from disk,
