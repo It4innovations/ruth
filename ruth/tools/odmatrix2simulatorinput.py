@@ -15,28 +15,35 @@ from tqdm import tqdm
 from ..data.border import Border, BorderType, PolygonBorderDef
 from ..data.map import Map
 
-graph = None
 
-def gps_to_nodes(od_for_id, poly_wkt):
+routing_map = None
 
-    global graph
-    if graph is None:
-        border_kind = "town"
-        data_dir = "./data"
+
+def gps_to_nodes_with_shortest_path(od_for_id, poly_wkt, border_kind, data_dir):
+
+    global routing_map
+    if routing_map is None:
         b_def = PolygonBorderDef(poly_wkt)
         b = Border(f"{b_def.md5()}_{border_kind}", b_def, BorderType.parse(border_kind), data_dir, True)
-        m = Map(b, data_dir=data_dir)
-        graph = m.network
+        routing_map = Map(b, data_dir=data_dir)
 
     id, origin_lon, origin_lat, destination_lon, destination_lat, time_offset = od_for_id
 
-    origin_node_id = ox.nearest_nodes(graph, origin_lon, origin_lat)
-    dest_node_id = ox.nearest_nodes(graph, destination_lon, destination_lat)
+    origin_node_id = ox.nearest_nodes(routing_map.network, origin_lon, origin_lat)
+    dest_node_id = ox.nearest_nodes(routing_map.network, destination_lon, destination_lat)
+    osm_route = routing_map.shortest_path(origin_node_id, dest_node_id)
 
-    return id, origin_node_id, dest_node_id, time_offset
+    return id, origin_node_id, dest_node_id, time_offset, osm_route
 
-def is_active(row):
-    return row["origin_node"] != row["dest_node"]
+
+def get_active_and_state(row):
+    if row["origin_node"] == row["dest_node"]:
+        return False, "same origin and destination"
+    elif row["osm_route"] is None:
+        return False, "no route between origin and destination"
+    else:
+        return True, "not started"
+
 
 @click.command()
 @click.argument("od-matrix-path", type=click.Path(exists=True))
@@ -72,20 +79,18 @@ def convert(od_matrix_path, csv_separator, frequency, fcd_sampling_period, borde
 
         od_nodes = []
         with tqdm(total=len(odm_df)) as pbar:
-            for odn in p.imap(partial(gps_to_nodes, poly_wkt=border_poly.wkt), odm_df[["id",
-                                                                                       "origin_lon",
-                                                                                       "origin_lat",
-                                                                                       "destination_lon",
-                                                                                       "destination_lat",
-                                                                                       "time_offset"]].itertuples(index=False,
-                                                                                                                  name=None)):
+            for odn in p.imap(partial(gps_to_nodes_with_shortest_path,
+                                      poly_wkt=border_poly.wkt, border_kind=border_kind, data_dir=data_dir),
+                              odm_df[["id",
+                                      "origin_lon", "origin_lat",
+                                      "destination_lon", "destination_lat",
+                                      "time_offset"]].itertuples(index=False, name=None)):
                 od_nodes.append(odn)
                 pbar.update()
 
     od_nodes = sorted(od_nodes, key=lambda id_origin_dest: id_origin_dest[0])
 
-    df = pd.DataFrame(od_nodes, columns=["id", "origin_node", "dest_node", "time_offset"])
-    df["active"] = df.apply(is_active, axis=1)
+    df = pd.DataFrame(od_nodes, columns=["id", "origin_node", "dest_node", "time_offset", "osm_route"])
 
     b_def = PolygonBorderDef(border_poly.wkt)
 
@@ -95,12 +100,12 @@ def convert(od_matrix_path, csv_separator, frequency, fcd_sampling_period, borde
         0, 0.0,
         frequency, fcd_sampling_period,
         f"{b_def.md5()}_{border_kind}", border_kind, border_poly.wkt)
-    df["osm_route"] = np.empty((len(odm_df), 0)).tolist()
     df["leap_history"] = np.empty((len(odm_df), 0)).tolist()
-    df["status"] = "not_started"
 
     df[["time_offset", "frequency", "fcd_sampling_period"]] = \
         df[["time_offset", "frequency", "fcd_sampling_period"]].applymap(lambda seconds: timedelta(seconds=seconds))
+
+    df["active"], df["status"] = zip(*df.apply(get_active_and_state, axis=1))
 
     df.to_parquet(out, engine="fastparquet")
 
