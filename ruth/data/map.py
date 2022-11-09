@@ -6,6 +6,7 @@ from math import floor
 import networkx as nx
 import osmnx as ox
 from osmnx import graph_from_polygon, load_graphml, save_graphml
+from networkx.exception import NetworkXNoPath
 
 from ..log import console_logger as cl
 from ..metaclasses import Singleton
@@ -90,16 +91,19 @@ class Map(metaclass=Singleton):
         paths_gen = nx.shortest_simple_paths(G=self.simple_network, source=origin,
                                              target=dest, weight=segment_weight)
 
-        alternatives = [] if default_path is None else [default_path[:]]
-        i = 0
-        for path in paths_gen:
-            # TODO: decrease the ratio from 1.0 to something closer 0.2 to compare only a prefix
-            if all(not path_with_similar_prefix(path, other, 1.0) for other in alternatives):
-                alternatives.append(path)
-                i += 1
-            if i >= k:
-                break
-        return alternatives
+        try:
+            alternatives = [] if default_path is None else [default_path[:]]
+            i = 0
+            for path in paths_gen:
+                # TODO: decrease the ratio from 1.0 to something closer 0.2 to compare only a prefix
+                if all(not path_with_similar_prefix(path, other, 1.0) for other in alternatives):
+                    alternatives.append(path)
+                    i += 1
+                if i >= k:
+                    break
+            return alternatives
+        except NetworkXNoPath:
+            return None
 
     def _load(self):
         print(f"Map file path: {self.file_path}")
