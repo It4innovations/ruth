@@ -5,6 +5,7 @@ import os
 import networkx as nx
 import osmnx as ox
 from osmnx import graph_from_polygon, load_graphml, save_graphml
+from networkx.exception import NetworkXNoPath
 
 from ..log import console_logger as cl
 from ..metaclasses import Singleton
@@ -73,8 +74,11 @@ class Map(metaclass=Singleton):
         """Compute k-shortest paths between two OSM nodes."""
         paths_gen = nx.shortest_simple_paths(G=self.simple_network, source=origin,
                                              target=dest, weight=segment_weight)
-        for path in itertools.islice(paths_gen, 0, k):
-            yield path
+        try:
+            for path in itertools.islice(paths_gen, 0, k):
+                yield path
+        except NetworkXNoPath:
+            return None
 
     def _load(self):
         print(f"Map file path: {self.file_path}")

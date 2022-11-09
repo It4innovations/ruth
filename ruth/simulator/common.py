@@ -3,7 +3,6 @@ import logging
 import pandas as pd
 from dataclasses import asdict
 from datetime import timedelta
-from networkx.exception import NetworkXNoPath
 from itertools import product
 
 from probduration import HistoryHandler, Route, SegmentPosition, probable_delay
@@ -150,12 +149,4 @@ def distance_duration(driving_route, departure_time, los_db, rnd_gen, stop_dista
 
 
 def alternatives(vehicle, k):
-    try:
-        osm_routes = vehicle.k_shortest_paths(k)
-        if osm_routes is None:
-            return None
-    except NetworkXNoPath:
-        # TODO: log this info
-        return None
-
-    return osm_routes
+    return vehicle.k_shortest_paths(k)
