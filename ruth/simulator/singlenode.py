@@ -1,12 +1,14 @@
 import functools
 import logging
 
+from networkx import get_edge_attributes
 from datetime import datetime, timedelta
 from itertools import chain, groupby
 from multiprocessing import Pool
 from typing import Any, List, Dict, Tuple, Callable, NewType
 
 from probduration import VehiclePlan, Route, SegmentPosition
+from arlib.arlib import RoutingGraph
 
 from .common import alternatives, advance_vehicle
 from .routeranking import Comparable
@@ -14,6 +16,7 @@ from ..globalview import GlobalView
 from ..utils import osm_route_to_segments, route_to_osm_route, TimerSet, riffle_shuffle
 from ..vehicle import Vehicle
 from ..losdb import GlobalViewDb
+from ..data.map import Map
 
 from .simulation import Simulation, VehicleUpdate
 
@@ -24,6 +27,16 @@ logger = logging.getLogger(__name__)
 
 VehiclePlans = NewType("VehiclePlans", List[Tuple[Vehicle, VehiclePlan]])
 
+def init_cpp_routing_graph(m: Map):
+    g = RoutingGraph()
+
+    edges_with_speed = get_edge_attributes(m.network, "length")
+
+    for edge, length in edges_with_speed.items():
+        u, v, _ = edge
+        g.add_edge(u, v, length)
+
+    return g
 
 class Simulator:
 
@@ -41,6 +54,7 @@ class Simulator:
         self.pool = None
         self.nproc = nproc
         self.current_offset = self.sim.compute_current_offset()
+        self.cpp_routing_map = init_cpp_routing_graph(self.sim.vehicles[0].routing_map)
 
     def __enter__(self):
         self.pool = Pool(processes=self.nproc)
@@ -115,6 +129,9 @@ class Simulator:
                         not_moved.append(VehicleUpdate(v, leap_history))
                     else:
                         moving.append((v, [v.concat_route_with_passed_part(osm_route) for osm_route in alt]))
+
+            if not moving:
+                break
 
             with timer_set.get("vehicle_plans"):
                 vehicle_plans = chain.from_iterable(
@@ -199,7 +216,9 @@ class Simulator:
         logger.debug(f"Alternatives hit rate: {hits}/{len(vehicles)} ({(hits / len(vehicles)) * 100:.2f}%)")
 
         # compute alternatives
-        alts = list(map_fn(functools.partial(alternatives, k=self.sim.setting.k_alternatives), to_compute))
+        odl = [v.next_routing_od_nodes for v in to_compute]
+        #alts = list(map_fn(functools.partial(alternatives, k=self.sim.setting.k_alternatives), to_compute))
+        alts = self.cpp_routing_map.batch_alternative_routes(odl, self.sim.setting.k_alternatives)
         # save the results into cache
         for vehicle, alt in zip(to_compute, alts):
             self.sim.cache(ALT_CACHE, vehicle.next_routing_od_nodes, alt)
