@@ -1,8 +1,11 @@
 
 import pickle
 import operator
+import pandas as pd
 from datetime import timedelta
 from collections import defaultdict
+
+from .utils import parse_segment_id
 
 
 class GlobalView:
@@ -53,6 +56,21 @@ class GlobalView:
 
         # reverse the level of service 1.0 means 100% LoS, but the input table defines it in reverse
         return los if los == float("inf") else 1.0 - los
+
+    def to_dataframe(self):  # todo: maybe process in chunks
+        columns = [
+            "timestamp",
+            "segment_id",
+            "vehicle_id",
+            "start_offset_m",
+            "speed_mps",
+            "status"
+        ]
+
+        df = pd.DataFrame(self.data, columns=columns)
+        df[["node_from", "node_to"]] = df["segment_id"].apply(parse_segment_id).to_list()
+
+        return df
 
     def construct_by_segments_(self):
         by_segment = defaultdict(list)
