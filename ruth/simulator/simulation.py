@@ -111,6 +111,10 @@ class Simulation:
     def global_view_db(self):
         return GlobalViewDb(self.global_view)
 
+    @property
+    def routing_map(self):
+        return self.vehicles[0].routing_map
+
     def is_vehicle_within_offset(self, vehicle: Vehicle, offset):
         return vehicle.active and offset == self.round_time_offset(vehicle.time_offset)
 
