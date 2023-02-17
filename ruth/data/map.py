@@ -81,7 +81,6 @@ class Map(metaclass=Singleton):
             return None
 
     def _load(self):
-        print(f"Map file path: {self.file_path}")
         if os.path.exists(self.file_path):
             cl.info(f"Loading network for '{self.name}' from local map.")
             return (load_graphml(self.file_path), False)
