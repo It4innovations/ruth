@@ -3,7 +3,7 @@ import pylru
 import pandas as pd
 
 from collections import defaultdict
-from dataclasses import dataclass, field, InitVar
+from dataclasses import dataclass, field, InitVar, asdict
 from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
 from typing import List, Tuple, Dict
@@ -102,6 +102,21 @@ class Simulation:
         self.caches = defaultdict(get_lru_cache)
         self.cache_info = defaultdict(list)
         self.duration = timedelta(seconds=0)
+
+    def __getstate__(self):
+        routing_map = self.routing_map
+        state = self.__dict__.copy()
+        vehicles = state.pop('vehicles')
+        vehicles = list(map(lambda v: asdict(v), vehicles))
+
+        return state, vehicles, routing_map
+
+    def __setstate__(self, state_with_routing_map):
+        state, vehicles, routing_map = state_with_routing_map
+        vehicles = list(map(lambda vd: Vehicle(**vd, routing_map=routing_map), vehicles))
+        state['vehicles'] = vehicles
+
+        self.__dict__.update(state)
 
     @property
     def random(self):

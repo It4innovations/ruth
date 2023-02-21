@@ -1,6 +1,7 @@
 """Routing map module."""
 import itertools
 import os
+import pickle
 
 import networkx as nx
 import osmnx as ox
@@ -33,8 +34,16 @@ class Map(metaclass=Singleton):
         if fresh_data:
             self._store()
 
+    @staticmethod
+    def from_memory(pickle_state):
+        m = pickle.loads(pickle_state)
+        m.data_dir = None
+        return m
+
     @property
     def file_path(self):
+        if self.data_dir is None:
+            return None
         """Path to locally stored map."""
         return os.path.join(self.data_dir, f"{self.name}.graphml")
 
@@ -42,6 +51,11 @@ class Map(metaclass=Singleton):
     def name(self):
         """Name of the map."""
         return self.border.name
+
+    def set_data_dir(self, path):
+        if self.data_dir is not None:
+            cl.warn(f"The data dir has changed from '{self.data_dir}' to '{path}.")
+        self.data_dir = path
 
     def shortest_path_by_gps(self, gps_start, gps_end):
         """Compute shortest path between two gps points."""
@@ -81,7 +95,9 @@ class Map(metaclass=Singleton):
             return None
 
     def _load(self):
-        if os.path.exists(self.file_path):
+        if self.file_path is None:
+            cl.info("Map loaded from memory object.")
+        elif os.path.exists(self.file_path):
             cl.info(f"Loading network for '{self.name}' from local map.")
             return (load_graphml(self.file_path), False)
         else:
@@ -97,6 +113,11 @@ class Map(metaclass=Singleton):
             return (network, True)
 
     def _store(self):
+        if self.file_path is None:
+            cl.info("Map loaded from memory. "
+                    "If you want to save it please set up valid data directory.")
+            return
+
         if self.network is not None:
             save_graphml(self.network, self.file_path)
             cl.info(f"{self.name}'s map saved in {self.file_path}")
