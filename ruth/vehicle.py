@@ -5,13 +5,14 @@ import sys
 import pandas as pd
 
 from collections import namedtuple
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, InitVar
 from typing import List, Tuple
 from datetime import timedelta, datetime
 from probduration import SegmentPosition
 from networkx.exception import NodeNotFound
 
 from .utils import get_map, round_timedelta
+from .data.map import Map
 
 
 def set_numpy_type(name, fld=None):
@@ -47,12 +48,16 @@ class Vehicle:
                                                                   #       well there are two things: 1) after each leap I need to make an aggregation and update global view
                                                                   #                                  2) collect raw fcds for latter aggregation and creating the prob profiles
     status: str = set_numpy_type("string")
+    routing_map: InitVar[Map] = None
 
-    def __post_init__(self):
+    def __post_init__(self, routing_map):
         # NOTE: the routing map is not among attributes of dataclass
         # => does not affect the conversion to pandas.Series
-        self.routing_map = get_map(self.border, self.border_kind,
-                                   with_speeds=True, name=self.border_id)
+        if routing_map is None:
+            self.routing_map = get_map(self.border, self.border_kind,
+                                    with_speeds=True, name=self.border_id)
+        else:
+            self.routing_map = routing_map
 
         # We want to normalize these values to datetime.timedelta, because performing operations
         # between pandas.TimeDelta and datetime.timedelta is very slow (10x slower).
@@ -65,11 +70,12 @@ class Vehicle:
             self.time_offset = self.time_offset.to_pytimedelta()
 
     def __getstate__(self):
-        return asdict(self)
+        state = asdict(self)
+        return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self.__post_init__()
+        self.__post_init__(None)
 
     @property
     def next_routing_od_nodes(self) -> Tuple[int, int]:
