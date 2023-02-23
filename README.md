@@ -27,7 +27,7 @@ source venv/bin/activate
 python3 -m pip install -U pip setuptools wheel cython
 
 # install ruth - the traffic simulator
-python3 -m pip install https://github.com/It4innovations/ruth.git
+python3 -m pip install git+https://github.com/It4innovations/ruth.git
 ```
 
 ## Test Run
