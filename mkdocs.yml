@@ -1,0 +1,28 @@
+site_name: Ruth - Deterministic Traffic Simulator
+
+site_url: https://it4innovations.github.io/ruth/
+repo_url: https://github.com/It4innovations/ruth
+edit_uri: blob/docs/docs/
+
+site_description: Documentation of Ruth.
+site_author: Martin Šurkovský
+
+theme:
+  name: material
+  pallete:
+    scheme: slate
+
+markdown_extensions:
+  - toc:
+     permalink: true
+  - footnotes
+  - attr_list
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.magiclink
+  - pymdownx.tasklist
+  - pymdownx.emoji
+  - admonition
+plugins:
+  - search
