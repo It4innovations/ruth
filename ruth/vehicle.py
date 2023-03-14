@@ -144,17 +144,19 @@ class Vehicle:
         start = pos_start
         current_offset = start_offset
         end_offset = start_offset + duration
-        while current_offset + self.fcd_sampling_period < end_offset:
+        while current_offset + self.fcd_sampling_period < end_offset and \
+              start + step_m < segment.length:
             start += step_m
             current_offset += self.fcd_sampling_period
             self.leap_history.append((current_offset, segment.id, start, speed_mps, self.status))
 
         step_m = speed_mps * ((end_offset - current_offset) / timedelta(seconds=1))
-        # TODO: the question is wheather to store all the cars at the end of period or
-        # rather return the difference (end_offset - _last_ current_offset) and take it as
-        # a parameter for the next round of storing. In this way all the cars would be sampled
-        # with an exact step (car dependent as each car can have its own sampling period)
-        self.leap_history.append((end_offset, segment.id, start + step_m, speed_mps, self.status))
+        if start + step_m < segment.length:
+            # TODO: the question is wheather to store all the cars at the end of period or
+            # rather return the difference (end_offset - _last_ current_offset) and take it as
+            # a parameter for the next round of storing. In this way all the cars would be sampled
+            # with an exact step (car dependent as each car can have its own sampling period)
+            self.leap_history.append((end_offset, segment.id, start + step_m, speed_mps, self.status))
 
     def is_active(self, within_offset, freq):
         return self.active and within_offset == round_timedelta(self.time_offset, freq)
