@@ -19,7 +19,7 @@ class VehicleUpdate:
     """Join the updated vehicle (after advance) and leap history of that move."""
 
     vehicle: Vehicle
-    leap_history: List[Tuple[datetime, str, float, float]]  # TODO: make a leap history data class
+    leap_history: List[Tuple[datetime, str, float, float, float, str]]  # TODO: make a leap history data class
 
 
 @dataclass

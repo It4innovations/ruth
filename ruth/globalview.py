@@ -15,11 +15,11 @@ class GlobalView:
         self.by_segment = self.construct_by_segments_()
 
     def add(self, vehicle_id, hrs):
-        rows = [(dt, seg_id, vehicle_id, start_offset, speed, status)
-                for dt, seg_id, start_offset, speed, status in hrs]
+        rows = [(dt, seg_id, vehicle_id, start_offset, speed, segment_length, status)
+                for dt, seg_id, start_offset, speed, segment_length, status in hrs]
         self.data += rows
 
-        for dt, seg_id, start_offset, speed, status in hrs:
+        for dt, seg_id, *_ in hrs:
             self.by_segment[seg_id].append((dt, vehicle_id))
 
     def number_of_vehicles_in_time_at_segment(self, datetime, segment_id, tolerance=None):
@@ -64,6 +64,7 @@ class GlobalView:
             "vehicle_id",
             "start_offset_m",
             "speed_mps",
+            "segment_length",
             "status"
         ]
 
@@ -74,7 +75,7 @@ class GlobalView:
 
     def construct_by_segments_(self):
         by_segment = defaultdict(list)
-        for dt, seg_id, vehicle_id, start_offset, speed, status in self.data:
+        for dt, seg_id, vehicle_id, *_ in self.data:
             by_segment[seg_id].append((dt, vehicle_id))
 
         return by_segment
