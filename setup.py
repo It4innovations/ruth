@@ -28,7 +28,7 @@ setup(
             "ruth-split-segment-id = ruth.tools.splitsegmentid:main",
             "ruth-show-gv = ruth.tools.vizglobalview:viz",
             "ruth-traffic-flow-to-od-matrix = ruth.tools.trafficflow2odmatrix:convert",
-            "ruth-aggregate_fcd = ruth.tools.globalview2aggregatedfcd:aggregate_cmd",
+            "ruth-aggregate-fcd = ruth.tools.globalview2aggregatedfcd:aggregate_cmd",
             "ruth-od-matrix-to-simulator-input = ruth.tools.odmatrix2simulatorinput:convert"
         ]
     }
