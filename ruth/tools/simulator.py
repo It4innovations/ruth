@@ -19,8 +19,8 @@ class CommonArgs:
     k_alternatives: int
     nproc: int
     out: str
+    walltime: datetime
     seed: Optional[int] = None
-    walltime: Optional[datetime] = None
     continue_from: Optional[Simulation] = None
 
 
@@ -83,14 +83,17 @@ def single_node_simulator(ctx,
                           k_alternatives,
                           nproc,
                           out,
-                          seed,
                           walltime_s,
+                          seed,
                           continue_from):
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
     ctx.ensure_object(dict)
 
     ctx.obj['DEBUG'] = debug
-    walltime = timedelta(seconds=walltime_s) if walltime_s is not None else None
+    if  walltime_s is not None and walltime_s > 0:
+        walltime = timedelta(seconds=walltime_s)
+    else:
+        exit("Walltime '--walltime-s' is necessary and must be a positive integer.")
     sim_state = Simulation.load(continue_from) if continue_from is not None else None
 
     ctx.obj['common-args'] = CommonArgs(task_id,
@@ -99,8 +102,8 @@ def single_node_simulator(ctx,
                                         k_alternatives,
                                         nproc,
                                         out,
-                                        seed,
                                         walltime,
+                                        seed,
                                         sim_state)
 
 
@@ -126,15 +129,15 @@ def rank_by_duration(ctx,
 
 @single_node_simulator.command()
 @click.argument("vehicles_path", type=click.Path(exists=True))
-@click.argument("prob_profile_path", type=click.Path(exists=True))
 @click.argument("near_distance", type=float)
 @click.argument("n_samples", type=int)
+@click.argument("prob_profile_path", type=click.Path(exists=True), required=False)
 @click.pass_context
 def rank_by_prob_delay(ctx,
                        vehicles_path,
-                       prob_profile_path,
                        near_distance,
-                       n_samples):
+                       n_samples,
+                       prob_profile_path):
 
     """Perform the simulation on a cluster's single node. The simulation use for ranking alternative routes
     _probable delay_ on a route at a departure time. To compute the probable delay Monte Carlo Simulation is performed
@@ -154,7 +157,10 @@ def rank_by_prob_delay(ctx,
     with prepare_simulator(ctx.obj['common-args'], vehicles_path) as simulator:
         alg = RouteRankingAlgorithms.PROBABLE_DELAY.value
         ff_db = FreeFlowDb()
-        pp_db = ProbProfileDb(HistoryHandler.open(prob_profile_path))
+        if prob_profile_path == None:
+            pp_db = ProbProfileDb(HistoryHandler.no_limit())
+        else:
+            pp_db = ProbProfileDb(HistoryHandler.open(prob_profile_path))
         simulation = simulator.state
         time_for_data_loading = datetime.now() - data_loading_start
         end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
