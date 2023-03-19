@@ -126,15 +126,15 @@ def rank_by_duration(ctx,
 
 @single_node_simulator.command()
 @click.argument("vehicles_path", type=click.Path(exists=True))
-@click.argument("prob_profile_path", type=click.Path(exists=True))
 @click.argument("near_distance", type=float)
 @click.argument("n_samples", type=int)
+@click.argument("prob_profile_path", type=click.Path(exists=True), required=False)
 @click.pass_context
 def rank_by_prob_delay(ctx,
                        vehicles_path,
-                       prob_profile_path,
                        near_distance,
-                       n_samples):
+                       n_samples,
+                       prob_profile_path):
 
     """Perform the simulation on a cluster's single node. The simulation use for ranking alternative routes
     _probable delay_ on a route at a departure time. To compute the probable delay Monte Carlo Simulation is performed
@@ -154,7 +154,10 @@ def rank_by_prob_delay(ctx,
     with prepare_simulator(ctx.obj['common-args'], vehicles_path) as simulator:
         alg = RouteRankingAlgorithms.PROBABLE_DELAY.value
         ff_db = FreeFlowDb()
-        pp_db = ProbProfileDb(HistoryHandler.open(prob_profile_path))
+        if prob_profile_path == None:
+            pp_db = ProbProfileDb(HistoryHandler.no_limit())
+        else:
+            pp_db = ProbProfileDb(HistoryHandler.open(prob_profile_path))
         simulation = simulator.state
         time_for_data_loading = datetime.now() - data_loading_start
         end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
