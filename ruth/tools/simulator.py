@@ -49,10 +49,10 @@ def store_simulation_at_walltime():
     saved = False
     start_time = datetime.now()
 
-    def store(simulation: Simulation, walltime: timedelta, name: str):
+    def store(simulation: Simulation, walltime: Optional[timedelta], name: str):
         nonlocal saved
         """Store the state of the simulation at walltime."""
-        if (datetime.now() - start_time) >= walltime and not saved:
+        if walltime is not None and (datetime.now() - start_time) >= walltime and not saved:
             simulation.store(f"{name}-at-walltime.pickle")
             saved = True
 
@@ -158,6 +158,7 @@ def rank_by_prob_delay(ctx,
         simulation = simulator.state
         time_for_data_loading = datetime.now() - data_loading_start
         end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
+        walltime = walltime - time_for_data_loading if walltime is not None else None
         simulator.simulate(alg.rank_route,
                            extend_plans_fn=alg.prepare_data,
                            ep_fn_args=(simulation.global_view_db,
@@ -167,7 +168,7 @@ def rank_by_prob_delay(ctx,
                                        n_samples,
                                        simulation.setting.rnd_gen),
                            end_step_fn=end_step_fn,
-                           es_fn_args=(walltime - time_for_data_loading, f"rank-by-prob-profile{task_id}"))
+                           es_fn_args=(walltime, f"rank-by-prob-profile{task_id}"))
 
         simulation.store(out)
 
