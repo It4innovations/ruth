@@ -47,7 +47,7 @@ def get_active_and_state(row):
 
 @click.command()
 @click.argument("od-matrix-path", type=click.Path(exists=True))
-@click.option("--csv-separator", type=str, default=";")
+@click.option("--csv-separator", type=str, default=";", help="Default: [';'].")
 @click.option("--frequency", type=int, default="20",
               help="Default: 20s. A period in which a vehicle asks for rerouting in seconds.")
 @click.option("--fcd-sampling-period", type=int, default="5",
@@ -62,8 +62,8 @@ def get_active_and_state(row):
 def convert(od_matrix_path, csv_separator, frequency, fcd_sampling_period, border, border_kind, nproc, data_dir, out):
     odm_df = pd.read_csv(od_matrix_path, sep=csv_separator)
 
-    orig_points = odm_df[["origin_lon", "origin_lat"]].apply(lambda p: Point(*p), axis=1)
-    dest_points = odm_df[["destination_lon", "destination_lat"]].apply(lambda p: Point(*p), axis=1)
+    orig_points = odm_df[["lon_from", "lat_from"]].apply(lambda p: Point(*p), axis=1)
+    dest_points = odm_df[["lon_to", "lat_to"]].apply(lambda p: Point(*p), axis=1)
 
     if not os.path.exists(data_dir) or not os.path.isdir(data_dir):
         os.mkdir(data_dir)
@@ -82,9 +82,9 @@ def convert(od_matrix_path, csv_separator, frequency, fcd_sampling_period, borde
             for odn in p.imap(partial(gps_to_nodes_with_shortest_path,
                                       poly_wkt=border_poly.wkt, border_kind=border_kind, data_dir=data_dir),
                               odm_df[["id",
-                                      "origin_lon", "origin_lat",
-                                      "destination_lon", "destination_lat",
-                                      "time_offset"]].itertuples(index=False, name=None)):
+                                      "lon_from", "lat_from",
+                                      "lon_to", "lat_to",
+                                      "start_offset_s"]].itertuples(index=False, name=None)):
                 od_nodes.append(odn)
                 pbar.update()
 
