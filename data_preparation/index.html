@@ -1,0 +1,617 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Documentation of Ruth.">
+      
+      
+        <meta name="author" content="Martin Šurkovský">
+      
+      
+        <link rel="canonical" href="https://it4innovations.github.io/ruth/data_preparation/">
+      
+      
+        <link rel="prev" href="../tools/">
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.4.2, mkdocs-material-9.1.3">
+    
+    
+      
+        <title>Data preparation - Ruth - Deterministic Traffic Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.c4a75a56.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.a0c5b2b5.min.css">
+      
+      
+
+    
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="" data-md-color-accent="">
+  
+    
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#data-preparation" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Ruth - Deterministic Traffic Simulator" class="md-header__button md-logo" aria-label="Ruth - Deterministic Traffic Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54Z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Ruth - Deterministic Traffic Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Data preparation
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/It4innovations/ruth" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Ruth - Deterministic Traffic Simulator" class="md-nav__button md-logo" aria-label="Ruth - Deterministic Traffic Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54Z"/></svg>
+
+    </a>
+    Ruth - Deterministic Traffic Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/It4innovations/ruth" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        Overview
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        Installation
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tools/" class="md-nav__link">
+        Tools
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+    
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          Data preparation
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        Data preparation
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#preparation-of-od-matrix-as-input-of-the-traffic-simulator" class="md-nav__link">
+    Preparation of O/D matrix as input of the traffic simulator
+  </a>
+  
+    <nav class="md-nav" aria-label="Preparation of O/D matrix as input of the traffic simulator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generating-od-matrix" class="md-nav__link">
+    Generating O/D matrix
+  </a>
+  
+    <nav class="md-nav" aria-label="Generating O/D matrix">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tool" class="md-nav__link">
+    Tool
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#output-description" class="md-nav__link">
+    Output description
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preprocess-traffic-simulator-input-from-od-matrix" class="md-nav__link">
+    Preprocess traffic simulator input from O/D matrix
+  </a>
+  
+    <nav class="md-nav" aria-label="Preprocess traffic simulator input from O/D matrix">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tool_1" class="md-nav__link">
+    Tool
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preparation-of-probability-profile-file" class="md-nav__link">
+    Preparation of probability profile file
+  </a>
+  
+    <nav class="md-nav" aria-label="Preparation of probability profile file">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generating-probability-profile-based-on-simulation-result" class="md-nav__link">
+    Generating probability profile based on simulation result.
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#preparation-of-od-matrix-as-input-of-the-traffic-simulator" class="md-nav__link">
+    Preparation of O/D matrix as input of the traffic simulator
+  </a>
+  
+    <nav class="md-nav" aria-label="Preparation of O/D matrix as input of the traffic simulator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generating-od-matrix" class="md-nav__link">
+    Generating O/D matrix
+  </a>
+  
+    <nav class="md-nav" aria-label="Generating O/D matrix">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tool" class="md-nav__link">
+    Tool
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#output-description" class="md-nav__link">
+    Output description
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preprocess-traffic-simulator-input-from-od-matrix" class="md-nav__link">
+    Preprocess traffic simulator input from O/D matrix
+  </a>
+  
+    <nav class="md-nav" aria-label="Preprocess traffic simulator input from O/D matrix">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tool_1" class="md-nav__link">
+    Tool
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preparation-of-probability-profile-file" class="md-nav__link">
+    Preparation of probability profile file
+  </a>
+  
+    <nav class="md-nav" aria-label="Preparation of probability profile file">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generating-probability-profile-based-on-simulation-result" class="md-nav__link">
+    Generating probability profile based on simulation result.
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="data-preparation">Data preparation<a class="headerlink" href="#data-preparation" title="Permanent link">&para;</a></h1>
+<p>In order to run the simulator we need to prepare two crucial input files:</p>
+<ol>
+<li>Origin-destination matrix</li>
+<li>probability profiles</li>
+</ol>
+<h2 id="preparation-of-od-matrix-as-input-of-the-traffic-simulator">Preparation of O/D matrix as input of the traffic simulator<a class="headerlink" href="#preparation-of-od-matrix-as-input-of-the-traffic-simulator" title="Permanent link">&para;</a></h2>
+<p>To prepare Origin-destination matrix as an input of traffic simulator is two steps process. Firstly, the O/D matrix from traffic flow description is generated. Then the O/D matrix is "initialized", i.e., the GPS points are attached to route segments in map, and the initial shortest path for each record is computed.</p>
+<h3 id="generating-od-matrix">Generating O/D matrix<a class="headerlink" href="#generating-od-matrix" title="Permanent link">&para;</a></h3>
+<p>The first input of the traffic simulator is an Origin-destination matrix. To generate it we need a description of <em>traffic flow</em>. This file is provided by <a href="mailto:radek.furmanek@vsb.cz">Radek Furmánek</a> or for testing purposes it might be generated as well.</p>
+<p>The traffic flow is stored in form of CSV with the following columns:
+  - <code>start_time</code>: a window start time
+  - <code>end_time</code>: a window end time
+  - <code>count_devices</code>: a number of devices going from the origin rectangle to destination one.
+  - <code>geom_rectangle_from</code>: geometry of origin rectangle
+  - <code>geom_rectangle_to</code>: geometry of destination rectangle</p>
+<p>The flow is defined by transitions between areas of predefined size (<code>rectangle_from</code>, <code>rectangle_to</code>). From the flow we just know that there is a specific amount of "devices"/vehicles (<code>count_devices</code>) which go from one rectangle to another at specific time range defined by <code>start_time</code> and <code>end_time</code>. <em>Importantly, the <code>end_time</code> is not the time  when the vehicle reaches the destination rectangle, but the end of the time window in which the vehicle departs!</em></p>
+<h4 id="tool">Tool<a class="headerlink" href="#tool" title="Permanent link">&para;</a></h4>
+<p>To perform this task <code>ruth</code> provides tool: <code>ruth-traffic-flow-to-od-matrix</code>. For testing purposes you can use files in <code>ruth/benchmark/hello-world</code> folder.</p>
+<div class="highlight"><pre><span></span><code>ruth-traffic-flow-to-od-matrix<span class="w"> </span>traffic-flow.csv<span class="w"> </span>--out<span class="w"> </span>od-matrix.csv
+</code></pre></div>
+<h4 id="output-description">Output description<a class="headerlink" href="#output-description" title="Permanent link">&para;</a></h4>
+<p>The tool randomly generate GPS points with departure times based on the information withing the traffic flow. As the tool uses random generator to spread points in from/to rectangles and time ranges. The tool also provides information about the border which is an extended convex hull of all generated points. Based on this border is later downloaded a map layer from OSM.</p>
+<p><em><strong>NOTE</strong>: currently all records contains the same border. But in the future if distribution of map layers will be considered each record can have its own border</em>.</p>
+<h3 id="preprocess-traffic-simulator-input-from-od-matrix">Preprocess traffic simulator input from O/D matrix<a class="headerlink" href="#preprocess-traffic-simulator-input-from-od-matrix" title="Permanent link">&para;</a></h3>
+<p>The second step is preprocessing of the O/D matrix to the simulator's input. The input is serialized version of <code>pandas.DataFrame</code> object. This actually represents a state of all the vehicles. </p>
+<p>The preprocessing stage consists of three steps:</p>
+<ol>
+<li>initialization of <code>Vehicle</code>s state,</li>
+<li>attach GPS positions to map segments, i.e., transform latitude and longitude of origin and destination GPS points to origin and destination <em>nodes</em>,</li>
+<li>compute initial shortest path between <code>origin</code> and <code>destinaion</code> nodes.</li>
+</ol>
+<p>The second and third steps are performance demanding and the preprocessing tool is prepared for it. It offers thread based parallelization. The task is embarrassingly parallel, hence use as much resources as you can. The argument that enables this is <code>--nproc</code>; the default is 1.</p>
+<h4 id="tool_1">Tool<a class="headerlink" href="#tool_1" title="Permanent link">&para;</a></h4>
+<p>To perform the preprocessing step <code>ruth</code> provides tool: <code>ruth-od-matrix-to-simulator-input</code>. As the input use a file generated in previous step or <code>benchmark/hello-world/od-matrix.csv</code>. Please note, that the files may differ as there is used the random generator in the previous step.</p>
+<div class="highlight"><pre><span></span><code>ruth-od-matrix-to-simulator-input<span class="w"> </span>od-matrix.csv<span class="w"> </span>--out<span class="w"> </span>vehicles-state.parquet<span class="w"> </span>--nproc<span class="o">=</span><span class="m">8</span>
+</code></pre></div>
+<p>The <code>vehicles-state.parquet</code> is the first input of <code>ruth-simulator</code>.</p>
+<h2 id="preparation-of-probability-profile-file">Preparation of probability profile file<a class="headerlink" href="#preparation-of-probability-profile-file" title="Permanent link">&para;</a></h2>
+<p>There are two possibilities to prepare the probability profile files. The first is to use historical data collected and managed by IT4Innovation. For the information about connection please contact <a href="mailto:radek.furmanek@vsb.cz">Radek Furmánek</a>.</p>
+<p>The tool providing an intermediate step is called <code>process_time_range_histograms</code>, and it is available in <a href="https://code.it4i.cz/everest/fcdhistoryanalytics">FCDHistoryAnalytics</a> project. This is a library written in Rust providing functionality over historical data and performance demanding parts of <em>Probabilistic Time Dependent Routing</em> (PTDR).</p>
+<p><strong>Disclaimer:</strong> <em>At this point, this approach is not usable in the context of traffic simulator. The simulator uses a Open Street Maps and the date provided by ŘSD use different segmentation and route segment indexing.</em></p>
+<h3 id="generating-probability-profile-based-on-simulation-result">Generating probability profile based on simulation result.<a class="headerlink" href="#generating-probability-profile-based-on-simulation-result" title="Permanent link">&para;</a></h3>
+<p>The second option how to get a probability profile is to use the result of simulation.</p>
+<p>This a three-step process:</p>
+<ol>
+<li>
+<p>aggregating FCD based on time
+<div class="highlight"><pre><span></span><code>ruth-aggregate-fcd<span class="w"> </span>aggregate-globalview<span class="w"> </span>simulation-result.pickle<span class="w"> </span>--round-freq-s<span class="w"> </span><span class="m">15</span><span class="w"> </span>--out<span class="w"> </span>aggregated_fcd.csv
+</code></pre></div></p>
+</li>
+<li>
+<p>compute time range histograms
+<div class="highlight"><pre><span></span><code>process_time_range_histograms_from_csv<span class="w"> </span>aggregated_fcd.csv<span class="w"> </span><span class="s2">&quot;2021-06-20 23:59&quot;</span><span class="w"> </span>--out<span class="w"> </span>time_range_histograms
+</code></pre></div>
+The date time is the end of time window. The probability profile is typically computed for one week, i.e., end of the week in which the simulation was performed. For further setting use <code>--help</code>.</p>
+</li>
+<li>
+<p>generate probability profiles
+<div class="highlight"><pre><span></span><code>time_range_histograms_to_prob_profiles<span class="w"> </span>time_range_histograms.data
+</code></pre></div></p>
+</li>
+</ol>
+<p>The second and third tool are from <a href="https://code.it4i.cz/everest/fcdhistoryanalytics">FCDHistoryAnalytics</a>.</p>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    <script id="__config" type="application/json">{"base": "..", "features": [], "search": "../assets/javascripts/workers/search.208ed371.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.efa0ade1.min.js"></script>
+      
+    
+  </body>
+</html>

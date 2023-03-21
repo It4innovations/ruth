@@ -1,0 +1,589 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Documentation of Ruth.">
+      
+      
+        <meta name="author" content="Martin Šurkovský">
+      
+      
+        <link rel="canonical" href="https://it4innovations.github.io/ruth/tools/">
+      
+      
+        <link rel="prev" href="../installation/">
+      
+      
+        <link rel="next" href="../data_preparation/">
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.4.2, mkdocs-material-9.1.3">
+    
+    
+      
+        <title>Tools - Ruth - Deterministic Traffic Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.c4a75a56.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.a0c5b2b5.min.css">
+      
+      
+
+    
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="" data-md-color-accent="">
+  
+    
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#available-tools" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Ruth - Deterministic Traffic Simulator" class="md-header__button md-logo" aria-label="Ruth - Deterministic Traffic Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54Z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Ruth - Deterministic Traffic Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Tools
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/It4innovations/ruth" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Ruth - Deterministic Traffic Simulator" class="md-nav__button md-logo" aria-label="Ruth - Deterministic Traffic Simulator" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54Z"/></svg>
+
+    </a>
+    Ruth - Deterministic Traffic Simulator
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/It4innovations/ruth" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.3.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        Overview
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        Installation
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+    
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          Tools
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        Tools
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tools-provided-by-ruth" class="md-nav__link">
+    Tools provided by Ruth
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools-provided-by-fcdhistoryanalytics-component-rust" class="md-nav__link">
+    Tools provided by FCDHistoryAnalytics component (Rust)
+  </a>
+  
+    <nav class="md-nav" aria-label="Tools provided by FCDHistoryAnalytics component (Rust)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#build" class="md-nav__link">
+    Build
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workflow" class="md-nav__link">
+    Workflow
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tools" class="md-nav__link">
+    Tools
+  </a>
+  
+    <nav class="md-nav" aria-label="Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#data-package" class="md-nav__link">
+    Data package
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ptdr-package" class="md-nav__link">
+    Ptdr package
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data_preparation/" class="md-nav__link">
+        Data preparation
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tools-provided-by-ruth" class="md-nav__link">
+    Tools provided by Ruth
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tools-provided-by-fcdhistoryanalytics-component-rust" class="md-nav__link">
+    Tools provided by FCDHistoryAnalytics component (Rust)
+  </a>
+  
+    <nav class="md-nav" aria-label="Tools provided by FCDHistoryAnalytics component (Rust)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#build" class="md-nav__link">
+    Build
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workflow" class="md-nav__link">
+    Workflow
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tools" class="md-nav__link">
+    Tools
+  </a>
+  
+    <nav class="md-nav" aria-label="Tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#data-package" class="md-nav__link">
+    Data package
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ptdr-package" class="md-nav__link">
+    Ptdr package
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="available-tools">Available tools<a class="headerlink" href="#available-tools" title="Permanent link">&para;</a></h1>
+<p>Apart from the simulator itself there is several other tools provided.</p>
+<h2 id="tools-provided-by-ruth">Tools provided by Ruth<a class="headerlink" href="#tools-provided-by-ruth" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>ruth-simulator</code> - deterministic traffic simulator</li>
+<li><code>ruth-traffic-flow-to-od-matrix</code> - generate origin-destination (O/D) matrix from traffic flow description (details in <code>help</code>; the traffic flow file is prepared by Radek Furmanek.)</li>
+<li><code>ruth-od-matrix-to-simulator-input</code> - generate from O/D matrix the input for the simulator. It may take time, as it pins the GPS positions to map segments. Embarrassingly parallel, the more cores (threads) provided the quicker processing. Ideally let it compute on Karolina node.</li>
+<li><code>ruth-aggregate-data</code> - aggregate the history records. The aggregated version can be used as an input for generating probability profiles with <code>process-time-range-histograms-from-csv</code> (FCD History Analytics bellow)</li>
+<li><code>ruth-show-gv</code> - only for debug purposes it shows a map with dots representing the FCD at the particular time slot. Not suitable for huge history records; only for debug. It might be used as an inspiration how to look at the data.</li>
+<li><code>ruth-split-segment-id</code> - <strong>obsolete!</strong> It was used to prepare data for flow map visualisation (Pavlina Smolkova &amp; Sofia Michailidu).</li>
+<li><code>ruth-data-preprocessing</code> - <strong>obsolete!</strong> the original input data preparation; not valid anymore.</li>
+</ul>
+<h2 id="tools-provided-by-fcdhistoryanalytics-component-rust">Tools provided by FCDHistoryAnalytics component (Rust)<a class="headerlink" href="#tools-provided-by-fcdhistoryanalytics-component-rust" title="Permanent link">&para;</a></h2>
+<ul>
+<li>
+<p><a href="https://code.it4i.cz/everest-internal/fcdhistoryanalytics">https://code.it4i.cz/everest-internal/fcdhistoryanalytics</a> (public access token: [[<a href="https://project_1113_bot:v4GzuGgiqjycBqCAy4ms@code.it4i.cz/everest/fcdhistoryanalytics.git">https://project_1113_bot:v4GzuGgiqjycBqCAy4ms@code.it4i.cz/everest/fcdhistoryanalytics.git</a>]])</p>
+</li>
+<li>
+<p>The idea behind, was to create a toolset with appropriate data structures that is able to process historical FCD data provided by ŘSD (ředitelství silnic a dálnic).</p>
+</li>
+<li>Project divided into 4 packages:<ul>
+<li><code>data</code> - responsible for generating <strong>Time Range Histograms</strong> (TRH) from FCD data. It can connect to IT4I's database or it can be provided with CSV file; CSV file is suitable for generating the TRHs from simulators output.</li>
+<li><code>datatimebox</code> - data structures related to time and space. Providing functionality over such times, like iterators, hashing, etc.<ul>
+<li><code>timerange</code> - time range defined by start, end, and step </li>
+<li><code>timeindex</code> - generic definition of time index and its generator. Simulator then uses so called <strong>Group Time Index</strong>. It divides a time range into groups and each group is then represented by its index.</li>
+<li><code>storages/timerangehistogram</code> - a storage which stores a time range histogram for particular time index and <em>space</em>. The <em>space</em> refers to location on map, e.g. routing segment.</li>
+</ul>
+</li>
+<li><code>ptdr</code> - functionalities and data structures related to Probabilistic Time Dependent Routing (PTDR); More precisely there is covered only part of Monte Carlo simulation (<strong>a procedure computing probable delay on a route at departure time</strong>). The other part is related to so called <strong>probability profiles</strong>. A probability profile is a simplified view on distribution of <em>level of service</em> (LoS) on route segment in time. The distribution is given by TRH. The TRH is then sampled (in our case to quartiles + 99 percentile) and these samples form one record of probability profile.</li>
+<li><code>scripts</code> - python script for generating so called <strong>Delay Graph</strong> (the graph shown in gitlab readme page)</li>
+</ul>
+</li>
+<li>There are other EVEREST related packages:<ul>
+<li><code>ptdr-cpp</code> - distilled version of Monte Carlo written in C++ and suitable for HW synthesis. The probability profiles are attached to each segment because of FPGA. It is clear that is inefficient but it's just for demo purpose of working FPGA version (up to this point 14.2.2023 still not available). For the future version is expected that probability profiles will be stored in memory "near to FPGA" with random access.</li>
+<li>other scripts in <code>scripts</code> folder</li>
+</ul>
+</li>
+<li>The last folder <code>testing-data</code> contains a basic of data for testing</li>
+</ul>
+<h3 id="build">Build<a class="headerlink" href="#build" title="Permanent link">&para;</a></h3>
+<ul>
+<li>In root directory call <code>cargo build --release</code>. Be careful debug version is much slower.</li>
+<li>The build tools are located in <code>./target/release</code> folder.</li>
+</ul>
+<h3 id="workflow">Workflow<a class="headerlink" href="#workflow" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Generate a set of time range histograms for each segment at time index.</li>
+<li>From the previous step generate probability profiles. Later used in simulator or for Monte Carlo simulation (computation of probable delay on route at departure time).</li>
+</ol>
+<h3 id="tools">Tools<a class="headerlink" href="#tools" title="Permanent link">&para;</a></h3>
+<h4 id="data-package">Data package<a class="headerlink" href="#data-package" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>process_time_range_historgrams</code> - gather the info from database; it is necessary to specify a connection to IT4I's historical data (Contact: Radek Furmanek). Nevertheless, currently useless as the historical data uses different indexing of segments (not connectable to OSM data used by simulator). <strong>It will be useful once we have a relation between TMC segments and OSM map network; or we get maps which works with TMC segments - maps provided by CEDA.</strong></li>
+<li><code>process_time_range_histograms_from_csv</code><ul>
+<li>example: <code>./target/release/process_time_range_histograms_from_csv ~/projects/everest/ruth-cluster-data/aggregated-fcd-sim.csv "2021-06-20 23:59" --out simulator-data</code></li>
+</ul>
+</li>
+<li>Helper tools:<ul>
+<li><code>joiner</code> - joins two sets of time range histograms into one file</li>
+<li><code>cmp_histograms</code> - a histogram comparator for debug purposes </li>
+<li><code>show_histogram</code> - a histogram plotter</li>
+</ul>
+</li>
+</ul>
+<h4 id="ptdr-package">Ptdr package<a class="headerlink" href="#ptdr-package" title="Permanent link">&para;</a></h4>
+<ul>
+<li><code>time_range_histograms_to_probab_profiles</code> sample the distributions of LoS on route segments at time index and produce probability profile file used by the simulator.<ul>
+<li>example: <code>./target/release/time_range_histograms_to_prob_profiles histograms-for-2021-06-20T23:59:00+02:00--2021-06-27T23:59:00+02:00.data</code></li>
+</ul>
+</li>
+<li><code>probdelay</code> a binary which can compute a probable delay on a route at departure time. It Can also produce these info for range of times, e.g., the entire day with 5min step. This can be then processed with <code>scripts/delay-graph.py</code>. </li>
+</ul>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    <script id="__config" type="application/json">{"base": "..", "features": [], "search": "../assets/javascripts/workers/search.208ed371.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.efa0ade1.min.js"></script>
+      
+    
+  </body>
+</html>
