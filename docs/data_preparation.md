@@ -64,6 +64,11 @@ The tool providing an intermediate step is called `process_time_range_histograms
 
 **Disclaimer:** _At this point, this approach is not usable in the context of traffic simulator. The simulator uses a Open Street Maps and the date provided by ŘSD use different segmentation and route segment indexing._
 
+To have a simulation result to process we need firstly to run the simulator.
+```shell
+ruth-simulator --departure-time="2021-06-16 07:00:00" --k-alternatives=4 --nproc=8 --out=simulation-result.pickle --seed=7 rank-by-prob-delay vehicles-state.parquet 70 500
+```
+
 ### Generating probability profile based on simulation result.
 
 The second option how to get a probability profile is to use the result of simulation.
