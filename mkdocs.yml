@@ -17,6 +17,8 @@ theme:
   name: material
   pallete:
     scheme: slate
+  features:
+    - content.code.copy
 
 markdown_extensions:
   - toc:
