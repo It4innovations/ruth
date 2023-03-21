@@ -88,7 +88,7 @@ The date time is the end of time window. The probability profile is typically co
 
 3. generate probability profiles
 ```shell
-time_range_histograms_to_prob_profiles time_range_histograms.data
+time_range_histograms_to_prob_profiles <TIME_RANGE_HISTOGRAMS>.data
 ```
 
 The second and third tool are from [FCDHistoryAnalytics](https://code.it4i.cz/everest/fcdhistoryanalytics).
