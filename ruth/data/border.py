@@ -236,7 +236,7 @@ class Border(metaclass=Singleton):
         return LazyProxy(download_based_on_border_def)
 
     def _store(self, data):
-        if data is not None:
+        if data is not None and not os.path.exists(self.file_path):
             data.to_file(self.file_path, driver="GeoJSON")
             cl.info(f"Border of '{self.name}' saved into: '{self.file_path}'.")
 
