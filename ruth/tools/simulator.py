@@ -128,7 +128,8 @@ def rank_by_duration(ctx,
 @click.argument("vehicles_path", type=click.Path(exists=True))
 @click.argument("near_distance", type=float)
 @click.argument("n_samples", type=int)
-@click.argument("prob_profile_path", type=click.Path(exists=True), required=False)
+@click.option("--prob_profile_path", type=click.Path(exists=True),
+              help="A path to probability profile [Default: no limit prob. profile]")
 @click.pass_context
 def rank_by_prob_delay(ctx,
                        vehicles_path,
