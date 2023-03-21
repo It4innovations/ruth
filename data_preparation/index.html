@@ -548,6 +548,9 @@
 <p>There are two possibilities to prepare the probability profile files. The first is to use historical data collected and managed by IT4Innovation. For the information about connection please contact <a href="mailto:radek.furmanek@vsb.cz">Radek Furmánek</a>.</p>
 <p>The tool providing an intermediate step is called <code>process_time_range_histograms</code>, and it is available in <a href="https://code.it4i.cz/everest/fcdhistoryanalytics">FCDHistoryAnalytics</a> project. This is a library written in Rust providing functionality over historical data and performance demanding parts of <em>Probabilistic Time Dependent Routing</em> (PTDR).</p>
 <p><strong>Disclaimer:</strong> <em>At this point, this approach is not usable in the context of traffic simulator. The simulator uses a Open Street Maps and the date provided by ŘSD use different segmentation and route segment indexing.</em></p>
+<p>To have a simulation result to process we need firstly to run the simulator.
+<div class="highlight"><pre><span></span><code>ruth-simulator<span class="w"> </span>--departure-time<span class="o">=</span><span class="s2">&quot;2021-06-16 07:00:00&quot;</span><span class="w"> </span>--k-alternatives<span class="o">=</span><span class="m">4</span><span class="w"> </span>--nproc<span class="o">=</span><span class="m">8</span><span class="w"> </span>--out<span class="o">=</span>simulation-result.pickle<span class="w"> </span>--seed<span class="o">=</span><span class="m">7</span><span class="w"> </span>rank-by-prob-delay<span class="w"> </span>vehicles-state.parquet<span class="w"> </span><span class="m">70</span><span class="w"> </span><span class="m">500</span>
+</code></pre></div></p>
 <h3 id="generating-probability-profile-based-on-simulation-result">Generating probability profile based on simulation result.<a class="headerlink" href="#generating-probability-profile-based-on-simulation-result" title="Permanent link">&para;</a></h3>
 <p>The second option how to get a probability profile is to use the result of simulation.</p>
 <p>This a three-step process:</p>
@@ -565,7 +568,7 @@ The date time is the end of time window. The probability profile is typically co
 </li>
 <li>
 <p>generate probability profiles
-<div class="highlight"><pre><span></span><code>time_range_histograms_to_prob_profiles<span class="w"> </span>time_range_histograms.data
+<div class="highlight"><pre><span></span><code>time_range_histograms_to_prob_profiles<span class="w"> </span>&lt;TIME_RANGE_HISTOGRAMS&gt;.data
 </code></pre></div></p>
 </li>
 </ol>
