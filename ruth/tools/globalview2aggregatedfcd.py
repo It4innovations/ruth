@@ -41,7 +41,9 @@ def aggregate(sim_path, round_freq_s, border_id=None, border_kind=None, out=None
     border_id_ = vehicle_representative.border_id if border_id is None else border_id
     border_kind_ = vehicle_representative.border_kind if border_kind is None else border_kind
     df = pd.DataFrame(sim.history.data,
-                      columns=["timestamp", "segment_id", "vehicle_id", "start_offset", "speed", "status"])
+                      columns=["timestamp", "segment_id", "vehicle_id",
+                               "start_offset", "speed", "segment_length",
+                               "status"])
 
     df_ni = df.reset_index()
     segment_ids = df_ni["segment_id"].unique()
@@ -56,9 +58,9 @@ def aggregate(sim_path, round_freq_s, border_id=None, border_kind=None, out=None
                 assert False, "Segment without assigned length!"
 
     rounded_history = []
-    for dt, seg_id, vehicle_id, start_offset, speed, status in sim.history.data:
+    for dt, *vals in sim.history.data:
         dt_rounded = round_datetime(dt, round_freq)
-        rounded_history.append((dt_rounded, seg_id, vehicle_id, start_offset, speed, status))
+        rounded_history.append((dt_rounded, *vals))
 
     print("History rounded")
     aggregated_gv = GlobalView(data=rounded_history)
