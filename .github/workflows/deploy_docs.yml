@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v3 # fetch the content of repository
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: 3.9
       - name: Install dependencies
@@ -20,4 +20,8 @@ jobs:
           python -m pip install -U pip wheel setuptools
           python -m pip install -r docs/requirements.txt
       - name: Build and deploy docs
-        run: mkdocs gh-deploy --force
+        run: |
+          git pull origin  # Pulling the content make sure that
+                           # the docs branch is up to date and
+                           # commit to it without forcing it.
+          mkdocs gh-deploy
