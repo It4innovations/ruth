@@ -10,8 +10,11 @@ site_author: Martin Šurkovský
 nav:
   - Overview: README.md
   - Installation: installation.md
+  - Input data preparation: data_preparation.md
+  - Simulation result: work_with_sim_output.md
+#  - For developers: dev_overview.md
+#    - Architecture: dev/architecture.md
   - Tools: tools.md
-  - Data preparation: data_preparation.md
 
 theme:
   name: material
