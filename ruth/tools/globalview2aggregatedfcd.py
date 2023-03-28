@@ -32,14 +32,12 @@ def timed_segment_to_record(dt, seg_id, length, aggregated_gv):
     return Record(seg_id, dt, los, length)
 
 
-def aggregate(sim_path, round_freq_s, border_id=None, border_kind=None, out=None):
+def aggregate(sim_path, round_freq_s, out=None):
     sim = Simulation.load(sim_path)
     round_freq = timedelta(seconds=round_freq_s)
 
     # collect lengths of the segments
     vehicle_representative = sim.vehicles[0]
-    border_id_ = vehicle_representative.border_id if border_id is None else border_id
-    border_kind_ = vehicle_representative.border_kind if border_kind is None else border_kind
     df = pd.DataFrame(sim.history.data,
                       columns=["timestamp", "segment_id", "vehicle_id",
                                "start_offset", "speed", "segment_length",
@@ -47,7 +45,7 @@ def aggregate(sim_path, round_freq_s, border_id=None, border_kind=None, out=None
 
     df_ni = df.reset_index()
     segment_ids = df_ni["segment_id"].unique()
-    m = get_map(None, border_kind_, name=border_id_, on_disk=True)
+    m = sim.routing_map
     segment_lengths = dict()
     for u, v, data in m.network.edges(data=True):
         osm_id = f"OSM{u}T{v}"
@@ -83,35 +81,19 @@ def aggregate(sim_path, round_freq_s, border_id=None, border_kind=None, out=None
 aggregate_cmd = click.Group()
 
 
-class prepare_aggregate:
-    def __init__(self, round_freq_s, border_id, border_kind):
-        self.round_freq_s = round_freq_s
-        self.border_id = border_id
-        self.border_kind = border_kind
-
-    def __call__(self, inout):
-        input_file_path, output_file_path = inout
-        print(f"Start processing: {input_file_path}...")
-        return aggregate(input_file_path, self.round_freq_s, self.border_id, self.border_kind, output_file_path)
-
-
 @aggregate_cmd.command()
 @click.argument("sim_path", type=click.Path(exists=True))
-@click.option("--round-freq-s", type=int, default=300, help="How to round date times.")
-@click.option("--border-id", type=str)
-@click.option("--border-kind", type=str)
+@click.option("--round-freq-s", type=int, default=300, help="How to round date times. [Default: 300 (5 min)]")
 @click.option("--out", type=str, default="out.csv")
-def aggregate_globalview(sim_path, round_freq_s, border_id, border_kind, out):
-    return aggregate(sim_path, round_freq_s, border_id, border_kind, out)
+def aggregate_globalview(sim_path, round_freq_s, out):
+    return aggregate(sim_path, round_freq_s, out)
 
 
 @aggregate_cmd.command()
 @click.argument("dir_path", type=click.Path(exists=True))
-@click.option("--round-freq-s", type=int, default=300, help="How to round date times.")
-@click.option("--border-id", type=str)
-@click.option("--border-kind", type=str)
+@click.option("--round-freq-s", type=int, default=300, help="How to round date times [Default: 300 (5 min)].")
 @click.option("--out-dir", type=str, default="out")
-def aggregate_globalview_set(dir_path, round_freq_s, border_id, border_kind, out_dir):
+def aggregate_globalview_set(dir_path, round_freq_s, out_dir):
     dir_path_ = os.path.abspath(dir_path)
     out_dir_ = os.path.abspath(out_dir)
 
@@ -125,7 +107,7 @@ def aggregate_globalview_set(dir_path, round_freq_s, border_id, border_kind, out
         name = parts[0]
 
         out_file_path = os.path.join(out_dir_, f"{name}-aggregated-fcd.csv")
-        aggregate(file_path, round_freq_s, border_id, border_kind, out_file_path)
+        aggregate(file_path, round_freq_s, out_file_path)
 
 
 if __name__ == "__main__":
