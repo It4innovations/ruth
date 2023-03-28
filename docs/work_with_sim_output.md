@@ -18,6 +18,7 @@ The result of simulation is recorded in `history`. The history can be processed 
 ```jupyterpython
 history_df = sim.history.to_dataframe()
 ```
+
 |    | timestamp                  | segment_id              |   vehicle_id |   start_offset_m |   speed_mps |   segment_length | status      |   node_from |    node_to |
 |---:|:---------------------------|:------------------------|-------------:|-----------------:|------------:|-----------------:|:------------|------------:|-----------:|
 |  0 | 2021-06-16 07:00:27.331000 | OSM31765033T2671968558  |            3 |          19.425  |     8.33333 |          218.052 | not started |    31765033 | 2671968558 |
@@ -51,6 +52,7 @@ During the simulation duration of particular functions is measured. This is stor
 ```jupyterpython
 perf_df = sim.step_info_to_dataframe()
 ```
+
 |    |   step |   n_active |   duration |   allowed_vehicles |   alternatives |    collect |   vehicle_plans |   select_plans |   transform_plans |   advance_vehicle |    update |   compute_offset |   drop_old_records |   end_step |
 |---:|-------:|-----------:|-----------:|-------------------:|---------------:|-----------:|----------------:|---------------:|------------------:|------------------:|----------:|-----------------:|-------------------:|-----------:|
 |  0 |      0 |          1 |    2272.18 |          0.146151  |        2267.79 | 0.00524521 |      0.0038147  |        3.75414 |         0.211954  |         0.157356  | 0.0331402 |        0.0119209 |         0.00405312 | 0.00190735 |
