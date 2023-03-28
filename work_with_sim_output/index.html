@@ -455,13 +455,62 @@ sim = Simulation.load(&quot;/path/to/sim-result.pickle&quot;)
 </code></pre></div>
 <h3 id="history">History<a class="headerlink" href="#history" title="Permanent link">&para;</a></h3>
 <p>The result of simulation is recorded in <code>history</code>. The history can be processed as a `pandas.DataFrame.</p>
-<p><div class="highlight"><pre><span></span><code>history_df = sim.history.to_dataframe()
+<div class="highlight"><pre><span></span><code>history_df = sim.history.to_dataframe()
 </code></pre></div>
-|    | timestamp                  | segment_id              |   vehicle_id |   start_offset_m |   speed_mps |   segment_length | status      |   node_from |    node_to |
-|---:|:---------------------------|:------------------------|-------------:|-----------------:|------------:|-----------------:|:------------|------------:|-----------:|
-|  0 | 2021-06-16 07:00:27.331000 | OSM31765033T2671968558  |            3 |          19.425  |     8.33333 |          218.052 | not started |    31765033 | 2671968558 |
-|  1 | 2021-06-16 07:00:27.820000 | OSM265825223T73388626   |            1 |          15.1667 |     8.33333 |           67.275 | not started |   265825223 |   73388626 |
-|  2 | 2021-06-16 07:00:30        | OSM10288560273T31764596 |            4 |          69.4444 |    13.8889  |          118.922 | not started | 10288560273 |   31764596 |</p>
+<table>
+<thead>
+<tr>
+<th align="right"></th>
+<th align="left">timestamp</th>
+<th align="left">segment_id</th>
+<th align="right">vehicle_id</th>
+<th align="right">start_offset_m</th>
+<th align="right">speed_mps</th>
+<th align="right">segment_length</th>
+<th align="left">status</th>
+<th align="right">node_from</th>
+<th align="right">node_to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="right">0</td>
+<td align="left">2021-06-16 07:00:27.331000</td>
+<td align="left">OSM31765033T2671968558</td>
+<td align="right">3</td>
+<td align="right">19.425</td>
+<td align="right">8.33333</td>
+<td align="right">218.052</td>
+<td align="left">not started</td>
+<td align="right">31765033</td>
+<td align="right">2671968558</td>
+</tr>
+<tr>
+<td align="right">1</td>
+<td align="left">2021-06-16 07:00:27.820000</td>
+<td align="left">OSM265825223T73388626</td>
+<td align="right">1</td>
+<td align="right">15.1667</td>
+<td align="right">8.33333</td>
+<td align="right">67.275</td>
+<td align="left">not started</td>
+<td align="right">265825223</td>
+<td align="right">73388626</td>
+</tr>
+<tr>
+<td align="right">2</td>
+<td align="left">2021-06-16 07:00:30</td>
+<td align="left">OSM10288560273T31764596</td>
+<td align="right">4</td>
+<td align="right">69.4444</td>
+<td align="right">13.8889</td>
+<td align="right">118.922</td>
+<td align="left">not started</td>
+<td align="right">10288560273</td>
+<td align="right">31764596</td>
+</tr>
+</tbody>
+</table>
 <p>A single record in history consists of:</p>
 <ul>
 <li><code>timestamp</code> - timestamp of an event,</li>
@@ -480,13 +529,82 @@ sim = Simulation.load(&quot;/path/to/sim-result.pickle&quot;)
 <p>The globalview is a subset of history records. The history records are only collected via the simulation and it is an actual result used for further analysis. On the other hand, <em>global view</em> is an active subset of history, i.e., list of records that are used for computation level of service in a <em>near distance</em> ("a distance driver see directly from window"; it's a hyperparameter of the simulation). It's not valid for any kind of analysis. The global view can be gained from history by calling <code>drop_old</code> method. All records older then provided threshold are droped.</p>
 <h2 id="performance-insight">Performance insight<a class="headerlink" href="#performance-insight" title="Permanent link">&para;</a></h2>
 <p>During the simulation duration of particular functions is measured. This is stored in <code>step_info</code>, and similarly to <code>history</code> it can be also processed as dataframe.</p>
-<p><div class="highlight"><pre><span></span><code>perf_df = sim.step_info_to_dataframe()
+<div class="highlight"><pre><span></span><code>perf_df = sim.step_info_to_dataframe()
 </code></pre></div>
-|    |   step |   n_active |   duration |   allowed_vehicles |   alternatives |    collect |   vehicle_plans |   select_plans |   transform_plans |   advance_vehicle |    update |   compute_offset |   drop_old_records |   end_step |
-|---:|-------:|-----------:|-----------:|-------------------:|---------------:|-----------:|----------------:|---------------:|------------------:|------------------:|----------:|-----------------:|-------------------:|-----------:|
-|  0 |      0 |          1 |    2272.18 |          0.146151  |        2267.79 | 0.00524521 |      0.0038147  |        3.75414 |         0.211954  |         0.157356  | 0.0331402 |        0.0119209 |         0.00405312 | 0.00190735 |
-|  1 |      1 |          3 |    3144.36 |          0.0708103 |        3137.53 | 0.0100136  |      0.00691414 |        6.30188 |         0.136137  |         0.220299  | 0.0469685 |        0.0140667 |         0.00500679 | 0.0038147  |
-|  2 |      2 |          1 |    2227.49 |          0.0720024 |        2225.63 | 0.00691414 |      0.00286102 |        1.60289 |         0.0360012 |         0.0760555 | 0.0309944 |        0.0119209 |         0.00476837 | 0.00119209 |</p>
+<table>
+<thead>
+<tr>
+<th align="right"></th>
+<th align="right">step</th>
+<th align="right">n_active</th>
+<th align="right">duration</th>
+<th align="right">allowed_vehicles</th>
+<th align="right">alternatives</th>
+<th align="right">collect</th>
+<th align="right">vehicle_plans</th>
+<th align="right">select_plans</th>
+<th align="right">transform_plans</th>
+<th align="right">advance_vehicle</th>
+<th align="right">update</th>
+<th align="right">compute_offset</th>
+<th align="right">drop_old_records</th>
+<th align="right">end_step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="right">0</td>
+<td align="right">0</td>
+<td align="right">1</td>
+<td align="right">2272.18</td>
+<td align="right">0.146151</td>
+<td align="right">2267.79</td>
+<td align="right">0.00524521</td>
+<td align="right">0.0038147</td>
+<td align="right">3.75414</td>
+<td align="right">0.211954</td>
+<td align="right">0.157356</td>
+<td align="right">0.0331402</td>
+<td align="right">0.0119209</td>
+<td align="right">0.00405312</td>
+<td align="right">0.00190735</td>
+</tr>
+<tr>
+<td align="right">1</td>
+<td align="right">1</td>
+<td align="right">3</td>
+<td align="right">3144.36</td>
+<td align="right">0.0708103</td>
+<td align="right">3137.53</td>
+<td align="right">0.0100136</td>
+<td align="right">0.00691414</td>
+<td align="right">6.30188</td>
+<td align="right">0.136137</td>
+<td align="right">0.220299</td>
+<td align="right">0.0469685</td>
+<td align="right">0.0140667</td>
+<td align="right">0.00500679</td>
+<td align="right">0.0038147</td>
+</tr>
+<tr>
+<td align="right">2</td>
+<td align="right">2</td>
+<td align="right">1</td>
+<td align="right">2227.49</td>
+<td align="right">0.0720024</td>
+<td align="right">2225.63</td>
+<td align="right">0.00691414</td>
+<td align="right">0.00286102</td>
+<td align="right">1.60289</td>
+<td align="right">0.0360012</td>
+<td align="right">0.0760555</td>
+<td align="right">0.0309944</td>
+<td align="right">0.0119209</td>
+<td align="right">0.00476837</td>
+<td align="right">0.00119209</td>
+</tr>
+</tbody>
+</table>
 <p>A single record in step info consists of:</p>
 <ul>
 <li><code>step</code> - a step number,</li>
