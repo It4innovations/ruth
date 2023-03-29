@@ -9,7 +9,9 @@ site_author: Martin Šurkovský
 
 nav:
   - Overview: README.md
-  - Installation: installation.md
+  - Installation:
+    - Instructions: installation.md
+    - Work within docker env: docker/usage-with-docker.md
   - Input data preparation: data_preparation.md
   - Simulation result: work_with_sim_output.md
 #  - For developers: dev_overview.md
