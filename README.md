@@ -40,6 +40,6 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
 * use the files in `benchmarks/od-matrix/`
 
 ``` sh
-ruth-simulator --departure-time="2021-06-16 07:00:00" --k-alternatives=4 --nproc=8 --out=simulation_record.pickle --seed=7 rank-by-prob-delay INPUT-od-matrix-10-vehicles-town-resolution.parquet prob-profile-for-2021-06-20T23:59:00+02:00--2021-06-27T23:59:00+02:00.mem 70 500
+ruth-simulator --departure-time="2021-06-16 07:00:00" --k-alternatives=4 --nproc=8 --out=simulation_record.pickle --seed=7 rank-by-prob-delay INPUT-od-matrix-10-vehicles-town-resolution.parquet --prob_profile_path=prob-profile-for-2021-06-20T23:59:00+02:00--2021-06-27T23:59:00+02:00.mem 70 500
 ```
 
