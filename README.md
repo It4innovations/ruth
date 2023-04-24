@@ -23,7 +23,7 @@ sudo apt-get update && sudo apt-get install -y --no-install-recommends \
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
 # create and activate python virtual environment
-virtualenv venv
+python3 -m venv venv
 source venv/bin/activate
 
 # within the venv
