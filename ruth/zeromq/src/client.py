@@ -16,12 +16,13 @@ class Client:
         self.socket.set(zmq.SNDHWM, watermark)
         self.socket.set(zmq.RCVHWM, watermark)
 
-        self.address = f"tcp://*:{port}"
+        self.address = f"tcp://127.0.0.1:{port}"
         self.socket.bind(self.address)
 
         self.poller = zmq.Poller()
 
     def compute(self, array: List[bytes]):
+        print('Starting client request to compute')
         self.poller.register(self.socket, zmq.POLLIN | zmq.POLLOUT)
 
         msg_send = 0
@@ -53,6 +54,8 @@ class Client:
                 msg_send += 1
                 if msg_send == msg_count:
                     self.poller.modify(self.socket, zmq.POLLIN)
+            print(msg_received)
 
+        print('Ending')
         # Sort by id
         return [value for (_, value) in sorted(results.items(), key=lambda item: item[0])]

@@ -2,7 +2,9 @@ import json
 import zmq
 import networkx as nx
 import itertools
+import osmnx as ox
 
+from osmnx import graph_from_polygon, load_graphml, save_graphml
 from networkx.exception import NetworkXNoPath
 
 
@@ -11,16 +13,22 @@ def segment_weight(n1, n2, data):
     return float(data['length']) + float(f"0.{n1}{n2}")
 
 
+def load(fname):
+    network = load_graphml(fname)
+    return ox.get_digraph(network)
+
+
 class Worker:
     def __init__(self, map, address="localhost", port: int = 5560):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.DEALER)
         self.address = f"tcp://{address}:{port}"
         self.socket.connect(self.address)
-        self.map = map
+        self.map = load(map)
 
     def get_k_paths(self, message):
         origin, dest, k = message[0], message[1], message[2]
+        print('Getting paths')
         paths_gen = nx.shortest_simple_paths(G=self.map, source=origin, target=dest, weight=segment_weight)
         try:
             for path in itertools.islice(paths_gen, 0, k):

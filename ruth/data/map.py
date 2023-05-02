@@ -9,6 +9,7 @@ import json
 from osmnx import graph_from_polygon, load_graphml, save_graphml
 from networkx.exception import NetworkXNoPath
 from cluster.cluster import Cluster, start_process
+from networkx.readwrite import json_graph
 
 from ..log import console_logger as cl
 from ..metaclasses import Singleton
@@ -18,6 +19,10 @@ from ..zeromq.src import client, worker
 def segment_weight(n1, n2, data):
     assert "length" in data, f"Expected the 'length' of segment to be known. ({n1}, {n2})"
     return float(data['length']) + float(f"0.{n1}{n2}")
+
+
+def save(G, fname):
+    nx.write_gml(G, fname)
 
 
 class Map(metaclass=Singleton):
@@ -40,13 +45,13 @@ class Map(metaclass=Singleton):
         # ------------------ ZeroMQ Init ------------------
         # Worker
         address = 'localhost'
-        port = 5559
+        port = 5561
         WORK_DIR = '/home/user3574/PycharmProjects/ruth/ruth/zeromq'
 
         self.client = client.Client(port=port)
         for i in range(8):
             start_process(
-                commands=[f"python3 {WORK_DIR}/ex_worker.py --address {'tcp://localhost:5559'} --port {5560} --map {map}"],
+                commands=[f"python3 {WORK_DIR}/ex_worker.py --address tcp://127.0.0.1:5559 --port {5561} --map {os.path.join(os.getcwd(), self.file_path)}"],
                 workdir=str('tmp/workers'),
                 pyenv=str('/home/user3574/PycharmProjects/ruth/venv'),
                 modules=None,
@@ -115,6 +120,8 @@ class Map(metaclass=Singleton):
             return None
 
     def k_shortest_paths_mq(self, origins, dests, k):
+        print('Starting computation of shortest paths')
+
         # Encode into array
         array = [[origins[i], dests[i], k] for i in range(len(origins))]
         array = [json.dumps(x).encode() for x in array]
