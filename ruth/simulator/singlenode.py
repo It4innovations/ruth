@@ -198,10 +198,10 @@ class Simulator:
         logger.debug(f"Alternatives hit rate: {hits}/{len(vehicles)} ({(hits / len(vehicles)) * 100:.2f}%)")
 
         # ZeroMQ
-        origins = [v.origin_node for v in to_compute]
-        destinations = [v.dest_node for v in to_compute]
-        map = vehicle.routing_map
-        alts = map.k_shortest_paths_mq(origins, destinations, self.sim.setting.k_alternatives)
+        # origins = [v.origin_node for v in to_compute]
+        # destinations = [v.dest_node for v in to_compute]
+        # map = vehicle.routing_map
+        # alts = map.k_shortest_paths(origins, destinations, self.sim.setting.k_alternatives)
 
         # compute alternatives
         alts = list(map_fn(functools.partial(alternatives, k=self.sim.setting.k_alternatives), to_compute))

@@ -42,23 +42,6 @@ class Map(metaclass=Singleton):
         if fresh_data:
             self._store()
 
-        # ------------------ ZeroMQ Init ------------------
-        # Worker
-        address = 'localhost'
-        port = 5561
-        WORK_DIR = '/home/user3574/PycharmProjects/ruth/ruth/zeromq'
-
-        self.client = client.Client(port=port)
-        for i in range(8):
-            start_process(
-                commands=[f"python3 {WORK_DIR}/ex_worker.py --address tcp://127.0.0.1:5559 --port {5561} --map {os.path.join(os.getcwd(), self.file_path)}"],
-                workdir=str('tmp/workers'),
-                pyenv=str('/home/user3574/PycharmProjects/ruth/venv'),
-                modules=None,
-                hostname=address,
-                name=f"worker_{i}"
-            )
-
     @staticmethod
     def from_memory(pickle_state):
         m = pickle.loads(pickle_state)
@@ -118,15 +101,6 @@ class Map(metaclass=Singleton):
                 yield path
         except NetworkXNoPath:
             return None
-
-    def k_shortest_paths_mq(self, origins, dests, k):
-        print('Starting computation of shortest paths')
-
-        # Encode into array
-        array = [[origins[i], dests[i], k] for i in range(len(origins))]
-        array = [json.dumps(x).encode() for x in array]
-
-        return self.client.compute(array)
 
     def _load(self):
         if self.file_path is None:
