@@ -1,6 +1,11 @@
+import logging
+
 import zmq
 import json
 from typing import List
+
+
+logger = logging.getLogger(__name__)
 
 
 def segment_weight(n1, n2, data):
@@ -22,13 +27,14 @@ class Client:
         self.poller = zmq.Poller()
 
     def compute(self, array: List[bytes]):
-        print('Starting client request to compute')
         self.poller.register(self.socket, zmq.POLLIN | zmq.POLLOUT)
 
         msg_send = 0
         msg_received = 0
         msg_count = len(array)
         results = {}
+
+        logger.debug(f"Sending {len(array)} message(s) to workers")
 
         # Switch messages between sockets
         while msg_received < msg_count:
@@ -54,8 +60,6 @@ class Client:
                 msg_send += 1
                 if msg_send == msg_count:
                     self.poller.modify(self.socket, zmq.POLLIN)
-            print(msg_received)
 
-        print('Ending')
         # Sort by id
         return [value for (_, value) in sorted(results.items(), key=lambda item: item[0])]

@@ -1,4 +1,6 @@
 import json
+import logging
+
 import zmq
 import networkx as nx
 import itertools
@@ -6,6 +8,9 @@ import osmnx as ox
 
 from osmnx import graph_from_polygon, load_graphml, save_graphml
 from networkx.exception import NetworkXNoPath
+
+
+logger = logging.getLogger(__name__)
 
 
 def segment_weight(n1, n2, data):
@@ -25,11 +30,13 @@ class Worker:
         self.address = f"tcp://{address}:{port}"
         self.socket.connect(self.address)
         self.map = load(map)
+        logger.info("Worker is initialized")
 
     def get_k_paths(self, message):
         origin, dest, k = message[0], message[1], message[2]
-        print('Getting paths')
-        paths_gen = nx.shortest_simple_paths(G=self.map, source=origin, target=dest, weight=segment_weight)
+        logger.info(f"Executing alternatives query {origin}->{dest} with k={k}")
+        paths_gen = nx.shortest_simple_paths(G=self.map, source=origin, target=dest,
+                                             weight=segment_weight)
         try:
             for path in itertools.islice(paths_gen, 0, k):
                 yield path
@@ -37,7 +44,6 @@ class Worker:
             return None
 
     def run(self):
-        message_id = 0
         while True:
             id, message = self.socket.recv_multipart()
 
@@ -45,7 +51,7 @@ class Worker:
             message = json.loads(message.decode())
 
             # Compute
-            result = self.get_k_paths(message)
+            result = list(self.get_k_paths(message))
 
             # Serialize
             result = json.dumps(result).encode()
@@ -55,6 +61,3 @@ class Worker:
                 id,
                 result
             ])
-
-            message_id += 1
-            #print(f'Sending {message_id}')
