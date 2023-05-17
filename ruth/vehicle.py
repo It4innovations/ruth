@@ -6,7 +6,7 @@ import pandas as pd
 
 from collections import namedtuple
 from dataclasses import dataclass, field, asdict, InitVar
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 from datetime import timedelta, datetime
 from probduration import SegmentPosition
 from networkx.exception import NodeNotFound
@@ -107,7 +107,7 @@ class Vehicle:
 
         return self.routing_map.shortest_path(current_starting_node, self.dest_node)
 
-    def k_shortest_paths(self, k):
+    def k_shortest_paths(self, k: int) -> Optional[List[List[int]]]:
         """Compute k-shortest path from the current position to the end."""
         current_starting_node = self.next_routing_start.node
 

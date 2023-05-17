@@ -8,6 +8,7 @@ from typing import Optional
 
 from probduration import HistoryHandler
 
+from ..simulator.kernels import LocalKernelProvider
 from ..simulator import Simulation, SimSetting, SingleNodeSimulator, RouteRankingAlgorithms, load_vehicles
 from ..losdb import FreeFlowDb, ProbProfileDb
 
@@ -159,7 +160,9 @@ def rank_by_prob_delay(ctx,
         time_for_data_loading = datetime.now() - data_loading_start
         end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
         walltime = walltime - time_for_data_loading if walltime is not None else None
+        kernel_provider = LocalKernelProvider()
         simulator.simulate(alg.rank_route,
+                           kernel_provider=kernel_provider,
                            extend_plans_fn=alg.prepare_data,
                            ep_fn_args=(simulation.global_view_db,
                                        near_distance,

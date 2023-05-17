@@ -146,7 +146,3 @@ def distance_duration(driving_route, departure_time, los_db, rnd_gen, stop_dista
     avg_los = sum(level_of_services) / len(level_of_services)
 
     return dt - departure_time, p, avg_los
-
-
-def alternatives(vehicle, k):
-    return vehicle.k_shortest_paths(k)

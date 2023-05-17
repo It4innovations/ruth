@@ -7,7 +7,8 @@ from typing import Any, List, Dict, Tuple, Callable, NewType
 
 from probduration import VehiclePlan, Route, SegmentPosition
 
-from .common import alternatives, advance_vehicle
+from .common import advance_vehicle
+from .kernels import KernelProvider
 from .routeranking import Comparable
 from ..globalview import GlobalView
 from ..utils import osm_route_to_segments, route_to_osm_route, TimerSet, riffle_shuffle
@@ -48,6 +49,7 @@ class Simulator:
 
     def simulate(self,
                  route_ranking_fn: Callable[[GlobalView, VehiclePlans, List, Dict], Comparable],
+                 kernel_provider: KernelProvider,
                  rr_fn_args=(),
                  rr_fn_kwargs=None,
                  extend_plans_fn: Callable[[VehiclePlans, List, Dict], Any] = lambda plans: plans,
@@ -94,7 +96,7 @@ class Simulator:
                                     if self.sim.is_vehicle_within_offset(v, offset)]
 
             with timer_set.get("alternatives"):
-                alts = self.alternatives(allowed_vehicles)
+                alts = self.alternatives(allowed_vehicles, kernel_provider)
 
             # collect vehicles without alternative and finish them
             with timer_set.get("collect"):
@@ -158,7 +160,7 @@ class Simulator:
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
 
-    def alternatives(self, vehicles):
+    def alternatives(self, vehicles, kernel_provider: KernelProvider):
         """Provide a list of alternative routes for vehicle's current origin to destination. The resulting list has
         the same length as the provided vehicles and keeping the order of vehicles"""
 
@@ -192,7 +194,7 @@ class Simulator:
         # alts = map.k_shortest_paths(origins, destinations, self.sim.setting.k_alternatives)
 
         # compute alternatives
-        alts = list(map(functools.partial(alternatives, k=self.sim.setting.k_alternatives), to_compute))
+        alts = kernel_provider.compute_alternatives(to_compute, k=self.sim.setting.k_alternatives)
         # save the results into cache
         for vehicle, alt in zip(to_compute, alts):
             self.sim.cache(ALT_CACHE, vehicle.next_routing_od_nodes, alt)
