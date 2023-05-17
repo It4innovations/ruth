@@ -149,4 +149,5 @@ def distance_duration(driving_route, departure_time, los_db, rnd_gen, stop_dista
 
 
 def alternatives(vehicle, k):
-    return vehicle.k_shortest_paths(k)
+    #return vehicle.k_shortest_paths(k)
+    return vehicle.k_fastest_paths(k)

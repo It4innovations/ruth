@@ -62,7 +62,7 @@ def store_simulation_at_walltime():
 @click.group()
 @click.option('--debug/--no-debug', default=False)  # TODO: maybe move to top-level group
 @click.option("--task-id", type=str, help="A string to differentiate results if there is running more simulations"
-                                          " simultaneously.")
+                                          " simultaneously. TESTING....")
 @click.option("--departure-time", type=click.DateTime(), default=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
 @click.option("--round-frequency-s", type=int, default=5,
               help="Rounding time frequency in seconds.")
