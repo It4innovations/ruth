@@ -3,7 +3,6 @@ import logging
 
 from datetime import datetime, timedelta
 from itertools import chain, groupby
-from multiprocessing import Pool
 from typing import Any, List, Dict, Tuple, Callable, NewType
 
 from probduration import VehiclePlan, Route, SegmentPosition
@@ -26,27 +25,22 @@ VehiclePlans = NewType("VehiclePlans", List[Tuple[Vehicle, VehiclePlan]])
 
 class Simulator:
 
-    def __init__(self, sim: Simulation, nproc=1):
+    def __init__(self, sim: Simulation):
         """Initialize the simulator.
 
         Parameters:
         -----------
             sim: Simulation
                 State of the simulation.
-            nproc: int [default=1]
-                Number of concurrent processes.
         """
         self.sim = sim
-        self.pool = None
-        self.nproc = nproc
         self.current_offset = self.sim.compute_current_offset()
 
     def __enter__(self):
-        self.pool = Pool(processes=self.nproc)
         return self
 
     def __exit__(self, exc_type_, exc_val_, exc_tb_):
-        self.pool.close()
+        pass
 
     @property
     def state(self):
@@ -168,12 +162,6 @@ class Simulator:
         """Provide a list of alternative routes for vehicle's current origin to destination. The resulting list has
         the same length as the provided vehicles and keeping the order of vehicles"""
 
-        if self.pool is None:
-            logger.info("The alternative routes are computed without multiprocessing.")
-            map_fn = map
-        else:
-            map_fn = self.pool.map
-
         # gather results from cache if possible
         ALT_CACHE = "alternatives"
         cache_to_origin_idx = []
@@ -204,7 +192,7 @@ class Simulator:
         # alts = map.k_shortest_paths(origins, destinations, self.sim.setting.k_alternatives)
 
         # compute alternatives
-        alts = list(map_fn(functools.partial(alternatives, k=self.sim.setting.k_alternatives), to_compute))
+        alts = list(map(functools.partial(alternatives, k=self.sim.setting.k_alternatives), to_compute))
         # save the results into cache
         for vehicle, alt in zip(to_compute, alts):
             self.sim.cache(ALT_CACHE, vehicle.next_routing_od_nodes, alt)
