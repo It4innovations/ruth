@@ -18,7 +18,6 @@ class CommonArgs:
     departure_time: datetime
     round_frequency: timedelta
     k_alternatives: int
-    nproc: int
     out: str
     seed: Optional[int] = None
     walltime: Optional[datetime] = None
@@ -31,7 +30,6 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path):
     round_frequency = common_args.round_frequency
     k_alternatives = common_args.k_alternatives
     seed = common_args.seed
-    nproc = common_args.nproc
     sim_state = common_args.continue_from
 
     # TODO: solve the debug symbol
@@ -42,7 +40,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path):
     else:
         simulation = sim_state
 
-    with SingleNodeSimulator(simulation, nproc) as simulator:
+    with SingleNodeSimulator(simulation) as simulator:
         yield simulator
 
 
@@ -69,8 +67,6 @@ def store_simulation_at_walltime():
               help="Rounding time frequency in seconds.")
 @click.option("--k-alternatives", type=int, default=1,
               help="Number of alternative routes.")
-@click.option("--nproc", type=int, default=1,
-              help="Number of concurrent processes.")
 @click.option("--out", type=str, default="out.pickle")
 @click.option("--seed", type=int, help="Fixed seed for random number generator.")
 @click.option("--walltime-s", type=int, help="Time limit in which the state of simulation is saved")
@@ -83,7 +79,6 @@ def single_node_simulator(ctx,
                           departure_time,
                           round_frequency_s,
                           k_alternatives,
-                          nproc,
                           out,
                           seed,
                           walltime_s,
@@ -99,7 +94,6 @@ def single_node_simulator(ctx,
                                         departure_time,
                                         timedelta(seconds=round_frequency_s),
                                         k_alternatives,
-                                        nproc,
                                         out,
                                         seed,
                                         walltime,
