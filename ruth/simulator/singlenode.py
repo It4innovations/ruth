@@ -18,7 +18,6 @@ from ..losdb import GlobalViewDb
 from .simulation import Simulation, VehicleUpdate
 
 
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 

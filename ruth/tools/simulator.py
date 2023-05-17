@@ -1,3 +1,4 @@
+import logging
 
 import click
 from datetime import datetime, timedelta
@@ -183,4 +184,9 @@ def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(name)s:%(levelname)-4s %(message)s",
+        datefmt="%d-%m-%Y %H:%M:%S",
+    )
     main()
