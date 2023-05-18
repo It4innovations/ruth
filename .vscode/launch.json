@@ -5,6 +5,19 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "ruth benchmarks/prague/2_loc",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/ruth/tools/simulator.py",
+            "console": "integratedTerminal",
+            "args": "--walltime-s=1000 --departure-time=\"2021-06-16T07:00:00\" --k-alternatives=3 --nproc=12 --out=2originTo1dest_ant.pickle --seed=7 rank-by-prob-delay ${workspaceFolder}/benchmarks/prague/2K_15052023_2_whole_prague.parquet 3 10",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
             "name": "ruth benchmarks/od-matrices/",
             "type": "python",
             "request": "launch",
@@ -17,6 +30,5 @@
                 "PYTHONPATH": "${workspaceFolder}"
             }
         }
-        
     ]
 }
