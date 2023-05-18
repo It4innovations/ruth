@@ -7,8 +7,8 @@ from typing import Optional
 
 from probduration import HistoryHandler
 
-from ..simulator import Simulation, SimSetting, SingleNodeSimulator, RouteRankingAlgorithms, load_vehicles
-from ..losdb import FreeFlowDb, ProbProfileDb
+from ruth.simulator import Simulation, SimSetting, SingleNodeSimulator, RouteRankingAlgorithms, load_vehicles
+from ruth.losdb import FreeFlowDb, ProbProfileDb
 
 
 @dataclass

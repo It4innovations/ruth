@@ -1,0 +1,22 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "ruth benchmarks/od-matrices/",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/ruth/tools/simulator.py",
+            "console": "integratedTerminal",
+            "args": "--departure-time=\"2021-06-16 07:00:00\" --k-alternatives=1 --nproc=8 --out=simulation_record.pickle --seed=7 rank-by-prob-delay ${workspaceFolder}/benchmarks/od-matrices/INPUT-od-matrix-10-vehicles-town-resolution.parquet --prob_profile_path=${workspaceFolder}/benchmarks/od-matrices/prob-profile-for-2021-06-20T23:59:00+02:00--2021-06-27T23:59:00+02:00.mem 70 500",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
+        
+    ]
+}
