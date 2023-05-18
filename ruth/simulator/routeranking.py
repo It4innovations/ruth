@@ -7,8 +7,8 @@ from typing import Any, Callable, List, Dict, Optional, NewType
 
 from probduration import VehiclePlan, avg_delays
 
-from .common import distance_duration
-from ..vehicle import Vehicle
+from ruth.simulator.common import distance_duration
+from ruth.vehicle import Vehicle
 
 
 Comparable = NewType("Comparable", Any)

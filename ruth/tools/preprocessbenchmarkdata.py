@@ -9,10 +9,10 @@ from dataclasses import fields
 from datetime import timedelta
 from tqdm import tqdm
 
-from ..vehicle import Vehicle
-from ..data.geopoint import GeoPoint
-from ..data.border import PolygonBorderDef
-from ..utils import get_map
+from ruth.vehicle import Vehicle
+from ruth.data.geopoint import GeoPoint
+from ruth.data.border import PolygonBorderDef
+from ruth.utils import get_map
 
 
 # TODO: this method should be removed completely

@@ -7,8 +7,8 @@ from itertools import product
 
 from probduration import HistoryHandler, Route, SegmentPosition, probable_delay
 
-from ..utils import osm_route_to_segments
-from ..vehicle import Vehicle
+from ruth.utils import osm_route_to_segments
+from ruth.vehicle import Vehicle
 
 
 logger = logging.getLogger(__name__)

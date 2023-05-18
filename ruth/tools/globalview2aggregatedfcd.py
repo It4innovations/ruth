@@ -8,9 +8,9 @@ from tqdm import tqdm
 
 from probduration import Segment
 
-from ..utils import get_map, round_datetime
-from ..globalview import GlobalView
-from ..simulator import Simulation
+from ruth.utils import get_map, round_datetime
+from ruth.globalview import GlobalView
+from ruth.simulator import Simulation
 
 
 @dataclass

@@ -12,8 +12,8 @@ from multiprocessing import Pool
 from shapely.geometry import Point, MultiPoint, Polygon
 from tqdm import tqdm
 
-from ..data.border import Border, BorderType, PolygonBorderDef
-from ..data.map import Map
+from ruth.data.border import Border, BorderType, PolygonBorderDef
+from ruth.data.map import Map
 
 
 routing_map = None

@@ -8,10 +8,10 @@ from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
 from typing import List, Tuple, Dict
 
-from ..globalview import GlobalView
-from ..losdb import GlobalViewDb
-from ..vehicle import Vehicle
-from ..utils import round_timedelta
+from ruth.globalview import GlobalView
+from ruth.losdb import GlobalViewDb
+from ruth.vehicle import Vehicle
+from ruth.utils import round_timedelta
 
 
 @dataclass

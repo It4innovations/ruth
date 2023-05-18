@@ -6,8 +6,8 @@ import osmnx as ox
 import matplotlib.pyplot as plt
 from datetime import timedelta
 
-from ..globalview import GlobalView
-from .. import utils
+from ruth.globalview import GlobalView
+from ruth import utils
 
 
 def count_gt_zero(segment_, count):

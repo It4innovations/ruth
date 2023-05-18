@@ -8,14 +8,14 @@ from typing import Any, List, Dict, Tuple, Callable, NewType
 
 from probduration import VehiclePlan, Route, SegmentPosition
 
-from .common import alternatives, advance_vehicle
-from .routeranking import Comparable
-from ..globalview import GlobalView
-from ..utils import osm_route_to_segments, route_to_osm_route, TimerSet, riffle_shuffle
-from ..vehicle import Vehicle
-from ..losdb import GlobalViewDb
+from ruth.simulator.common import alternatives, advance_vehicle
+from ruth.simulator.routeranking import Comparable
+from ruth.globalview import GlobalView
+from ruth.utils import osm_route_to_segments, route_to_osm_route, TimerSet, riffle_shuffle
+from ruth.vehicle import Vehicle
+from ruth.losdb import GlobalViewDb
 
-from .simulation import Simulation, VehicleUpdate
+from ruth.simulator.simulation import Simulation, VehicleUpdate
 
 
 logging.basicConfig(level=logging.DEBUG)
