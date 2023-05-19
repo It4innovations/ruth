@@ -69,7 +69,7 @@ def advance_vehicle(vehicle, osm_route, departure_time, gv_db):
         # in case the vehicle is stuck in traffic jam just move the time
         vehicle.time_offset += vehicle.frequency
     else:
-        time, segment_pos, assigned_speed_mps = driving_route.advance(
+        time, segment_pos, assigned_speed_mps = driving_route.advance_with_speed(
             vehicle.segment_position, dt, los)
         d = time - dt
 
