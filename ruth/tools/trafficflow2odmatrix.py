@@ -217,3 +217,9 @@ def convert(traffic_flow_file_path, frequency_s, fcd_sampling_period_s, out):
     out_path = os.path.abspath(out)
     od_matrix.store(out_path)
     logger.info(f"O/D matrix generated into: {out_path}.")
+
+def main():
+    convert(obj={})
+
+if __name__ == "__main__":
+    main()

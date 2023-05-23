@@ -11,8 +11,8 @@ from datetime import timedelta, datetime
 from probduration import SegmentPosition
 from networkx.exception import NodeNotFound
 
-from .utils import get_map, round_timedelta
-from .data.map import Map
+from ruth.utils import get_map, round_timedelta
+from ruth.data.map import Map
 
 
 def set_numpy_type(name, fld=None):

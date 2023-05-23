@@ -8,8 +8,8 @@ import osmnx as ox
 from osmnx import graph_from_polygon, load_graphml, save_graphml, graph_from_place
 from networkx.exception import NetworkXNoPath
 
-from ..log import console_logger as cl
-from ..metaclasses import Singleton
+from ruth.log import console_logger as cl
+from ruth.metaclasses import Singleton
 
 
 def segment_weight(n1, n2, data):

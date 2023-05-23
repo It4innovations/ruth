@@ -43,11 +43,13 @@ class Simulator:
         self.current_offset = self.sim.compute_current_offset()
 
     def __enter__(self):
-        self.pool = Pool(processes=self.nproc)
+        if (self.nproc > 1):
+            self.pool = Pool(processes=self.nproc)
         return self
 
     def __exit__(self, exc_type_, exc_val_, exc_tb_):
-        self.pool.close()
+        if self.pool != None:
+          self.pool.close()
 
     @property
     def state(self):
@@ -89,6 +91,9 @@ class Simulator:
               Keyword arguments for end-step function
         """
 
+        for v in self.sim.vehicles:
+            v.frequency = timedelta(seconds = 5)
+  
         step = self.sim.number_of_steps
         while self.current_offset is not None:
             step_start_dt = datetime.now()
