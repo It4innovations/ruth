@@ -17,12 +17,15 @@ from ruth.losdb import GlobalViewDb
 
 from ruth.simulator.simulation import Simulation, VehicleUpdate
 
+import cProfile, pstats, io
+from pstats import SortKey
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
 VehiclePlans = NewType("VehiclePlans", List[Tuple[Vehicle, VehiclePlan]])
+
 
 
 class Simulator:
@@ -93,9 +96,14 @@ class Simulator:
 
         for v in self.sim.vehicles:
             v.frequency = timedelta(seconds = 5)
-  
+ 
+        pr = cProfile.Profile() 
+        pr.enable()
+ 
         step = self.sim.number_of_steps
         while self.current_offset is not None:
+              
+ 
             step_start_dt = datetime.now()
             timer_set = TimerSet()
 
@@ -107,7 +115,7 @@ class Simulator:
 
             with timer_set.get("alternatives"):
                 alts = self.alternatives(allowed_vehicles)
-
+            
             # collect vehicles without alternative and finish them
             with timer_set.get("collect"):
                 not_moved = []
@@ -168,8 +176,23 @@ class Simulator:
             self.sim.save_step_info(step, len(allowed_vehicles), step_dur, timer_set.collect())
 
             step += 1
+         
+             
         logger.info(f"Simulation done in {self.sim.duration}.")
-
+            
+        pr.disable()
+        pr.dump_stats("cProfiler_result_")
+        
+        s = io.StringIO()
+        sortby = SortKey.CUMULATIVE
+        
+        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        ps.print_stats()
+        print(s.getvalue())
+        
+        timer_set.collect()
+        print(timer_set.collect())
+                 
     def alternatives(self, vehicles):
         """Provide a list of alternative routes for vehicle's current origin to destination. The resulting list has
         the same length as the provided vehicles and keeping the order of vehicles"""
