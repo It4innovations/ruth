@@ -177,7 +177,9 @@ class Simulator:
 
             step += 1
          
-             
+            timer_set.collect()
+            print(timer_set.collect())
+            
         logger.info(f"Simulation done in {self.sim.duration}.")
             
         pr.disable()
@@ -190,8 +192,7 @@ class Simulator:
         ps.print_stats()
         print(s.getvalue())
         
-        timer_set.collect()
-        print(timer_set.collect())
+        
                  
     def alternatives(self, vehicles):
         """Provide a list of alternative routes for vehicle's current origin to destination. The resulting list has
