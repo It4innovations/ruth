@@ -129,25 +129,7 @@ class Simulator:
                     else:
                         moving.append((v, [v.concat_route_with_passed_part(osm_route) for osm_route in alt]))
 
-            with timer_set.get("vehicle_plans"):
-                vehicle_plans = chain.from_iterable(
-                    filter(None, map(functools.partial(prepare_vehicle_plans,
-                                                       departure_time=self.sim.setting.departure_time),
-                                     moving)))
-
-            with timer_set.get("select_plans"):
-                selected_plans = select_plans(vehicle_plans,
-                                              route_ranking_fn, rr_fn_args, rr_fn_kwargs,
-                                              extend_plans_fn, ep_fn_args, ep_fn_kwargs)
-
-            assert selected_plans, "Unexpected empty list of selected plans."
-
-            def transform_plan(vehicle_plan):
-                vehicle, plan = vehicle_plan
-                return vehicle, route_to_osm_route(plan.route)
-
-            with timer_set.get("transform_plans"):
-                bests = list(map(transform_plan, selected_plans))
+            bests = [select_route(vehicle, route) for (vehicle, route) in moving]
 
             with timer_set.get("advance_vehicle"):
                 new_vehicles = [self.advance_vehicle(best, offset) for best in bests] + not_moved
@@ -256,6 +238,16 @@ class Simulator:
             new_vehicle = vehicle
 
         return VehicleUpdate(new_vehicle, leap_history)
+
+
+OSMRoute = List[int]
+
+
+def select_route(vehicle: Vehicle, routes: List[OSMRoute]) -> Tuple[Vehicle, OSMRoute]:
+    """
+    Select the best route for the given vehicle.
+    """
+    return (vehicle, routes[0])
 
 
 def select_plans(vehicle_plans,
