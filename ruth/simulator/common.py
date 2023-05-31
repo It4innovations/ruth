@@ -49,43 +49,16 @@ def save_vehicles(vehicles, output_path: str):
     df.to_pickle(output_path)
 
 
-def advance_vehicle(vehicle, osm_route, departure_time, gv_db):
+
+def advance_vehicle(vehicle: Vehicle, osm_route, departure_time, gv_db) -> Vehicle:
     """Advance a vehicle on a route."""
+    # TODO: advance vehicle
 
     dt = departure_time + vehicle.time_offset
 
-    driving_route = Route(osm_route_to_segments(osm_route, vehicle.routing_map),
-                          vehicle.frequency)
-    # update the current route
-    vehicle.set_current_route(osm_route)
-
-    if vehicle.segment_position.index < len(driving_route):
-        segment = driving_route[vehicle.segment_position.index]
-        los = gv_db.get(dt, segment)
-    else:
-        los = 1.0  # the end of the route
-
-    if los == float("inf"):
-        # in case the vehicle is stuck in traffic jam just move the time
-        vehicle.time_offset += vehicle.frequency
-    else:
-        time, segment_pos, assigned_speed_mps = driving_route.advance(
-            vehicle.segment_position, dt, los)
-        d = time - dt
-
-        # NOTE: _assumption_: the car stays on a single segment within one call of the `advance`
-        #       method on the driving route
-
-        if segment_pos.index < len(driving_route):  # NOTE: the segment position index may end out of segments
-            vehicle.store_fcd(dt, d, driving_route[segment_pos.index], segment_pos.start, assigned_speed_mps)
-
-        # update the vehicle
-        vehicle.time_offset += d
-        vehicle.set_position(segment_pos)
-
-        if vehicle.current_node == vehicle.dest_node:
-            # stop the processing in case the vehicle reached the end
-            vehicle.active = False
+    if vehicle.current_node == vehicle.dest_node:
+        # stop the processing in case the vehicle reached the end
+        vehicle.active = False
 
     return vehicle
 
