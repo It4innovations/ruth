@@ -202,7 +202,7 @@ def rank_by_prob_delay(ctx,
         end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
         walltime = walltime - time_for_data_loading if walltime is not None else None
 
-        zeromq = True
+        zeromq = False
         if zeromq:
             # TODO: refactor this, remove singleton from Map
             map_path = Path(simulation.routing_map.file_path).absolute()
