@@ -93,7 +93,10 @@ class Simulator:
                                     if self.sim.is_vehicle_within_offset(v, offset)]
 
             with timer_set.get("alternatives"):
-                alts = self.alternatives(allowed_vehicles, alternatives_provider)
+                alts = alternatives_provider.compute_alternatives(
+                    allowed_vehicles,
+                    k=self.sim.setting.k_alternatives
+                )
 
             # collect vehicles without alternative and finish them
             with timer_set.get("collect"):
@@ -156,47 +159,6 @@ class Simulator:
 
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
-
-    def alternatives(self, vehicles, kernel_provider: AlternativesProvider):
-        """Provide a list of alternative routes for vehicle's current origin to destination. The resulting list has
-        the same length as the provided vehicles and keeping the order of vehicles"""
-
-        # gather results from cache if possible
-        ALT_CACHE = "alternatives"
-        cache_to_origin_idx = []
-
-        hits = 0
-        cached_alts = []
-        to_compute = []
-        for index, vehicle in enumerate(vehicles):
-            if vehicle.osm_route is None:
-                alt = None  # in case there is no osm_route there is no path between origin and destination
-            else:
-                od = vehicle.next_routing_od_nodes
-                alt = self.sim.get_from_cache(ALT_CACHE, od)
-
-            if alt is not None:
-                cached_alts.append(alt)
-                cache_to_origin_idx.append(index)
-                hits += 1
-            else:
-                to_compute.append(vehicle)
-        self.sim.save_cache_info(ALT_CACHE, hits, len(vehicles))
-        logger.debug(f"Alternatives hit rate: {hits}/{len(vehicles)} ({(hits / len(vehicles)) * 100:.2f}%)")
-
-        # compute alternatives
-        alts = kernel_provider.compute_alternatives(to_compute, k=self.sim.setting.k_alternatives)
-        # save the results into cache
-        for vehicle, alt in zip(to_compute, alts):
-            self.sim.cache(ALT_CACHE, vehicle.next_routing_od_nodes, alt)
-
-        # join cached results with computed ones keeping the origin order
-        alts = riffle_shuffle(cached_alts, alts, cache_to_origin_idx)
-
-        if not alts:
-            offsets = sorted(v.time_offset for v in vehicles)
-            logger.debug(f"No alternatives found at offset range: ({offsets[0]}, {offsets[-1]})")
-        return alts
 
     def advance_vehicle(self, vehicle_route, current_offset):
         """Move with the vehicle on the route (update its state), and disentangle its leap history"""
