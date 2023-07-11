@@ -124,21 +124,3 @@ class TimerSet:
 
     def collect(self):
         return dict((timer.name, timer.duration_ms) for timer in self.timers)
-
-
-def riffle_shuffle(a: list, b: list, index_to_a: list):
-    """Takes two lists and shuffle them together according to the index to the first provided list."""
-
-    joined = []
-
-    i, idx_a, idx_b = 0, 0, 0
-    for j in range(len(a + b)):
-        if i < len(index_to_a) and index_to_a[i] == j:
-            joined.append(a[idx_a])
-            idx_a += 1
-            i += 1
-        else:
-            joined.append(b[idx_b])
-            idx_b += 1
-
-    return joined
