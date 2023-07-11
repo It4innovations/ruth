@@ -1,15 +1,13 @@
-
 import logging
-import pandas as pd
 from dataclasses import asdict
 from datetime import timedelta
 from itertools import product
 
-from probduration import HistoryHandler, Route, SegmentPosition, probable_delay
+import pandas as pd
+from probduration import Route, SegmentPosition
 
 from ..utils import osm_route_to_segments
 from ..vehicle import Vehicle
-
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +74,10 @@ def advance_vehicle(vehicle, osm_route, departure_time, gv_db):
         # NOTE: _assumption_: the car stays on a single segment within one call of the `advance`
         #       method on the driving route
 
-        if segment_pos.index < len(driving_route):  # NOTE: the segment position index may end out of segments
-            vehicle.store_fcd(dt, d, driving_route[segment_pos.index], segment_pos.start, assigned_speed_mps)
+        if segment_pos.index < len(
+                driving_route):  # NOTE: the segment position index may end out of segments
+            vehicle.store_fcd(dt, d, driving_route[segment_pos.index], segment_pos.start,
+                              assigned_speed_mps)
 
         # update the vehicle
         vehicle.time_offset += d
@@ -91,7 +91,6 @@ def advance_vehicle(vehicle, osm_route, departure_time, gv_db):
 
 
 def distance_duration(driving_route, departure_time, los_db, rnd_gen, stop_distance=None):
-
     distance = 0.0
     p = SegmentPosition(0, 0.0)
     dt = departure_time
@@ -126,7 +125,8 @@ def distance_duration(driving_route, departure_time, los_db, rnd_gen, stop_dista
             # decrease the distance
             dd = distance - stop_distance_
             if next_segment_pos.start - dd < 0:
-                next_segment_pos = SegmentPosition(p.index, seg.length + (next_segment_pos.start - dd))
+                next_segment_pos = SegmentPosition(p.index,
+                                                   seg.length + (next_segment_pos.start - dd))
             else:
                 next_segment_pos.start -= dd
 

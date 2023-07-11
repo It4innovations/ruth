@@ -39,6 +39,8 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
 * activate virtual environment with `ruth` installed
 * use the files in `benchmarks/od-matrix/`
 
+* IMPORTANT: in this version, the fastest route calculation is the default method. If you wish to use the shortest path calculation, navigate to the file "common.py" and switch the two last lines of code (in the function alternatives(vehicle, k). To switch you can simply leave uncommented the one you want to use - but just one of them can be used, they cannot be used simultaneously! 
+
 ``` sh
 ruth-simulator --departure-time="2021-06-16 07:00:00" --k-alternatives=4 --out=simulation_record.pickle --seed=7 rank-by-prob-delay INPUT-od-matrix-10-vehicles-town-resolution.parquet --prob_profile_path=prob-profile-for-2021-06-20T23:59:00+02:00--2021-06-27T23:59:00+02:00.mem 70 500
 ```
