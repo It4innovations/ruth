@@ -48,11 +48,11 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimul
     return SingleNodeSimulator(simulation)
 
 
-def store_simulation_at_walltime():
+def store_simulation_at_walltime(walltime: Optional[timedelta], name: str):
     saved = False
     start_time = datetime.now()
 
-    def store(simulation: Simulation, walltime: Optional[timedelta], name: str):
+    def store(simulation: Simulation):
         nonlocal saved
         """Store the state of the simulation at walltime."""
         if walltime is not None and (datetime.now() - start_time) >= walltime and not saved:
@@ -279,7 +279,10 @@ def run(ctx, vehicles_path: Path, alternatives: AlternativesImpl,
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
     simulator = prepare_simulator(common_args, vehicles_path)
-    end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
+    end_step_fn = (
+        store_simulation_at_walltime(walltime, f"rank_by_duration{task_id}")
+        if walltime is not None else None
+    )
 
     alternatives_provider = create_alternatives_provider(alternatives)
     route_selection_provider = create_route_selection_provider(route_selection)
@@ -287,7 +290,6 @@ def run(ctx, vehicles_path: Path, alternatives: AlternativesImpl,
         alternatives_provider=alternatives_provider,
         route_selection_provider=route_selection_provider,
         end_step_fn=end_step_fn,
-        es_fn_args=(walltime, f"rank_by_duration{task_id}")
     )
     simulator.state.store(out)
 

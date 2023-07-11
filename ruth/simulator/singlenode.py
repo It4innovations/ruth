@@ -2,7 +2,7 @@ import functools
 import logging
 from datetime import datetime, timedelta
 from itertools import groupby
-from typing import Callable, Dict, List, NewType, Tuple
+from typing import Callable, List, NewType, Optional, Tuple
 
 from probduration import Route, SegmentPosition, VehiclePlan
 
@@ -39,9 +39,7 @@ class Simulator:
             self,
             alternatives_provider: AlternativesProvider,
             route_selection_provider: RouteSelectionProvider,
-            end_step_fn: Callable[[Simulation, List, Dict], None] = lambda *_: None,
-            es_fn_args=(),
-            es_fn_kwargs=None
+            end_step_fn: Optional[Callable[[Simulation], None]] = None,
     ):
         """Perform the simulation.
 
@@ -114,9 +112,9 @@ class Simulator:
                 f"{step}. active: {len(allowed_vehicles)}, duration: {step_dur / timedelta(milliseconds=1)} ms")
             self.sim.duration += step_dur
 
-            with timer_set.get("end_step"):
-                es_fn_kwargs_ = {} if es_fn_kwargs is None else es_fn_kwargs
-                end_step_fn(self.state, *es_fn_args, **es_fn_kwargs_)
+            if end_step_fn is not None:
+                with timer_set.get("end_step"):
+                    end_step_fn(self.state)
 
             self.sim.save_step_info(step, len(allowed_vehicles), step_dur, timer_set.collect())
 
