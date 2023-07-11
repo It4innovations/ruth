@@ -1,11 +1,9 @@
 import re
-import osmnx as ox
-from probduration import Segment
-from datetime import datetime, timedelta
 import time
+from datetime import datetime, timedelta
 
-from .data.map import Map
 from .data.border import Border, BorderType, PolygonBorderDef
+from .data.map import Map
 from .metaclasses import Singleton
 
 
@@ -16,7 +14,6 @@ def get_map(polygon: str,
             with_speeds=False,
             data_dir="./data",
             load_from_cache=True):
-
     """Get map based on polygon."""
     border_def = PolygonBorderDef(polygon, on_disk=on_disk)
     border_kind = BorderType.parse(kind)
@@ -24,22 +21,6 @@ def get_map(polygon: str,
     border = Border(name_, border_def, border_kind, data_dir, load_from_cache)
 
     return Map(border, with_speeds=with_speeds)
-
-
-def osm_route_to_segments(osm_route, routing_map):
-    """Prepare list of segments based on route."""
-    edge_data = ox.utils_graph.get_route_edge_attributes(routing_map.network,
-                                                         osm_route)
-    edges = zip(osm_route, osm_route[1:])
-    return [
-        Segment(
-            f"OSM{from_}T{to_}",
-            data["length"],
-            data["speed_kph"],
-        )
-        # NOTE: the zip is correct as the starting node_id is of the interest
-        for i, ((from_, to_), data) in enumerate(zip(edges, edge_data))
-    ]
 
 
 class SegmentIdParser:
@@ -59,19 +40,6 @@ def parse_segment_id(segment_id):
     p = SegmentIdParser()
 
     return p.parse(segment_id)
-
-
-def route_to_osm_route(route):
-    osm_route = []
-    for i in range(len(route) - 1):
-        seg = route[i]
-        node_from, _ = parse_segment_id(seg.id)
-        osm_route.append(node_from)
-    last_seg = route[-1]
-    node_from, node_to = parse_segment_id(last_seg.id)
-    osm_route.extend([node_from, node_to])
-
-    return osm_route
 
 
 def round_timedelta(td: timedelta, freq: timedelta):
