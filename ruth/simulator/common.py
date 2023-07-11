@@ -4,9 +4,8 @@ from datetime import timedelta
 from itertools import product
 
 import pandas as pd
-from probduration import Route, SegmentPosition
+from probduration import SegmentPosition
 
-from ..utils import osm_route_to_segments
 from ..vehicle import Vehicle
 
 logger = logging.getLogger(__name__)
@@ -47,50 +46,6 @@ def save_vehicles(vehicles, output_path: str):
     df.to_pickle(output_path)
 
 
-def advance_vehicle(vehicle: Vehicle, osm_route: Route, departure_time, gv_db):
-    """Advance a vehicle on a route."""
-
-    dt = departure_time + vehicle.time_offset
-    osm_route = vehicle.concat_route_with_passed_part(osm_route)
-
-    driving_route = Route(osm_route_to_segments(osm_route, vehicle.routing_map),
-                          vehicle.frequency)
-    # update the current route
-    vehicle.set_current_route(osm_route)
-
-    if vehicle.segment_position.index < len(driving_route):
-        segment = driving_route[vehicle.segment_position.index]
-        los = gv_db.get(dt, segment)
-    else:
-        los = 1.0  # the end of the route
-
-    if los == float("inf"):
-        # in case the vehicle is stuck in traffic jam just move the time
-        vehicle.time_offset += vehicle.frequency
-    else:
-        time, segment_pos, assigned_speed_mps = driving_route.advance(
-            vehicle.segment_position, dt, los)
-        d = time - dt
-
-        # NOTE: _assumption_: the car stays on a single segment within one call of the `advance`
-        #       method on the driving route
-
-        if segment_pos.index < len(
-                driving_route):  # NOTE: the segment position index may end out of segments
-            vehicle.store_fcd(dt, d, driving_route[segment_pos.index], segment_pos.start,
-                              assigned_speed_mps)
-
-        # update the vehicle
-        vehicle.time_offset += d
-        vehicle.set_position(segment_pos)
-
-        if vehicle.current_node == vehicle.dest_node:
-            # stop the processing in case the vehicle reached the end
-            vehicle.active = False
-
-    return vehicle
-
-
 def distance_duration(driving_route, departure_time, los_db, rnd_gen, stop_distance=None):
     distance = 0.0
     p = SegmentPosition(0, 0.0)
@@ -114,7 +69,7 @@ def distance_duration(driving_route, departure_time, los_db, rnd_gen, stop_dista
 
         if p.index == next_segment_pos.index:
             # movement on the same segment
-            distance += next_segment_pos.start - p.start
+            distance += next_segment_pos.position - p.start
         else:
             # if the next segment is different, i.e. its index is higher than
             # the rest distance of the previous segment is added.
@@ -125,11 +80,11 @@ def distance_duration(driving_route, departure_time, los_db, rnd_gen, stop_dista
 
             # decrease the distance
             dd = distance - stop_distance_
-            if next_segment_pos.start - dd < 0:
+            if next_segment_pos.position - dd < 0:
                 next_segment_pos = SegmentPosition(p.index,
-                                                   seg.length + (next_segment_pos.start - dd))
+                                                   seg.length + (next_segment_pos.position - dd))
             else:
-                next_segment_pos.start -= dd
+                next_segment_pos.position -= dd
 
             # decrease the duration by overpass time
             over_duration = dd / assigned_speed_mps

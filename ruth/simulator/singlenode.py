@@ -2,8 +2,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Callable, Optional
 
-from .common import advance_vehicle
 from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithRoute
+from .route import advance_vehicle
 from .simulation import Simulation, VehicleUpdate
 from ..losdb import GlobalViewDb
 from ..utils import TimerSet
@@ -109,6 +109,8 @@ class Simulator:
                 with timer_set.get("end_step"):
                     end_step_fn(self.state)
 
+            print(timer_set.collect())
+
             self.sim.save_step_info(step, len(allowed_vehicles), step_dur, timer_set.collect())
 
             step += 1
@@ -121,12 +123,10 @@ class Simulator:
 
         leap_history = []
         if vehicle.is_active(current_offset, self.sim.setting.round_freq):
-            new_vehicle = advance_vehicle(vehicle, osm_route,
-                                          self.sim.setting.departure_time,
-                                          GlobalViewDb(self.sim.global_view))
+            advance_vehicle(vehicle, osm_route,
+                            self.sim.setting.departure_time,
+                            GlobalViewDb(self.sim.global_view))
             # swap the empty history with the filled one
-            leap_history, new_vehicle.leap_history = new_vehicle.leap_history, leap_history
-        else:
-            new_vehicle = vehicle
+            leap_history, vehicle.leap_history = vehicle.leap_history, leap_history
 
-        return VehicleUpdate(new_vehicle, leap_history)
+        return VehicleUpdate(vehicle, leap_history)
