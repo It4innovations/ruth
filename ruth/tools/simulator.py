@@ -14,7 +14,7 @@ from ..losdb import FreeFlowDb, ProbProfileDb
 from ..simulator import RouteRankingAlgorithms, SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
 from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, \
-    ShortestPathsAlternatives, \
+    FirstRouteSelection, RouteSelectionProvider, ShortestPathsAlternatives, \
     ZeroMQDistributedAlternatives
 
 
@@ -60,6 +60,44 @@ def store_simulation_at_walltime():
             saved = True
 
     return store
+
+
+def start_zeromq_cluster(
+        worker_nodes: List[str],
+        worker_per_node: int,
+        map_path: Path,
+        server_host: str = "localhost",
+        port: int = 5559
+):
+    from cluster.cluster import Cluster, start_process
+
+    ROOT_DIR = Path(__file__).absolute().parent.parent.parent
+    WORKER_SCRIPT = ROOT_DIR / "ruth" / "zeromq" / "ex_worker.py"
+    WORKER_DIR = ROOT_DIR / "worker-dir"
+
+    VIRTUAL_ENV = os.environ["VIRTUAL_ENV"]
+
+    WORKER_DIR.mkdir(parents=True, exist_ok=True)
+
+    cluster = Cluster(str(WORKER_DIR))
+    for worker_host in worker_nodes:
+        for worker_index in range(worker_per_node):
+            process = start_process(
+                commands=[
+                    sys.executable,
+                    str(WORKER_SCRIPT),
+                    "--address", server_host,
+                    "--port", str(port),
+                    "--map", str(map_path)
+                ],
+                workdir=str(WORKER_DIR),
+                pyenv=VIRTUAL_ENV,
+                hostname=worker_host,
+                name=f"worker_{worker_host}_{worker_index}"
+            )
+            logging.info(f"Started worker {worker_host}:{process.pid}")
+            cluster.add(process, key="worker")
+    return cluster
 
 
 @click.group()
@@ -111,6 +149,7 @@ def single_node_simulator(ctx,
 @click.pass_context
 def rank_by_duration(ctx,
                      vehicles_path):
+    raise NotImplementedError
     common_args = ctx.obj['common-args']
     out = common_args.out
     walltime = common_args.walltime
@@ -123,44 +162,6 @@ def rank_by_duration(ctx,
                        end_step_fn=end_step_fn,
                        es_fn_args=(walltime, f"rank_by_duration{task_id}"))
     simulator.state.store(out)
-
-
-def start_zeromq_cluster(
-        worker_nodes: List[str],
-        worker_per_node: int,
-        map_path: Path,
-        server_host: str = "localhost",
-        port: int = 5559
-):
-    from cluster.cluster import Cluster, start_process
-
-    ROOT_DIR = Path(__file__).absolute().parent.parent.parent
-    WORKER_SCRIPT = ROOT_DIR / "ruth" / "zeromq" / "ex_worker.py"
-    WORKER_DIR = ROOT_DIR / "worker-dir"
-
-    VIRTUAL_ENV = os.environ["VIRTUAL_ENV"]
-
-    WORKER_DIR.mkdir(parents=True, exist_ok=True)
-
-    cluster = Cluster(str(WORKER_DIR))
-    for worker_host in worker_nodes:
-        for worker_index in range(worker_per_node):
-            process = start_process(
-                commands=[
-                    sys.executable,
-                    str(WORKER_SCRIPT),
-                    "--address", server_host,
-                    "--port", str(port),
-                    "--map", str(map_path)
-                ],
-                workdir=str(WORKER_DIR),
-                pyenv=VIRTUAL_ENV,
-                hostname=worker_host,
-                name=f"worker_{worker_host}_{worker_index}"
-            )
-            logging.info(f"Started worker {worker_host}:{process.pid}")
-            cluster.add(process, key="worker")
-    return cluster
 
 
 @single_node_simulator.command()
@@ -184,6 +185,7 @@ def rank_by_prob_delay(ctx,
     "driver is seeing in front of her/him".
     """
 
+    raise NotImplementedError
     common_args = ctx.obj['common-args']
     out = common_args.out
     walltime = common_args.walltime
@@ -237,26 +239,40 @@ def rank_by_prob_delay(ctx,
             cluster.kill()
 
 
-class AlternativesTypes(str, enum.Enum):
+class AlternativesImpl(str, enum.Enum):
     FASTEST_PATHS = "fastest-paths"
     SHORTEST_PATHS = "shortest-paths"
 
 
-def create_alternatives(alternatives: AlternativesTypes) -> AlternativesProvider:
-    if alternatives == AlternativesTypes.FASTEST_PATHS:
+def create_alternatives_provider(alternatives: AlternativesImpl) -> AlternativesProvider:
+    if alternatives == AlternativesImpl.FASTEST_PATHS:
         return FastestPathsAlternatives()
-    elif alternatives == AlternativesTypes.SHORTEST_PATHS:
+    elif alternatives == AlternativesImpl.SHORTEST_PATHS:
         return ShortestPathsAlternatives()
+    else:
+        raise NotImplementedError
+
+
+class RouteSelectionImpl(str, enum.Enum):
+    FIRST = "first"
+
+
+def create_route_selection_provider(route_selection: RouteSelectionImpl) -> RouteSelectionProvider:
+    if route_selection == RouteSelectionImpl.FIRST:
+        return FirstRouteSelection()
     else:
         raise NotImplementedError
 
 
 @single_node_simulator.command()
 @click.argument("vehicles_path", type=click.Path(exists=True))
-@click.option("--alternatives", type=click.Choice(AlternativesTypes),
-              default=AlternativesTypes.FASTEST_PATHS)
+@click.option("--alternatives", type=click.Choice(AlternativesImpl),
+              default=AlternativesImpl.FASTEST_PATHS)
+@click.option("--route-selection", type=click.Choice(RouteSelectionImpl),
+              default=RouteSelectionImpl.FIRST)
 @click.pass_context
-def simple(ctx, vehicles_path: Path, alternatives: AlternativesTypes):
+def run(ctx, vehicles_path: Path, alternatives: AlternativesImpl,
+        route_selection: RouteSelectionImpl):
     common_args = ctx.obj["common-args"]
     out = common_args.out
     walltime = common_args.walltime
@@ -265,11 +281,14 @@ def simple(ctx, vehicles_path: Path, alternatives: AlternativesTypes):
     simulator = prepare_simulator(common_args, vehicles_path)
     end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
 
-    alternatives_provider = create_alternatives(alternatives)
-    simulator.simulate(RouteRankingAlgorithms.DURATION.value.rank_route,
-                       alternatives_provider, rr_fn_args=(simulator.state.global_view_db,),
-                       end_step_fn=end_step_fn,
-                       es_fn_args=(walltime, f"rank_by_duration{task_id}"))
+    alternatives_provider = create_alternatives_provider(alternatives)
+    route_selection_provider = create_route_selection_provider(route_selection)
+    simulator.simulate(
+        alternatives_provider=alternatives_provider,
+        route_selection_provider=route_selection_provider,
+        end_step_fn=end_step_fn,
+        es_fn_args=(walltime, f"rank_by_duration{task_id}")
+    )
     simulator.state.store(out)
 
 

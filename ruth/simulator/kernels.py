@@ -1,11 +1,10 @@
 import json
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from ..vehicle import Vehicle
 
 Route = List[int]
 AlternativeRoutes = List[Route]
-
 
 # Alternatives
 class AlternativesProvider:
@@ -37,3 +36,24 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         inputs = [json.dumps(x).encode() for x in od_paths]
         result = self.client.compute(inputs)
         return result
+
+
+VehicleWithPlans = Tuple[Vehicle, AlternativeRoutes]
+VehicleWithRoute = Tuple[Vehicle, Route]
+
+# Route selection
+class RouteSelectionProvider:
+    """
+    Provides implementation of route selection.
+    For a given list of alternatives (k per vehicle), select the best route for each vehicle.
+    """
+    def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
+        raise NotImplementedError
+
+
+class FirstRouteSelection(RouteSelectionProvider):
+    """
+    Selects the first route for each car.
+    """
+    def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
+        return [(vehicle, routes[0]) for (vehicle, routes) in route_possibilities]

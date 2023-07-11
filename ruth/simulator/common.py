@@ -47,10 +47,11 @@ def save_vehicles(vehicles, output_path: str):
     df.to_pickle(output_path)
 
 
-def advance_vehicle(vehicle, osm_route, departure_time, gv_db):
+def advance_vehicle(vehicle: Vehicle, osm_route: Route, departure_time, gv_db):
     """Advance a vehicle on a route."""
 
     dt = departure_time + vehicle.time_offset
+    osm_route = vehicle.concat_route_with_passed_part(osm_route)
 
     driving_route = Route(osm_route_to_segments(osm_route, vehicle.routing_map),
                           vehicle.frequency)
