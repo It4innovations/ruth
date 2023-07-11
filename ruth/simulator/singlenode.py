@@ -8,7 +8,7 @@ from typing import Any, List, Dict, Tuple, Callable, NewType
 from probduration import VehiclePlan, Route, SegmentPosition
 
 from .common import advance_vehicle
-from .kernels import KernelProvider
+from .kernels import AlternativesProvider
 from .routeranking import Comparable
 from ..globalview import GlobalView
 from ..utils import osm_route_to_segments, route_to_osm_route, TimerSet, riffle_shuffle
@@ -43,7 +43,7 @@ class Simulator:
 
     def simulate(self,
                  route_ranking_fn: Callable[[GlobalView, VehiclePlans, List, Dict], Comparable],
-                 kernel_provider: KernelProvider,
+                 alternatives_provider: AlternativesProvider,
                  rr_fn_args=(),
                  rr_fn_kwargs=None,
                  extend_plans_fn: Callable[[VehiclePlans, List, Dict], Any] = lambda plans: plans,
@@ -93,7 +93,7 @@ class Simulator:
                                     if self.sim.is_vehicle_within_offset(v, offset)]
 
             with timer_set.get("alternatives"):
-                alts = self.alternatives(allowed_vehicles, kernel_provider)
+                alts = self.alternatives(allowed_vehicles, alternatives_provider)
 
             # collect vehicles without alternative and finish them
             with timer_set.get("collect"):
@@ -157,7 +157,7 @@ class Simulator:
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
 
-    def alternatives(self, vehicles, kernel_provider: KernelProvider):
+    def alternatives(self, vehicles, kernel_provider: AlternativesProvider):
         """Provide a list of alternative routes for vehicle's current origin to destination. The resulting list has
         the same length as the provided vehicles and keeping the order of vehicles"""
 
