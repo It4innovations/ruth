@@ -1,21 +1,14 @@
-import functools
 import logging
 from datetime import datetime, timedelta
-from itertools import groupby
-from typing import Callable, List, NewType, Optional, Tuple
-
-from probduration import Route, SegmentPosition, VehiclePlan
+from typing import Callable, Optional
 
 from .common import advance_vehicle
 from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithRoute
 from .simulation import Simulation, VehicleUpdate
 from ..losdb import GlobalViewDb
-from ..utils import TimerSet, osm_route_to_segments
-from ..vehicle import Vehicle
+from ..utils import TimerSet
 
 logger = logging.getLogger(__name__)
-
-VehiclePlans = NewType("VehiclePlans", List[Tuple[Vehicle, VehiclePlan]])
 
 
 class Simulator:
@@ -137,80 +130,3 @@ class Simulator:
             new_vehicle = vehicle
 
         return VehicleUpdate(new_vehicle, leap_history)
-
-
-def select_plans(vehicle_plans,
-                 rank_fn, rank_fn_args=(), rank_fn_kwargs=None,
-                 extend_plans_fn=lambda plans: plans, ep_fn_args=(), ep_fn_kwargs=None):
-    """Select from alternatives based on rank function.
-
-    Parameters:
-    -----------
-        vehicle_plans: List[Tuple[Vehicle, VehiclePlan]]
-        rank_fn: Callable[[List, Dict], Comparable]
-          A route ranking function
-        rank_fn_args: Tuple
-        rank_fn_kwargs: Dict
-        extend_plans_fn: Callable[[List, Dict], Comparable]
-          A function that can extend the vehicle plans by additional information which can be used in route ranking
-          function.
-        ep_fn_args: Tuple
-        ep_fn_kwargs: Dict
-    """
-
-    vehicle_plans_ = list(vehicle_plans)  # materialize the iterator as it is used twice
-
-    ep_fn_kwargs_ = {} if ep_fn_kwargs is None else ep_fn_kwargs
-    vehicle_plans_extended = extend_plans_fn(vehicle_plans_, *ep_fn_args, **ep_fn_kwargs_)
-
-    rank_fn_kwargs_ = {} if rank_fn_kwargs is None else rank_fn_kwargs
-    ranks = map(functools.partial(rank_fn, *rank_fn_args, **rank_fn_kwargs_),
-                vehicle_plans_extended)
-
-    def by_plan_id(data):
-        (_, plan), _ = data
-        return plan.id
-
-    def by_rank(data):
-        _, rank = data
-        return rank
-
-    grouped_data = groupby(sorted(zip(vehicle_plans_, ranks), key=by_plan_id), by_plan_id)
-
-    def select_best(data):
-        plan_id, group = data
-        # a single group contains tuple with vehicle plan and computed duration, respectively
-        group = list(group)
-        prev_plan, prev_rank = group[0]  # at the first position is the path from previous step
-        best_plan, best_rank = sorted(group, key=by_rank)[0]
-        if abs(prev_rank - best_rank) > timedelta(
-                minutes=1):  # TODO: expose 1m epsilon to the user interface
-            # TODO: collect hits: "switch from previous to the best"
-            return best_plan
-        return prev_plan
-
-    return list(map(select_best, grouped_data))
-
-
-def prepare_vehicle_plans(vehicle_alts, departure_time):
-    """Prepare a list of vehicle plans for particular alternative. Returns a list of pairs: (`Vehicle`, `VehiclePlan`)
-
-    Parameters:
-    -----------
-        vehicle_alts: (Vehicle, List[int])
-          A pair of vehicle and list of alternative osm routes (one osm route is a list of node ids).
-        departure_time: datetime
-          A departure time of the simulation.
-
-    """
-    vehicle, osm_routes = vehicle_alts
-    if osm_routes is None:
-        logger.debug(f"No alternative for vehicle: {vehicle.id}")
-        return None
-
-    return [(vehicle, VehiclePlan(vehicle.id,
-                                  Route(osm_route_to_segments(osm_route, vehicle.routing_map),
-                                        vehicle.frequency),
-                                  SegmentPosition(0, 0.0),
-                                  departure_time + vehicle.time_offset))
-            for osm_route in osm_routes]
