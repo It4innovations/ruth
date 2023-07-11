@@ -1,19 +1,21 @@
+import enum
 import logging
 import os
 import sys
-from pathlib import Path
-
-import click
-from datetime import datetime, timedelta
 from dataclasses import dataclass
-from contextlib import contextmanager
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import List, Optional
 
+import click
 from probduration import HistoryHandler
 
-from ..simulator.kernels import LocalKernelProvider, ZeroMqKernelProvider
-from ..simulator import Simulation, SimSetting, SingleNodeSimulator, RouteRankingAlgorithms, load_vehicles
 from ..losdb import FreeFlowDb, ProbProfileDb
+from ..simulator import RouteRankingAlgorithms, SimSetting, Simulation, SingleNodeSimulator, \
+    load_vehicles
+from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, \
+    ShortestPathsAlternatives, \
+    ZeroMQDistributedAlternatives
 
 
 @dataclass
@@ -62,9 +64,11 @@ def store_simulation_at_walltime():
 
 @click.group()
 @click.option('--debug/--no-debug', default=False)  # TODO: maybe move to top-level group
-@click.option("--task-id", type=str, help="A string to differentiate results if there is running more simulations"
-                                          " simultaneously.")
-@click.option("--departure-time", type=click.DateTime(), default=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
+@click.option("--task-id", type=str,
+              help="A string to differentiate results if there is running more simulations"
+                   " simultaneously.")
+@click.option("--departure-time", type=click.DateTime(),
+              default=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
 @click.option("--round-frequency-s", type=int, default=5,
               help="Rounding time frequency in seconds.")
 @click.option("--k-alternatives", type=int, default=1,
@@ -107,7 +111,6 @@ def single_node_simulator(ctx,
 @click.pass_context
 def rank_by_duration(ctx,
                      vehicles_path):
-
     common_args = ctx.obj['common-args']
     out = common_args.out
     walltime = common_args.walltime
@@ -172,7 +175,6 @@ def rank_by_prob_delay(ctx,
                        near_distance,
                        n_samples,
                        prob_profile_path):
-
     """Perform the simulation on a cluster's single node. The simulation use for ranking alternative routes
     _probable delay_ on a route at a departure time. To compute the probable delay Monte Carlo Simulation is performed
     with N_SAMPLES iterations and the average delay is used. During the Monte Carlo simulation the speed on segments
@@ -212,13 +214,13 @@ def rank_by_prob_delay(ctx,
             server_host="127.0.0.1",
             port=server_port
         )
-        kernel_provider = ZeroMqKernelProvider(port=server_port)
+        kernel_provider = ZeroMQDistributedAlternatives(port=server_port)
     else:
-        kernel_provider = LocalKernelProvider()
+        kernel_provider = ShortestPathsAlternatives()
 
     try:
         simulator.simulate(alg.rank_route,
-                           kernel_provider=kernel_provider,
+                           alternatives_provider=kernel_provider,
                            extend_plans_fn=alg.prepare_data,
                            ep_fn_args=(simulation.global_view_db,
                                        near_distance,
@@ -233,6 +235,42 @@ def rank_by_prob_delay(ctx,
     finally:
         if zeromq:
             cluster.kill()
+
+
+class AlternativesTypes(str, enum.Enum):
+    FASTEST_PATHS = "fastest-paths"
+    SHORTEST_PATHS = "shortest-paths"
+
+
+def create_alternatives(alternatives: AlternativesTypes) -> AlternativesProvider:
+    if alternatives == AlternativesTypes.FASTEST_PATHS:
+        return FastestPathsAlternatives()
+    elif alternatives == AlternativesTypes.SHORTEST_PATHS:
+        return ShortestPathsAlternatives()
+    else:
+        raise NotImplementedError
+
+
+@single_node_simulator.command()
+@click.argument("vehicles_path", type=click.Path(exists=True))
+@click.option("--alternatives", type=click.Choice(AlternativesTypes),
+              default=AlternativesTypes.FASTEST_PATHS)
+@click.pass_context
+def simple(ctx, vehicles_path: Path, alternatives: AlternativesTypes):
+    common_args = ctx.obj["common-args"]
+    out = common_args.out
+    walltime = common_args.walltime
+    task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
+
+    simulator = prepare_simulator(common_args, vehicles_path)
+    end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
+
+    alternatives_provider = create_alternatives(alternatives)
+    simulator.simulate(RouteRankingAlgorithms.DURATION.value.rank_route,
+                       alternatives_provider, rr_fn_args=(simulator.state.global_view_db,),
+                       end_step_fn=end_step_fn,
+                       es_fn_args=(walltime, f"rank_by_duration{task_id}"))
+    simulator.state.store(out)
 
 
 def main():
