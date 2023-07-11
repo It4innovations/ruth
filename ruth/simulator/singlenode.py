@@ -1,25 +1,19 @@
 import functools
 import logging
-
 from datetime import datetime, timedelta
-from itertools import chain, groupby
-from typing import Any, List, Dict, Tuple, Callable, NewType
+from itertools import groupby
+from typing import Callable, Dict, List, NewType, Tuple
 
-from probduration import VehiclePlan, Route, SegmentPosition
+from probduration import Route, SegmentPosition, VehiclePlan
 
 from .common import advance_vehicle
-from .kernels import AlternativesProvider
-from .routeranking import Comparable
-from ..globalview import GlobalView
-from ..utils import osm_route_to_segments, route_to_osm_route, TimerSet, riffle_shuffle
-from ..vehicle import Vehicle
-from ..losdb import GlobalViewDb
-
+from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithRoute
 from .simulation import Simulation, VehicleUpdate
-
+from ..losdb import GlobalViewDb
+from ..utils import TimerSet, osm_route_to_segments
+from ..vehicle import Vehicle
 
 logger = logging.getLogger(__name__)
-
 
 VehiclePlans = NewType("VehiclePlans", List[Tuple[Vehicle, VehiclePlan]])
 
@@ -41,45 +35,26 @@ class Simulator:
     def state(self):
         return self.sim
 
-    def simulate(self,
-                 route_ranking_fn: Callable[[GlobalView, VehiclePlans, List, Dict], Comparable],
-                 alternatives_provider: AlternativesProvider,
-                 rr_fn_args=(),
-                 rr_fn_kwargs=None,
-                 extend_plans_fn: Callable[[VehiclePlans, List, Dict], Any] = lambda plans: plans,
-                 ep_fn_args=(),
-                 ep_fn_kwargs=None,
-                 end_step_fn: Callable[[Simulation, List, Dict], None] = lambda *_: None,
-                 es_fn_args=(),
-                 es_fn_kwargs=None):
+    def simulate(
+            self,
+            alternatives_provider: AlternativesProvider,
+            route_selection_provider: RouteSelectionProvider,
+            end_step_fn: Callable[[Simulation, List, Dict], None] = lambda *_: None,
+            es_fn_args=(),
+            es_fn_kwargs=None
+    ):
         """Perform the simulation.
 
         Parameters:
         -----------
-            route_ranking_fn: Callable[[GlobalView, VehiclePlans, List, Dict], Comparable]
-              Compute a (comparable) rank for a route
-            rr_fn_args: Tuple
-              Positional arguments for route ranking function
-            rr_fn_kwargs: Dict
-              Keyword arguments for route ranking function
-            extend_plans_fn: Callable[[VehiclePlans, List, Dict, Any]
-              Extends a list of vehicle plans about additional information. This information can be then accessed
-              within route ranking function.
-            ep_fn_args: Tuple
-              Positional arguments for extend vehicle plans function
-            ep_fn_kwargs: Dict
-              Keyword arguments for extend vehicle plans function
-            end_step_fn: Callable[[Simulation], None]
-              An arbitrary function that is called at the end of each step with the current state of simulation.
-              It can be used for storing the state, for example.
-            es_fn_args: Tuple
-              Positional arguments for end-step function.
-            es_fn_kwargs: Dict
-              Keyword arguments for end-step function
+            :param alternatives_provider: Implementation of alternatives.
+            :param route_selection_provider: Implementation of route selection.
+            :param end_step_fn: An arbitrary function that is called at the end of each step with
+            the current state of simulation. It can be used for storing the state, for example.
         """
 
         for v in self.sim.vehicles:
-            v.frequency = timedelta(seconds = 5)
+            v.frequency = timedelta(seconds=5)
 
         step = self.sim.number_of_steps
         while self.current_offset is not None:
@@ -97,6 +72,7 @@ class Simulator:
                     allowed_vehicles,
                     k=self.sim.setting.k_alternatives
                 )
+                assert len(alts) == len(allowed_vehicles)
 
             # collect vehicles without alternative and finish them
             with timer_set.get("collect"):
@@ -109,30 +85,15 @@ class Simulator:
                         leap_history, v.leap_history = v.leap_history, []
                         not_moved.append(VehicleUpdate(v, leap_history))
                     else:
-                        moving.append((v, [v.concat_route_with_passed_part(osm_route) for osm_route in alt]))
+                        moving.append((v, alt))
 
-            with timer_set.get("vehicle_plans"):
-                vehicle_plans = chain.from_iterable(
-                    filter(None, map(functools.partial(prepare_vehicle_plans,
-                                                       departure_time=self.sim.setting.departure_time),
-                                     moving)))
-
-            with timer_set.get("select_plans"):
-                selected_plans = select_plans(vehicle_plans,
-                                              route_ranking_fn, rr_fn_args, rr_fn_kwargs,
-                                              extend_plans_fn, ep_fn_args, ep_fn_kwargs)
-
-            assert selected_plans, "Unexpected empty list of selected plans."
-
-            def transform_plan(vehicle_plan):
-                vehicle, plan = vehicle_plan
-                return vehicle, route_to_osm_route(plan.route)
-
-            with timer_set.get("transform_plans"):
-                bests = list(map(transform_plan, selected_plans))
+            with timer_set.get("selected_routes"):
+                selected_plans = route_selection_provider.select_routes(moving)
+                assert len(selected_plans) == len(moving)
 
             with timer_set.get("advance_vehicle"):
-                new_vehicles = [self.advance_vehicle(best, offset) for best in bests] + not_moved
+                new_vehicles = [self.advance_vehicle(plan, offset) for plan in
+                                selected_plans] + not_moved
 
             with timer_set.get("update"):
                 self.sim.update(new_vehicles)
@@ -140,7 +101,8 @@ class Simulator:
             with timer_set.get("compute_offset"):
                 current_offset_new = self.sim.compute_current_offset()
                 if current_offset_new == self.current_offset:
-                    logger.error(f"The consecutive step with the same offset: {self.current_offset}.")
+                    logger.error(
+                        f"The consecutive step with the same offset: {self.current_offset}.")
                     break
                 self.current_offset = current_offset_new
 
@@ -148,7 +110,8 @@ class Simulator:
                 self.sim.drop_old_records(self.current_offset)
 
             step_dur = datetime.now() - step_start_dt
-            logger.info(f"{step}. active: {len(allowed_vehicles)}, duration: {step_dur / timedelta(milliseconds=1)} ms")
+            logger.info(
+                f"{step}. active: {len(allowed_vehicles)}, duration: {step_dur / timedelta(milliseconds=1)} ms")
             self.sim.duration += step_dur
 
             with timer_set.get("end_step"):
@@ -160,7 +123,7 @@ class Simulator:
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
 
-    def advance_vehicle(self, vehicle_route, current_offset):
+    def advance_vehicle(self, vehicle_route: VehicleWithRoute, current_offset):
         """Move with the vehicle on the route (update its state), and disentangle its leap history"""
 
         vehicle, osm_route = vehicle_route
@@ -168,7 +131,8 @@ class Simulator:
         leap_history = []
         if vehicle.is_active(current_offset, self.sim.setting.round_freq):
             new_vehicle = advance_vehicle(vehicle, osm_route,
-                                          self.sim.setting.departure_time, GlobalViewDb(self.sim.global_view))
+                                          self.sim.setting.departure_time,
+                                          GlobalViewDb(self.sim.global_view))
             # swap the empty history with the filled one
             leap_history, new_vehicle.leap_history = new_vehicle.leap_history, leap_history
         else:
@@ -202,7 +166,8 @@ def select_plans(vehicle_plans,
     vehicle_plans_extended = extend_plans_fn(vehicle_plans_, *ep_fn_args, **ep_fn_kwargs_)
 
     rank_fn_kwargs_ = {} if rank_fn_kwargs is None else rank_fn_kwargs
-    ranks = map(functools.partial(rank_fn, *rank_fn_args, **rank_fn_kwargs_), vehicle_plans_extended)
+    ranks = map(functools.partial(rank_fn, *rank_fn_args, **rank_fn_kwargs_),
+                vehicle_plans_extended)
 
     def by_plan_id(data):
         (_, plan), _ = data
@@ -220,7 +185,8 @@ def select_plans(vehicle_plans,
         group = list(group)
         prev_plan, prev_rank = group[0]  # at the first position is the path from previous step
         best_plan, best_rank = sorted(group, key=by_rank)[0]
-        if abs(prev_rank - best_rank) > timedelta(minutes=1):  # TODO: expose 1m epsilon to the user interface
+        if abs(prev_rank - best_rank) > timedelta(
+                minutes=1):  # TODO: expose 1m epsilon to the user interface
             # TODO: collect hits: "switch from previous to the best"
             return best_plan
         return prev_plan
@@ -245,7 +211,8 @@ def prepare_vehicle_plans(vehicle_alts, departure_time):
         return None
 
     return [(vehicle, VehiclePlan(vehicle.id,
-                                  Route(osm_route_to_segments(osm_route, vehicle.routing_map), vehicle.frequency),
+                                  Route(osm_route_to_segments(osm_route, vehicle.routing_map),
+                                        vehicle.frequency),
                                   SegmentPosition(0, 0.0),
                                   departure_time + vehicle.time_offset))
             for osm_route in osm_routes]
