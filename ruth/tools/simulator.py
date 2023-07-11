@@ -28,8 +28,7 @@ class CommonArgs:
     continue_from: Optional[Simulation] = None
 
 
-@contextmanager
-def prepare_simulator(common_args: CommonArgs, vehicles_path):
+def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimulator:
     departure_time = common_args.departure_time
     round_frequency = common_args.round_frequency
     k_alternatives = common_args.k_alternatives
@@ -44,8 +43,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path):
     else:
         simulation = sim_state
 
-    with SingleNodeSimulator(simulation) as simulator:
-        yield simulator
+    return SingleNodeSimulator(simulation)
 
 
 def store_simulation_at_walltime():
@@ -115,13 +113,13 @@ def rank_by_duration(ctx,
     walltime = common_args.walltime
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
-    with prepare_simulator(common_args, vehicles_path) as simulator:
-        alg = RouteRankingAlgorithms.DURATION.value
-        end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
-        simulator.simulate(alg.rank_route, rr_fn_args=(simulator.state.global_view_db,),
-                           end_step_fn=end_step_fn,
-                           es_fn_args=(walltime, f"rank_by_duration{task_id}"))
-        simulator.state.store(out)
+    simulator = prepare_simulator(common_args, vehicles_path)
+    alg = RouteRankingAlgorithms.DURATION.value
+    end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
+    simulator.simulate(alg.rank_route, rr_fn_args=(simulator.state.global_view_db,),
+                       end_step_fn=end_step_fn,
+                       es_fn_args=(walltime, f"rank_by_duration{task_id}"))
+    simulator.state.store(out)
 
 
 def start_zeromq_cluster(
@@ -190,51 +188,51 @@ def rank_by_prob_delay(ctx,
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
     data_loading_start = datetime.now()
-    with prepare_simulator(ctx.obj['common-args'], vehicles_path) as simulator:
-        alg = RouteRankingAlgorithms.PROBABLE_DELAY.value
-        ff_db = FreeFlowDb()
-        if prob_profile_path == None:
-            pp_db = ProbProfileDb(HistoryHandler.no_limit())
-        else:
-            pp_db = ProbProfileDb(HistoryHandler.open(prob_profile_path))
-        simulation = simulator.state
-        time_for_data_loading = datetime.now() - data_loading_start
-        end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
-        walltime = walltime - time_for_data_loading if walltime is not None else None
+    simulator = prepare_simulator(ctx.obj['common-args'], vehicles_path)
+    alg = RouteRankingAlgorithms.PROBABLE_DELAY.value
+    ff_db = FreeFlowDb()
+    if prob_profile_path == None:
+        pp_db = ProbProfileDb(HistoryHandler.no_limit())
+    else:
+        pp_db = ProbProfileDb(HistoryHandler.open(prob_profile_path))
+    simulation = simulator.state
+    time_for_data_loading = datetime.now() - data_loading_start
+    end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
+    walltime = walltime - time_for_data_loading if walltime is not None else None
 
-        zeromq = False
+    zeromq = False
+    if zeromq:
+        # TODO: refactor this, remove singleton from Map
+        map_path = Path(simulation.routing_map.file_path).absolute()
+        server_port = 5559
+        cluster = start_zeromq_cluster(
+            worker_nodes=["localhost"],
+            worker_per_node=4,
+            map_path=map_path,
+            server_host="127.0.0.1",
+            port=server_port
+        )
+        kernel_provider = ZeroMqKernelProvider(port=server_port)
+    else:
+        kernel_provider = LocalKernelProvider()
+
+    try:
+        simulator.simulate(alg.rank_route,
+                           kernel_provider=kernel_provider,
+                           extend_plans_fn=alg.prepare_data,
+                           ep_fn_args=(simulation.global_view_db,
+                                       near_distance,
+                                       ff_db,
+                                       pp_db,
+                                       n_samples,
+                                       simulation.setting.rnd_gen),
+                           end_step_fn=end_step_fn,
+                           es_fn_args=(walltime, f"rank-by-prob-profile{task_id}"))
+
+        simulation.store(out)
+    finally:
         if zeromq:
-            # TODO: refactor this, remove singleton from Map
-            map_path = Path(simulation.routing_map.file_path).absolute()
-            server_port = 5559
-            cluster = start_zeromq_cluster(
-                worker_nodes=["localhost"],
-                worker_per_node=4,
-                map_path=map_path,
-                server_host="127.0.0.1",
-                port=server_port
-            )
-            kernel_provider = ZeroMqKernelProvider(port=server_port)
-        else:
-            kernel_provider = LocalKernelProvider()
-
-        try:
-            simulator.simulate(alg.rank_route,
-                               kernel_provider=kernel_provider,
-                               extend_plans_fn=alg.prepare_data,
-                               ep_fn_args=(simulation.global_view_db,
-                                           near_distance,
-                                           ff_db,
-                                           pp_db,
-                                           n_samples,
-                                           simulation.setting.rnd_gen),
-                               end_step_fn=end_step_fn,
-                               es_fn_args=(walltime, f"rank-by-prob-profile{task_id}"))
-
-            simulation.store(out)
-        finally:
-            if zeromq:
-                cluster.kill()
+            cluster.kill()
 
 
 def main():

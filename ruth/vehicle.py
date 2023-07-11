@@ -122,6 +122,22 @@ class Vehicle:
             print(f"vehicle: {self.id}: {ex}", file=sys.stderr)
             return None
 
+
+    def k_fastest_paths(self, k: int) -> Optional[List[List[int]]]:
+        """Compute k-fastest path from the current position to the end."""
+        current_starting_node = self.next_routing_start.node
+
+        if self.osm_route is None:
+            # No route between origin and destination
+            return None
+
+        try:
+            osm_routes = self.routing_map.k_fastest_paths(current_starting_node, self.dest_node, k)
+            return list(osm_routes)
+        except NodeNotFound as ex:
+            print(f"vehicle: {self.id}: {ex}", file=sys.stderr)
+            return None
+
     def concat_route_with_passed_part(self, osm_route):
         node_index = self.next_routing_start.index
         return self.osm_route[:node_index] + osm_route

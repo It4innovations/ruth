@@ -16,7 +16,8 @@ class LocalKernelProvider(KernelProvider):
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[List[List[int]]]:
         result = []
         for vehicle in vehicles:
-            result.append(vehicle.k_shortest_paths(k))
+            result.append(vehicle.k_fastest_paths(k))
+            # result.append(vehicle.k_shortest_paths(k))
         return result
 
 

@@ -37,12 +37,6 @@ class Simulator:
         self.sim = sim
         self.current_offset = self.sim.compute_current_offset()
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type_, exc_val_, exc_tb_):
-        pass
-
     @property
     def state(self):
         return self.sim
@@ -83,6 +77,9 @@ class Simulator:
             es_fn_kwargs: Dict
               Keyword arguments for end-step function
         """
+
+        for v in self.sim.vehicles:
+            v.frequency = timedelta(seconds = 5)
 
         step = self.sim.number_of_steps
         while self.current_offset is not None:
@@ -186,12 +183,6 @@ class Simulator:
                 to_compute.append(vehicle)
         self.sim.save_cache_info(ALT_CACHE, hits, len(vehicles))
         logger.debug(f"Alternatives hit rate: {hits}/{len(vehicles)} ({(hits / len(vehicles)) * 100:.2f}%)")
-
-        # ZeroMQ
-        # origins = [v.origin_node for v in to_compute]
-        # destinations = [v.dest_node for v in to_compute]
-        # map = vehicle.routing_map
-        # alts = map.k_shortest_paths(origins, destinations, self.sim.setting.k_alternatives)
 
         # compute alternatives
         alts = kernel_provider.compute_alternatives(to_compute, k=self.sim.setting.k_alternatives)

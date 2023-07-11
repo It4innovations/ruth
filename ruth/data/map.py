@@ -5,30 +5,31 @@ import pickle
 
 import networkx as nx
 import osmnx as ox
-import json
-from osmnx import graph_from_polygon, load_graphml, save_graphml
+from osmnx import graph_from_place, load_graphml, save_graphml
 from networkx.exception import NetworkXNoPath
-from cluster.cluster import Cluster, start_process
-from networkx.readwrite import json_graph
 
 from ..log import console_logger as cl
 from ..metaclasses import Singleton
-from ..zeromq.src import client, worker
 
 
 def segment_weight(n1, n2, data):
-    assert "length" in data, f"Expected the 'length' of segment to be known. ({n1}, {n2})"
     return float(data['length']) + float(f"0.{n1}{n2}")
+
+
+def segment_weight_speed(n1, n2, data):
+    return float(data['speed_kph'])
 
 
 def save(G, fname):
     nx.write_gml(G, fname)
 
 
+
+
 class Map(metaclass=Singleton):
     """Routing map."""
 
-    def __init__(self, border, data_dir="./data", with_speeds=False):
+    def __init__(self, border, data_dir="./data", with_speeds=True):
         """Initialize a map via the border.
 
         If `data_dir` provided, the map is loaded from locally stored maps preferably.
@@ -102,6 +103,20 @@ class Map(metaclass=Singleton):
         except NetworkXNoPath:
             return None
 
+    def fastest_path(self, origin, dest):
+        """Compute fastest path between two OSM nodes."""
+        return nx.dijkstra_path(self.network, origin, dest, weight=segment_weight_speed)
+
+    def k_fastest_paths(self, origin, dest, k):
+        """Compute k-fastest paths between two OSM nodes."""
+        paths_gen = nx.shortest_simple_paths(G=self.simple_network, source=origin,
+                                             target=dest, weight=segment_weight_speed)
+        try:
+            for path in itertools.islice(paths_gen, 0, k):
+                yield path
+        except NetworkXNoPath:
+            return None
+
     def _load(self):
         if self.file_path is None:
             cl.info("Map loaded from memory object.")
@@ -110,8 +125,18 @@ class Map(metaclass=Singleton):
             return (load_graphml(self.file_path), False)
         else:
             cl.info(f"Loading map for {self.name} via OSM API...")
-            network = graph_from_polygon(
-                self.border.polygon(),
+            # ##Change from "graph_from_polygon"
+            # network = graph_from_polygon(
+            #     self.border.polygon(),
+            #     network_type="drive",  # TODO: into config
+            #     retain_all=True,
+            #     clean_periphery=False,
+            #     custom_filter=admin_level_to_road_filter(self.border.admin_level),
+            # )
+
+            ##Change to "graph_from_place"
+            network = graph_from_place(
+                'Prague, Czech republic',
                 network_type="drive",  # TODO: into config
                 retain_all=True,
                 clean_periphery=False,
