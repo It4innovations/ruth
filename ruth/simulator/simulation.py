@@ -31,20 +31,6 @@ class StepInfo:
 
 
 @dataclass
-class CacheInfo:
-    hits: int
-    total: int
-    timestamp: datetime = field(init=False)  # TODO: maybe store only a time offset since the simulation's begging
-
-    def __post_init__(self):
-        self.timestamp = datetime.now()
-
-    @property
-    def hit_rate(self):
-        return self.hits / self.total
-
-
-@dataclass
 class SimSetting:
     """A simulation setting.
 
@@ -76,14 +62,10 @@ class SimSetting:
         self.rnd_gen = random
 
 
-def get_lru_cache():
-    return pylru.lrucache(100_000)
-
-
 class Simulation:
     """A simulation state."""
 
-    def __init__(self, vehicles, setting: SimSetting):
+    def __init__(self, vehicles: List[Vehicle], setting: SimSetting):
         """
         Construct a new simulation.
 
@@ -99,8 +81,6 @@ class Simulation:
         self.vehicles = vehicles
         self.setting = setting
         self.steps_info = []
-        self.caches = defaultdict(get_lru_cache)
-        self.cache_info = defaultdict(list)
         self.duration = timedelta(seconds=0)
 
     def __getstate__(self):
@@ -173,26 +153,6 @@ class Simulation:
     @property
     def number_of_steps(self):
         return len(self.steps_info)
-
-    def cache(self, cache_name, key, value):
-        self.caches[cache_name][key] = value
-
-    def get_from_cache(self, cache_name, key):
-        return self.caches[cache_name].get(key)
-
-    def save_cache_info(self, cache_name, hists, total):
-        self.cache_info[cache_name].append(CacheInfo(hists, total))
-
-    @property
-    def last_cache_info(self, cache_name):
-        return self.cache_info[cache_name][:-1]
-
-    def cache_info_to_dataframe(self, cache_name):
-        if not self.cache_info[cache_name]:
-            raise Exception("Empty cache info cannot be converted into DataFrame.")
-
-        return pd.DataFrame([(ci.timestamp, ci.hits, ci.total, ci.hit_rate) for ci in self.cache_info[cache_name]],
-                            columns=["timestamp", "n_hits", "total", "hit_rate"])
 
     def finished(self):
         return all(not v.active for v in self.vehicles)
