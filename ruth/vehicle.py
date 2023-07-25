@@ -136,13 +136,13 @@ class Vehicle:
             print(f"vehicle: {self.id}: {ex}", file=sys.stderr)
             return None
 
-    def concat_route_with_passed_part(self, osm_route):
+    def update_followup_route(self, osm_route: Route):
+        """
+        Updates the route from the current node to the destination node.
+        """
+        assert osm_route[-1] == self.dest_node
         node_index = self.next_routing_start.index
-        return self.osm_route[:node_index] + osm_route
-
-    def set_current_route(self, osm_route):
-        """Set the current route."""
-        self.osm_route = osm_route
+        self.osm_route = self.osm_route[:node_index] + osm_route
 
     @property
     def segment_position(self) -> SegmentPosition:
