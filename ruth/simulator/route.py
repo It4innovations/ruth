@@ -52,18 +52,14 @@ def move_on_segment(
         )
 
 
-def advance_vehicle(vehicle: Vehicle, osm_route: Route, departure_time: datetime,
+def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
                     gv_db: GlobalViewDb):
     """Advance a vehicle on a route."""
 
     dt = departure_time + vehicle.time_offset
-    # TODO: remove this and take into account only the rest of the route
-    osm_route = vehicle.concat_route_with_passed_part(osm_route)
+    osm_route = vehicle.osm_route
 
     driving_route = osm_route_to_py_segments(osm_route, vehicle.routing_map)
-
-    # update the current route
-    vehicle.set_current_route(osm_route)
 
     if vehicle.segment_position.index < len(driving_route):
         segment = driving_route[vehicle.segment_position.index]

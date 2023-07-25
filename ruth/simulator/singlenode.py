@@ -7,6 +7,7 @@ from .route import advance_vehicle
 from .simulation import Simulation, VehicleUpdate
 from ..losdb import GlobalViewDb
 from ..utils import TimerSet
+from ..vehicle import Vehicle
 
 logger = logging.getLogger(__name__)
 
@@ -65,29 +66,24 @@ class Simulator:
                 )
                 assert len(alts) == len(allowed_vehicles)
 
-            # collect vehicles without alternative and finish them
+            # Find which vehicles should have their routes recomputed
             with timer_set.get("collect"):
-                not_moved = []
-                moving = []
+                need_new_route = []
                 for v, alt in zip(allowed_vehicles, alts):
-                    if alt is None:
-                        v.active = False
-                        v.status = "no-route-exists"
-                        leap_history, v.leap_history = v.leap_history, []
-                        not_moved.append(VehicleUpdate(v, leap_history))
-                    else:
-                        moving.append((v, alt))
+                    if alt is not None and alt != []:
+                        need_new_route.append((v, alt))
 
             with timer_set.get("selected_routes"):
-                selected_plans = route_selection_provider.select_routes(moving)
-                assert len(selected_plans) == len(moving)
+                selected_plans = route_selection_provider.select_routes(need_new_route)
+                assert len(selected_plans) == len(need_new_route)
+                for (vehicle, route) in selected_plans:
+                    vehicle.update_followup_route(route)
 
             with timer_set.get("advance_vehicle"):
-                new_vehicles = [self.advance_vehicle(plan, offset) for plan in
-                                selected_plans] + not_moved
+                vehicle_updates = [self.advance_vehicle(vehicle, offset) for vehicle in allowed_vehicles]
 
             with timer_set.get("update"):
-                self.sim.update(new_vehicles)
+                self.sim.update(vehicle_updates)
 
             with timer_set.get("compute_offset"):
                 current_offset_new = self.sim.compute_current_offset()
@@ -116,15 +112,12 @@ class Simulator:
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
 
-    def advance_vehicle(self, vehicle_route: VehicleWithRoute, current_offset):
+    def advance_vehicle(self, vehicle: Vehicle, current_offset) -> VehicleUpdate:
         """Move with the vehicle on the route (update its state), and disentangle its leap history"""
-
-        vehicle, osm_route = vehicle_route
 
         leap_history = []
         if vehicle.is_active(current_offset, self.sim.setting.round_freq):
-            advance_vehicle(vehicle, osm_route,
-                            self.sim.setting.departure_time,
+            advance_vehicle(vehicle, self.sim.setting.departure_time,
                             GlobalViewDb(self.sim.global_view))
             # swap the empty history with the filled one
             leap_history, vehicle.leap_history = vehicle.leap_history, leap_history
