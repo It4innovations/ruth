@@ -10,10 +10,10 @@ from typing import List, Optional
 import click
 from probduration import HistoryHandler
 
-from ..losdb import FreeFlowDb, ProbProfileDb
-from ..simulator import RouteRankingAlgorithms, SimSetting, Simulation, SingleNodeSimulator, \
+from ruth.losdb import FreeFlowDb, ProbProfileDb
+from ruth.simulator import RouteRankingAlgorithms, SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
-from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, \
+from ruth.simulator.kernels import AlternativesProvider, FastestPathsAlternatives, \
     FirstRouteSelection, RouteSelectionProvider, ShortestPathsAlternatives, \
     ZeroMQDistributedAlternatives
 
@@ -185,7 +185,7 @@ def rank_by_prob_delay(ctx,
     "driver is seeing in front of her/him".
     """
 
-    raise NotImplementedError
+    #raise NotImplementedError
     common_args = ctx.obj['common-args']
     out = common_args.out
     walltime = common_args.walltime
