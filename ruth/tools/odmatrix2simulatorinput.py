@@ -100,7 +100,6 @@ def convert(od_matrix_path, csv_separator, frequency, fcd_sampling_period, borde
         0, 0.0,
         frequency, fcd_sampling_period,
         f"{b_def.md5()}_{border_kind}", border_kind, border_poly.wkt)
-    df["leap_history"] = np.empty((len(odm_df), 0)).tolist()
 
     df[["time_offset", "frequency", "fcd_sampling_period"]] = \
         df[["time_offset", "frequency", "fcd_sampling_period"]].applymap(lambda seconds: timedelta(seconds=seconds))

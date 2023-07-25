@@ -2,7 +2,7 @@ import pickle
 from dataclasses import InitVar, asdict, dataclass
 from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import pandas as pd
 
@@ -12,13 +12,15 @@ from ..utils import round_timedelta
 from ..vehicle import Vehicle
 
 
-@dataclass
-class VehicleUpdate:
-    """Join the updated vehicle (after advance) and leap history of that move."""
-
-    vehicle: Vehicle
-    leap_history: List[
-        Tuple[datetime, str, float, float, float, str]]  # TODO: make a leap history data class
+@dataclass(frozen=True)
+class FCDRecord:
+    datetime: datetime
+    vehicle_id: int
+    segment_id: str
+    start_offset: float
+    speed: float
+    segment_length: float
+    status: str
 
 
 @dataclass
@@ -119,16 +121,11 @@ class Simulation:
         return min(filter(None, map(lambda v: v.time_offset if v.active else None, self.vehicles)),
                    default=None)
 
-    def update(self, updates: List[VehicleUpdate]):
-        vd = dict((v.id, v) for v in self.vehicles)
-        for update in updates:
-            # store advanced vehicle
-            vd[update.vehicle.id] = update.vehicle
+    def update(self, fcds: List[FCDRecord]):
+        for fcd in fcds:
             # update global view
-            self.global_view.add(update.vehicle.id, update.leap_history)
-            self.history.add(update.vehicle.id, update.leap_history)
-
-        self.vehicles = sorted(vd.values(), key=lambda v: v.id)
+            self.global_view.add(fcd)
+            self.history.add(fcd)
 
     def drop_old_records(self, offset_threshold):
         if offset_threshold is not None:

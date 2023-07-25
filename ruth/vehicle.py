@@ -1,9 +1,8 @@
-"""The state less implementation of a vehicle."""
 import sys
 from collections import namedtuple
 from dataclasses import InitVar, asdict, dataclass, field
-from datetime import datetime, timedelta
-from typing import List, Optional, Tuple
+from datetime import timedelta
+from typing import Any, List, Optional, Tuple
 
 import pandas as pd
 from networkx.exception import NodeNotFound
@@ -41,12 +40,9 @@ class Vehicle:
     active: bool = set_numpy_type("bool")
     """A period in wicht the raw FCD data are sampled"""
     fcd_sampling_period: timedelta = set_numpy_type("object")
-    """A history of last several steps."""
-    leap_history: List[Tuple[datetime, str, float, float, float, str]] = set_numpy_type(
-        "object")  # TODO: is it just a _leap_, isn't it the entire history? Maybe rename to raw_fcd
-    #       well there are two things: 1) after each leap I need to make an aggregation and update global view
-    #                                  2) collect raw fcds for latter aggregation and creating the prob profiles
     status: str = set_numpy_type("string")
+    # Kept for backwards compatibility with old input files
+    leap_history: Any = None
     routing_map: InitVar[Map] = None
 
     def __post_init__(self, routing_map):
@@ -151,28 +147,6 @@ class Vehicle:
     def set_position(self, sp: SegmentPosition):
         self.start_index = sp.index
         self.start_distance_offset = sp.position
-
-    def store_fcd(self, start_offset, duration, segment, pos_start, speed_mps):
-        step_m = speed_mps * (self.fcd_sampling_period / timedelta(seconds=1))
-
-        start = pos_start
-        current_offset = start_offset
-        end_offset = start_offset + duration
-        while current_offset + self.fcd_sampling_period < end_offset and \
-                start + step_m < segment.length:
-            start += step_m
-            current_offset += self.fcd_sampling_period
-            self.leap_history.append(
-                (current_offset, segment.id, start, speed_mps, segment.length, self.status))
-
-        step_m = speed_mps * ((end_offset - current_offset) / timedelta(seconds=1))
-        if start + step_m < segment.length:
-            # TODO: the question is wheather to store all the cars at the end of period or
-            # rather return the difference (end_offset - _last_ current_offset) and take it as
-            # a parameter for the next round of storing. In this way all the cars would be sampled
-            # with an exact step (car dependent as each car can have its own sampling period)
-            self.leap_history.append(
-                (end_offset, segment.id, start + step_m, speed_mps, segment.length, self.status))
 
     def is_active(self, within_offset, freq):
         return self.active and within_offset == round_timedelta(self.time_offset, freq)
