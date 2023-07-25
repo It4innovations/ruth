@@ -4,8 +4,7 @@ from typing import List, Tuple
 
 import osmnx as ox
 
-from .kernels import Route
-from .segment import Segment, SegmentPosition, SpeedKph
+from .segment import Route, Segment, SegmentPosition, SpeedKph
 from ..data.map import Map
 from ..losdb import GlobalViewDb
 from ..vehicle import Vehicle

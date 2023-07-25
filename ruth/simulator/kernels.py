@@ -1,9 +1,9 @@
 import json
 from typing import List, Optional, Tuple
 
+from .segment import Route
 from ..vehicle import Vehicle
 
-Route = List[int]
 AlternativeRoutes = List[Route]
 
 # Alternatives
