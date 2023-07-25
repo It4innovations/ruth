@@ -1,11 +1,16 @@
 
 import pickle
 import operator
+from typing import TYPE_CHECKING
+
 import pandas as pd
 from datetime import timedelta
 from collections import defaultdict
 
 from .utils import parse_segment_id
+
+if TYPE_CHECKING:
+    from .simulator.simulation import FCDRecord
 
 
 class GlobalView:
@@ -14,13 +19,13 @@ class GlobalView:
         self.data = [] if data is None else data
         self.by_segment = self.construct_by_segments_()
 
-    def add(self, vehicle_id, hrs):
-        rows = [(dt, seg_id, vehicle_id, start_offset, speed, segment_length, status)
-                for dt, seg_id, start_offset, speed, segment_length, status in hrs]
-        self.data += rows
+    def add(self, fcd: "FCDRecord"):
+        self.data.append((
+            fcd.datetime, fcd.segment_id, fcd.vehicle_id, fcd.start_offset, fcd.speed,
+            fcd.segment_length, fcd.status
+        ))
 
-        for dt, seg_id, *_ in hrs:
-            self.by_segment[seg_id].append((dt, vehicle_id))
+        self.by_segment[fcd.segment_id].append((fcd.datetime, fcd.vehicle_id))
 
     def number_of_vehicles_in_time_at_segment(self, datetime, segment_id, tolerance=None):
         tolerance = tolerance if tolerance is not None else timedelta(seconds=0)

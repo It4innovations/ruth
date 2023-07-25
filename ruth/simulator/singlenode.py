@@ -1,10 +1,11 @@
+import itertools
 import logging
 from datetime import datetime, timedelta
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 from .kernels import AlternativesProvider, RouteSelectionProvider
 from .route import advance_vehicle
-from .simulation import Simulation, VehicleUpdate
+from .simulation import FCDRecord, Simulation
 from ..losdb import GlobalViewDb
 from ..utils import TimerSet
 from ..vehicle import Vehicle
@@ -80,11 +81,12 @@ class Simulator:
                     vehicle.update_followup_route(route)
 
             with timer_set.get("advance_vehicle"):
-                vehicle_updates = [self.advance_vehicle(vehicle, offset) for vehicle in
-                                   allowed_vehicles]
+                fcds = list(itertools.chain.from_iterable(
+                    self.advance_vehicle(vehicle, offset) for vehicle in
+                    allowed_vehicles))
 
             with timer_set.get("update"):
-                self.sim.update(vehicle_updates)
+                self.sim.update(fcds)
 
             with timer_set.get("compute_offset"):
                 current_offset_new = self.sim.compute_current_offset()
@@ -113,14 +115,9 @@ class Simulator:
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
 
-    def advance_vehicle(self, vehicle: Vehicle, current_offset) -> VehicleUpdate:
-        """Move with the vehicle on the route (update its state), and disentangle its leap history"""
+    def advance_vehicle(self, vehicle: Vehicle, current_offset) -> List[FCDRecord]:
+        """Move the vehicle on its route and generate FCD records"""
 
-        leap_history = []
-        if vehicle.is_active(current_offset, self.sim.setting.round_freq):
-            advance_vehicle(vehicle, self.sim.setting.departure_time,
-                            GlobalViewDb(self.sim.global_view))
-            # swap the empty history with the filled one
-            leap_history, vehicle.leap_history = vehicle.leap_history, leap_history
-
-        return VehicleUpdate(vehicle, leap_history)
+        assert vehicle.is_active(current_offset, self.sim.setting.round_freq)
+        return advance_vehicle(vehicle, self.sim.setting.departure_time,
+                               GlobalViewDb(self.sim.global_view))
