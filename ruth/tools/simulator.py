@@ -185,7 +185,7 @@ def rank_by_prob_delay(ctx,
     "driver is seeing in front of her/him".
     """
 
-    #raise NotImplementedError
+    raise NotImplementedError
     common_args = ctx.obj['common-args']
     out = common_args.out
     walltime = common_args.walltime
