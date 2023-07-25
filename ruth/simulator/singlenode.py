@@ -109,7 +109,7 @@ class Simulator:
                 with timer_set.get("end_step"):
                     end_step_fn(self.state)
 
-            print(timer_set.collect())
+            # print(timer_set.collect())
 
             self.sim.save_step_info(step, len(allowed_vehicles), step_dur, timer_set.collect())
 
