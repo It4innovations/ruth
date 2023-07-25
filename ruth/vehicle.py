@@ -9,7 +9,7 @@ import pandas as pd
 from networkx.exception import NodeNotFound
 
 from .data.map import Map
-from .simulator.segment import SegmentPosition
+from .simulator.segment import SegmentPosition, Route
 from .utils import get_map, round_timedelta
 
 

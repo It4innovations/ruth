@@ -1,7 +1,10 @@
 import dataclasses
+from typing import List
 
 SpeedKph = float
 LengthMeters = float
+
+Route = List[int]
 
 
 @dataclasses.dataclass(frozen=True)
