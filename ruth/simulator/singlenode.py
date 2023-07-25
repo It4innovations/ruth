@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Callable, Optional
 
-from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithRoute
+from .kernels import AlternativesProvider, RouteSelectionProvider
 from .route import advance_vehicle
 from .simulation import Simulation, VehicleUpdate
 from ..losdb import GlobalViewDb
@@ -80,7 +80,8 @@ class Simulator:
                     vehicle.update_followup_route(route)
 
             with timer_set.get("advance_vehicle"):
-                vehicle_updates = [self.advance_vehicle(vehicle, offset) for vehicle in allowed_vehicles]
+                vehicle_updates = [self.advance_vehicle(vehicle, offset) for vehicle in
+                                   allowed_vehicles]
 
             with timer_set.get("update"):
                 self.sim.update(vehicle_updates)

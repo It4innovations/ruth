@@ -1,17 +1,15 @@
 import pickle
-import pylru
-import pandas as pd
-
-from collections import defaultdict
-from dataclasses import dataclass, field, InitVar, asdict
+from dataclasses import InitVar, asdict, dataclass
 from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
-from typing import List, Tuple, Dict
+from typing import Dict, List, Tuple
+
+import pandas as pd
 
 from ..globalview import GlobalView
 from ..losdb import GlobalViewDb
-from ..vehicle import Vehicle
 from ..utils import round_timedelta
+from ..vehicle import Vehicle
 
 
 @dataclass
@@ -19,7 +17,8 @@ class VehicleUpdate:
     """Join the updated vehicle (after advance) and leap history of that move."""
 
     vehicle: Vehicle
-    leap_history: List[Tuple[datetime, str, float, float, float, str]]  # TODO: make a leap history data class
+    leap_history: List[
+        Tuple[datetime, str, float, float, float, str]]  # TODO: make a leap history data class
 
 
 @dataclass
@@ -117,7 +116,8 @@ class Simulation:
         return round_timedelta(offset, self.setting.round_freq)
 
     def compute_current_offset(self):
-        return min(filter(None, map(lambda v: v.time_offset if v.active else None, self.vehicles)), default=None)
+        return min(filter(None, map(lambda v: v.time_offset if v.active else None, self.vehicles)),
+                   default=None)
 
     def update(self, updates: List[VehicleUpdate]):
         vd = dict((v.id, v) for v in self.vehicles)
@@ -142,9 +142,10 @@ class Simulation:
             raise Exception("Empty steps info cannot be converted to DataFrame.")
 
         first = self.steps_info[0]
-        return pd.DataFrame([(si.step, si.n_active, si.duration / timedelta(milliseconds=1), *si.parts.values())
-                             for si in self.steps_info],
-                            columns=["step", "n_active", "duration"] + list(first.parts.keys()))
+        return pd.DataFrame(
+            [(si.step, si.n_active, si.duration / timedelta(milliseconds=1), *si.parts.values())
+             for si in self.steps_info],
+            columns=["step", "n_active", "duration"] + list(first.parts.keys()))
 
     @property
     def last_step(self):
