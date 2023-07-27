@@ -1,3 +1,4 @@
+import logging
 import math
 from datetime import datetime, timedelta
 from typing import List, Tuple
@@ -10,6 +11,7 @@ from ..data.map import Map
 from ..losdb import GlobalViewDb
 from ..vehicle import Vehicle
 
+logger = logging.getLogger(__name__)
 
 def move_on_segment(
         vehicle: Vehicle,
@@ -66,7 +68,8 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
 
     if vehicle.segment_position.index < len(driving_route):
         segment = driving_route[vehicle.segment_position.index]
-        los = gv_db.get(dt, segment)
+        los_1 = gv_db.get(dt, segment)
+        los = gv_db.gv.level_of_service_for_car(dt, segment, vehicle)
     else:
         los = 1.0  # the end of the route
 
@@ -78,6 +81,9 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
             vehicle, driving_route, dt, los
         )
         d = time - dt
+
+        step_m = assigned_speed_mps * (vehicle.fcd_sampling_period / timedelta(seconds=1))
+        logger.info(f"{dt} {vehicle.id} ({vehicle.start_distance_offset}) {segment.id} ({segment.length}) step: {step_m}")
 
         # NOTE: _assumption_: the car stays on a single segment within one call of the `advance`
         #       method on the driving route

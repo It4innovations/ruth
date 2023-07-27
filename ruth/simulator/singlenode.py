@@ -100,8 +100,8 @@ class Simulator:
                 self.sim.drop_old_records(self.current_offset)
 
             step_dur = datetime.now() - step_start_dt
-            logger.info(
-                f"{step}. active: {len(allowed_vehicles)}, duration: {step_dur / timedelta(milliseconds=1)} ms")
+            # logger.info(
+            #     f"{step}. active: {len(allowed_vehicles)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
             self.sim.duration += step_dur
 
             if end_step_fn is not None:
