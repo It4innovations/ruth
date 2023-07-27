@@ -13,6 +13,7 @@ from ..vehicle import Vehicle
 
 logger = logging.getLogger(__name__)
 
+
 def move_on_segment(
         vehicle: Vehicle,
         segments: List[Segment],
@@ -30,7 +31,7 @@ def move_on_segment(
     # Speed in m/s
     speed_mps = (segment.max_allowed_speed_kph * level_of_service) * (1000 / 3600)
     if math.isclose(speed_mps, 0.0):
-        return (departure_time, segment_position, 0.0)
+        return departure_time, segment_position, 0.0
 
     start = segment_position.position
     frequency_s = vehicle.frequency.total_seconds()
@@ -68,8 +69,8 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
 
     if vehicle.segment_position.index < len(driving_route):
         segment = driving_route[vehicle.segment_position.index]
-        los_1 = gv_db.get(dt, segment)
-        los = gv_db.gv.level_of_service_for_car(dt, segment, vehicle)
+        los = gv_db.get(dt, segment)
+        # los = gv_db.gv.level_of_service_for_car(dt, segment, vehicle)
     else:
         los = 1.0  # the end of the route
 
@@ -82,20 +83,22 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
         )
         d = time - dt
 
-        step_m = assigned_speed_mps * (vehicle.fcd_sampling_period / timedelta(seconds=1))
-        logger.info(f"{dt} {vehicle.id} ({vehicle.start_distance_offset}) {segment.id} ({segment.length}) step: {step_m}")
-
         # NOTE: _assumption_: the car stays on a single segment within one call of the `advance`
         #       method on the driving route
 
         # NOTE: the segment position index may end out of segments
         if segment_pos.index < len(driving_route):
             fcds = generate_fcds(vehicle, dt, d, driving_route[segment_pos.index], segment_pos.position,
-                              assigned_speed_mps)
+                                 assigned_speed_mps)
 
         # update the vehicle
         vehicle.time_offset += d
         vehicle.set_position(segment_pos)
+
+        step_m = assigned_speed_mps * (vehicle.fcd_sampling_period / timedelta(seconds=1))
+        segment = driving_route[vehicle.segment_position.index]
+        dt = departure_time + vehicle.time_offset
+        # logger.info(f"{dt} {vehicle.id} ({vehicle.start_distance_offset}) {segment.id} ({segment.length}) step: {step_m}")
 
         if vehicle.current_node == vehicle.dest_node:
             # stop the processing in case the vehicle reached the end

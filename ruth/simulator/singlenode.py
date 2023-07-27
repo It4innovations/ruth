@@ -34,7 +34,7 @@ class Simulator:
             self,
             alternatives_provider: AlternativesProvider,
             route_selection_provider: RouteSelectionProvider,
-            end_step_fn: Optional[Callable[[Simulation], None]] = None,
+            end_step_fns: [Optional[Callable[[Simulation], None]]] = None,
     ):
         """Perform the simulation.
 
@@ -42,7 +42,7 @@ class Simulator:
         -----------
             :param alternatives_provider: Implementation of alternatives.
             :param route_selection_provider: Implementation of route selection.
-            :param end_step_fn: An arbitrary function that is called at the end of each step with
+            :param end_step_fns: An arbitrary functions that are called at the end of each step with
             the current state of simulation. It can be used for storing the state, for example.
         """
 
@@ -100,13 +100,14 @@ class Simulator:
                 self.sim.drop_old_records(self.current_offset)
 
             step_dur = datetime.now() - step_start_dt
-            # logger.info(
-            #     f"{step}. active: {len(allowed_vehicles)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
+            logger.info(
+                f"{step}. active: {len(allowed_vehicles)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
             self.sim.duration += step_dur
 
-            if end_step_fn is not None:
+            if end_step_fns is not None:
                 with timer_set.get("end_step"):
-                    end_step_fn(self.state)
+                    for fn in end_step_fns:
+                        fn(self.state)
 
             # print(timer_set.collect())
 

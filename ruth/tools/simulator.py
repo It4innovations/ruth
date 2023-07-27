@@ -27,6 +27,7 @@ class CommonArgs:
     out: str
     seed: Optional[int] = None
     walltime: Optional[datetime] = None
+    saving_interval: Optional[datetime] = None
     continue_from: Optional[Simulation] = None
 
 
@@ -58,6 +59,20 @@ def store_simulation_at_walltime(walltime: Optional[timedelta], name: str):
         if walltime is not None and (datetime.now() - start_time) >= walltime and not saved:
             simulation.store(f"{name}-at-walltime.pickle")
             saved = True
+
+    return store
+
+
+def store_simulation_at_interval(saving_interval: Optional[timedelta], name: str):
+    last_saved = datetime.now()
+
+    def store(simulation: Simulation):
+        nonlocal last_saved
+        """Store the state of the simulation at walltime."""
+        now = datetime.now()
+        if saving_interval is not None and (now - last_saved) >= saving_interval:
+            simulation.store(f"{name}-interval.pickle")
+            last_saved = now
 
     return store
 
@@ -114,6 +129,7 @@ def start_zeromq_cluster(
 @click.option("--out", type=str, default="out.pickle")
 @click.option("--seed", type=int, help="Fixed seed for random number generator.")
 @click.option("--walltime-s", type=int, help="Time limit in which the state of simulation is saved")
+@click.option("--saving-interval-s", type=int, help="Time interval in which the state of simulation periodically is saved")
 @click.option("--continue-from", type=click.Path(exists=True),
               help="Path to a saved state of simulation to continue from.")
 @click.pass_context
@@ -126,12 +142,14 @@ def single_node_simulator(ctx,
                           out,
                           seed,
                           walltime_s,
+                          saving_interval_s,
                           continue_from):
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
     ctx.ensure_object(dict)
 
     ctx.obj['DEBUG'] = debug
     walltime = timedelta(seconds=walltime_s) if walltime_s is not None else None
+    saving_interval = timedelta(seconds=saving_interval_s) if saving_interval_s is not None else None
     sim_state = Simulation.load(continue_from) if continue_from is not None else None
 
     ctx.obj['common-args'] = CommonArgs(task_id,
@@ -141,6 +159,7 @@ def single_node_simulator(ctx,
                                         out,
                                         seed,
                                         walltime,
+                                        saving_interval,
                                         sim_state)
 
 
@@ -276,20 +295,24 @@ def run(ctx, vehicles_path: Path, alternatives: AlternativesImpl,
     common_args = ctx.obj["common-args"]
     out = common_args.out
     walltime = common_args.walltime
+    saving_interval = common_args.saving_interval
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
     simulator = prepare_simulator(common_args, vehicles_path)
-    end_step_fn = (
-        store_simulation_at_walltime(walltime, f"rank_by_duration{task_id}")
-        if walltime is not None else None
-    )
+    end_step_fns = []
+
+    if walltime is not None:
+        end_step_fns.append(store_simulation_at_walltime(walltime, f"run{task_id}"))
+
+    if saving_interval is not None:
+        end_step_fns.append(store_simulation_at_interval(saving_interval, f"run{task_id}"))
 
     alternatives_provider = create_alternatives_provider(alternatives)
     route_selection_provider = create_route_selection_provider(route_selection)
     simulator.simulate(
         alternatives_provider=alternatives_provider,
         route_selection_provider=route_selection_provider,
-        end_step_fn=end_step_fn,
+        end_step_fns=end_step_fns,
     )
     simulator.state.store(out)
 
