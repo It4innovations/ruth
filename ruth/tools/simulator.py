@@ -242,6 +242,7 @@ def rank_by_prob_delay(ctx,
 class AlternativesImpl(str, enum.Enum):
     FASTEST_PATHS = "fastest-paths"
     SHORTEST_PATHS = "shortest-paths"
+    DISTRIBUTED = "distributed"
 
 
 def create_alternatives_provider(alternatives: AlternativesImpl) -> AlternativesProvider:
@@ -249,6 +250,9 @@ def create_alternatives_provider(alternatives: AlternativesImpl) -> Alternatives
         return FastestPathsAlternatives()
     elif alternatives == AlternativesImpl.SHORTEST_PATHS:
         return ShortestPathsAlternatives()
+    elif alternatives == AlternativesImpl.DISTRIBUTED:
+        # TODO: parse port from CLI
+        return ZeroMQDistributedAlternatives(port=5555)
     else:
         raise NotImplementedError
 

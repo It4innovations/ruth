@@ -32,9 +32,12 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         self.client = Client(port=port)
 
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[Optional[AlternativeRoutes]]:
-        od_paths = [(*v.next_routing_od_nodes, k) for v in vehicles]
-        inputs = [json.dumps(x).encode() for x in od_paths]
-        result = self.client.compute(inputs)
+        inputs = [json.dumps({
+            "start": v.next_routing_od_nodes[0],
+            "destination": v.next_routing_od_nodes[1],
+            "max_routes": k
+        }).encode() for v in vehicles]
+        result = self.client.compute(kernel="alternatives", inputs=inputs)
         return result
 
 
@@ -56,4 +59,5 @@ class FirstRouteSelection(RouteSelectionProvider):
     Selects the first route for each car.
     """
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
+        # TODO: react better to situations where no route is found
         return [(vehicle, routes[0]) for (vehicle, routes) in route_possibilities]

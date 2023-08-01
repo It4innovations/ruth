@@ -26,22 +26,23 @@ class Client:
 
         self.poller = zmq.Poller()
 
-    def compute(self, array: List[bytes]):
+    def compute(self, kernel: str, inputs: List[bytes]):
         self.poller.register(self.socket, zmq.POLLIN | zmq.POLLOUT)
 
         msg_send = 0
         msg_received = 0
-        msg_count = len(array)
+        msg_count = len(inputs)
         results = {}
 
-        logger.debug(f"Sending {len(array)} message(s) to workers")
+        logger.debug(f"Executing kernel {kernel} with {len(inputs)} message(s)")
 
         # Switch messages between sockets
         while msg_received < msg_count:
             socks = dict(self.poller.poll())
 
             if (socks.get(self.socket) & zmq.POLLIN) == zmq.POLLIN:
-                message_id, message = self.socket.recv_multipart()
+                message_id, status, message = self.socket.recv_multipart()
+                assert status == b"ok"
 
                 # Decode
                 message_id = int(message_id.decode())
@@ -55,7 +56,8 @@ class Client:
                 # Send until all messages are sent
                 self.socket.send_multipart([
                     str(msg_send).encode(),
-                    array[msg_send]
+                    kernel.encode(),
+                    inputs[msg_send]
                 ])
                 msg_send += 1
                 if msg_send == msg_count:
