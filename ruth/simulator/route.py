@@ -95,9 +95,9 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
         vehicle.time_offset += d
         vehicle.set_position(segment_pos)
 
-        step_m = assigned_speed_mps * (vehicle.fcd_sampling_period / timedelta(seconds=1))
-        segment = driving_route[vehicle.segment_position.index]
-        dt = departure_time + vehicle.time_offset
+        # step_m = assigned_speed_mps * (vehicle.fcd_sampling_period / timedelta(seconds=1))
+        # segment = driving_route[vehicle.segment_position.index]
+        # dt = departure_time + vehicle.time_offset
         # logger.info(f"{dt} {vehicle.id} ({vehicle.start_distance_offset}) {segment.id} ({segment.length}) step: {step_m}")
 
         if vehicle.current_node == vehicle.dest_node:
