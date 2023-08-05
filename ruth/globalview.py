@@ -53,8 +53,12 @@ class GlobalView:
 
         n_vehicles = self.number_of_vehicles_in_time_at_segment(datetime, segment.id, tolerance, vehicle)
 
+        ending_length = 100
         # rescale density
-        n_vehicles_per_mile = n_vehicles * mile / segment.length
+        if segment.length - vehicle.segment_position.position < ending_length:
+            n_vehicles_per_mile = n_vehicles * mile / ending_length
+        else:
+            n_vehicles_per_mile = n_vehicles * mile / segment.length
 
         los = float("inf")  # in case the vehicles are stuck in traffic jam
         for (low, high), (m, n) in ranges:
