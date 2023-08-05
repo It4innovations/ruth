@@ -85,7 +85,7 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
                     gv_db: GlobalViewDb) -> List[FCDRecord]:
     """Advance a vehicle on a route."""
 
-    dt = departure_time + vehicle.time_offset
+    current_time = departure_time + vehicle.time_offset
     osm_route = vehicle.osm_route
 
     driving_route = osm_route_to_py_segments(osm_route, vehicle.routing_map)
@@ -97,29 +97,30 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
         if vehicle.segment_position.position == segment.length:
             # if the car is at the end of a segment, we want to work with the next segment
             segment = driving_route[vehicle.segment_position.index + 1]
-        los = gv_db.get(dt, segment)
-        # los = gv_db.gv.level_of_service_for_car(dt, segment, vehicle)
+        los = gv_db.get(current_time, segment)
+        # los = gv_db.gv.level_of_service_for_car(current_time, segment, vehicle)
     else:
         los = 1.0  # the end of the route
 
-    time, segment_pos, assigned_speed_mps = move_on_segment(
-        vehicle, driving_route, dt, los
+    vehicle_end_time, segment_pos, assigned_speed_mps = move_on_segment(
+        vehicle, driving_route, current_time, los
     )
-    d = time - dt
 
+    segment_pos_old = vehicle.segment_position
     # NOTE: the segment position index may end out of segments
     if segment_pos.index < len(driving_route):
-        fcds = generate_fcds(vehicle, dt, d, driving_route[segment_pos.index], segment_pos.position,
-                             assigned_speed_mps)
+        fcds = generate_fcds(current_time, vehicle_end_time, segment_pos_old, segment_pos, assigned_speed_mps, vehicle,
+                             driving_route)
 
     # update the vehicle
-    vehicle.time_offset += d
+    vehicle.time_offset += vehicle_end_time - current_time
     vehicle.set_position(segment_pos)
 
     # step_m = assigned_speed_mps * (vehicle.fcd_sampling_period / timedelta(seconds=1))
     # segment = driving_route[vehicle.segment_position.index]
     # dt = departure_time + vehicle.time_offset
-    # logger.info(f"{dt} {vehicle.id} ({vehicle.start_distance_offset}) {segment.id} ({segment.length}) step: {step_m}")
+    # logger.info(f"\n{dt} {vehicle.id} ({vehicle.start_distance_offset}) {segment.id} ({segment.length}) step: {step_m}")
+    # logger.info(fcds)
 
     if vehicle.current_node == vehicle.dest_node:
         # stop the processing in case the vehicle reached the end
@@ -144,42 +145,45 @@ def osm_route_to_py_segments(osm_route: Route, routing_map: Map) -> List[Segment
     ]
 
 
-def generate_fcds(vehicle: Vehicle, start_offset: datetime, duration: timedelta, segment: Segment,
-                  start_position: float, speed: float) -> List[FCDRecord]:
+def generate_fcds(start_time: datetime, end_time: datetime, start_segment_position: SegmentPosition,
+                  end_segment_position: SegmentPosition, speed: SpeedKph, vehicle: Vehicle,
+                  driving_route: list[Segment]) -> List[FCDRecord]:
     fcds = []
 
     step_m = speed * (vehicle.fcd_sampling_period / timedelta(seconds=1))
 
-    start = start_position
-    current_offset = start_offset
-    end_offset = start_offset + duration
-    while current_offset + vehicle.fcd_sampling_period < end_offset and \
-            start + step_m < segment.length:
-        start += step_m
-        current_offset += vehicle.fcd_sampling_period
+    # when both start and end positions are on the same segment
+    current_position = start_segment_position.position
+    current_time = start_time
+    current_segment = driving_route[start_segment_position.index]
+
+    if current_position == current_segment.length:
+        # when the vehicle finished the segment in the previous round, we will jump to the next segment
+        current_segment = driving_route[end_segment_position.index]
+        current_position = 0
+
+    while current_time + vehicle.fcd_sampling_period < end_time and \
+            current_position + step_m < current_segment.length:
+        current_position += step_m
+        current_time += vehicle.fcd_sampling_period
         fcds.append(FCDRecord(
-            datetime=current_offset,
+            datetime=current_time,
             vehicle_id=vehicle.id,
-            segment_id=segment.id,
-            segment_length=segment.length,
-            start_offset=start,
+            segment_id=current_segment.id,
+            segment_length=current_segment.length,
+            start_offset=current_position,
             speed=speed,
             status=vehicle.status
         ))
 
-    step_m = speed * ((end_offset - current_offset) / timedelta(seconds=1))
-    if start + step_m < segment.length:
-        # TODO: the question is wheather to store all the cars at the end of period or
-        # rather return the difference (end_offset - _last_ current_offset) and take it as
-        # a parameter for the next round of storing. In this way all the cars would be sampled
-        # with an exact step (car dependent as each car can have its own sampling period)
-        fcds.append(FCDRecord(
-            datetime=end_offset,
-            vehicle_id=vehicle.id,
-            segment_id=segment.id,
-            segment_length=segment.length,
-            start_offset=start + step_m,
-            speed=speed,
-            status=vehicle.status
-        ))
+    # store end of the movement
+    fcds.append(FCDRecord(
+        datetime=end_time,
+        vehicle_id=vehicle.id,
+        segment_id=current_segment.id,
+        segment_length=current_segment.length,
+        start_offset=end_segment_position.position,
+        speed=speed,
+        status=vehicle.status
+    ))
     return fcds
