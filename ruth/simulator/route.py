@@ -26,34 +26,59 @@ def move_on_segment(
     """
     segment_position = vehicle.segment_position
     segment = segments[segment_position.index]
-    assert segment_position.position < segment.length
+    assert segment_position.position <= segment.length
+
+    # if car is stuck in traffic jam, it will not move and its speed will be 0
+    if level_of_service == float("inf"):
+        # in case the vehicle is stuck in traffic jam just move the time
+        return departure_time + vehicle.frequency, segment_position, 0.0
 
     # Speed in m/s
     speed_mps = (segment.max_allowed_speed_kph * level_of_service) * (1000 / 3600)
     if math.isclose(speed_mps, 0.0):
-        return departure_time, segment_position, 0.0
+        return departure_time + vehicle.frequency, segment_position, 0.0
 
-    start = segment_position.position
+    start_position = segment_position.position
     frequency_s = vehicle.frequency.total_seconds()
-    elapsed_m = start + frequency_s * speed_mps
+    elapsed_m = frequency_s * speed_mps
+    end_position = start_position + elapsed_m
 
-    if elapsed_m < segment.length:
+    if end_position < segment.length:
         # We stay on the same segment
         return (
             departure_time + timedelta(seconds=frequency_s),
-            SegmentPosition(index=segment_position.index, position=elapsed_m),
+            SegmentPosition(index=segment_position.index, position=end_position),
             speed_mps
         )
     else:
-        # We have moved to the end of the current segment, the car will jump to the
-        # beginning of the next one.
-        travel_distance_m = segment.length - start
-        travel_time = travel_distance_m / speed_mps
-        return (
-            departure_time + timedelta(seconds=travel_time),
-            SegmentPosition(segment_position.index + 1, 0.0),
-            speed_mps
-        )
+        # The car has finished the segment
+        if start_position == segment.length:
+            # We have been at the end of the segment the previous round, we will jump to the next segment
+            next_segment = segments[segment_position.index + 1]
+            if elapsed_m > next_segment.length:
+                # if the car makes it to the end of the next segment, it will stay at the end of it
+                # travel distance is the length of the next segment
+                travel_time = next_segment.length / speed_mps
+                return (
+                    departure_time + timedelta(seconds=travel_time),
+                    SegmentPosition(segment_position.index + 1, next_segment.length),
+                    speed_mps
+                )
+            else:
+                return (
+                    departure_time + timedelta(seconds=frequency_s),
+                    SegmentPosition(segment_position.index + 1, elapsed_m),
+                    speed_mps
+                )
+        else:
+            # we just finished the segment, we will stay at the end of it
+            travel_distance_m = segment.length - start_position
+            travel_time = travel_distance_m / speed_mps
+            return (
+                departure_time + timedelta(seconds=travel_time),
+                SegmentPosition(segment_position.index, segment.length),
+                speed_mps
+            )
 
 
 def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
@@ -69,40 +94,36 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
 
     if vehicle.segment_position.index < len(driving_route):
         segment = driving_route[vehicle.segment_position.index]
+        if vehicle.segment_position.position == segment.length:
+            # if the car is at the end of a segment, we want to work with the next segment
+            segment = driving_route[vehicle.segment_position.index + 1]
         los = gv_db.get(dt, segment)
         # los = gv_db.gv.level_of_service_for_car(dt, segment, vehicle)
     else:
         los = 1.0  # the end of the route
 
-    if los == float("inf"):
-        # in case the vehicle is stuck in traffic jam just move the time
-        vehicle.time_offset += vehicle.frequency
-    else:
-        time, segment_pos, assigned_speed_mps = move_on_segment(
-            vehicle, driving_route, dt, los
-        )
-        d = time - dt
+    time, segment_pos, assigned_speed_mps = move_on_segment(
+        vehicle, driving_route, dt, los
+    )
+    d = time - dt
 
-        # NOTE: _assumption_: the car stays on a single segment within one call of the `advance`
-        #       method on the driving route
+    # NOTE: the segment position index may end out of segments
+    if segment_pos.index < len(driving_route):
+        fcds = generate_fcds(vehicle, dt, d, driving_route[segment_pos.index], segment_pos.position,
+                             assigned_speed_mps)
 
-        # NOTE: the segment position index may end out of segments
-        if segment_pos.index < len(driving_route):
-            fcds = generate_fcds(vehicle, dt, d, driving_route[segment_pos.index], segment_pos.position,
-                                 assigned_speed_mps)
+    # update the vehicle
+    vehicle.time_offset += d
+    vehicle.set_position(segment_pos)
 
-        # update the vehicle
-        vehicle.time_offset += d
-        vehicle.set_position(segment_pos)
+    # step_m = assigned_speed_mps * (vehicle.fcd_sampling_period / timedelta(seconds=1))
+    # segment = driving_route[vehicle.segment_position.index]
+    # dt = departure_time + vehicle.time_offset
+    # logger.info(f"{dt} {vehicle.id} ({vehicle.start_distance_offset}) {segment.id} ({segment.length}) step: {step_m}")
 
-        # step_m = assigned_speed_mps * (vehicle.fcd_sampling_period / timedelta(seconds=1))
-        # segment = driving_route[vehicle.segment_position.index]
-        # dt = departure_time + vehicle.time_offset
-        # logger.info(f"{dt} {vehicle.id} ({vehicle.start_distance_offset}) {segment.id} ({segment.length}) step: {step_m}")
-
-        if vehicle.current_node == vehicle.dest_node:
-            # stop the processing in case the vehicle reached the end
-            vehicle.active = False
+    if vehicle.current_node == vehicle.dest_node:
+        # stop the processing in case the vehicle reached the end
+        vehicle.active = False
 
     return fcds
 
