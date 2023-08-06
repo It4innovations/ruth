@@ -4,7 +4,8 @@ from datetime import datetime, timedelta
 from typing import Callable, List, Optional
 
 from .kernels import AlternativesProvider, RouteSelectionProvider
-from .route import advance_vehicle
+from .queues import QueuesManager
+from .route import advance_vehicle, advance_waiting_vehicle
 from .simulation import FCDRecord, Simulation
 from ..losdb import GlobalViewDb
 from ..utils import TimerSet
@@ -62,6 +63,9 @@ class Simulator:
                 allowed_vehicles = [v for v in self.sim.vehicles
                                     if self.sim.is_vehicle_within_offset(v, offset)]
 
+            with timer_set.get("filter_by_queues"):
+                allowed_vehicles, waiting_vehicles = QueuesManager.filter_cars(allowed_vehicles)
+
             with timer_set.get("alternatives"):
                 alts = alternatives_provider.compute_alternatives(
                     self.sim.routing_map,
@@ -87,9 +91,13 @@ class Simulator:
                 fcds = list(itertools.chain.from_iterable(
                     self.advance_vehicle(vehicle, offset) for vehicle in
                     allowed_vehicles))
+                fcds_waiting = list(itertools.chain.from_iterable(
+                    self.advance_waiting_vehicle(vehicle, offset) for vehicle in
+                    waiting_vehicles))
 
             with timer_set.get("update"):
                 self.sim.update(fcds)
+                self.sim.update(fcds_waiting)
 
             with timer_set.get("compute_offset"):
                 current_offset_new = self.sim.compute_current_offset()
@@ -112,8 +120,6 @@ class Simulator:
                     for fn in end_step_fns:
                         fn(self.state)
 
-            # print(timer_set.collect())
-
             self.sim.save_step_info(step, len(allowed_vehicles), step_dur, timer_set.collect())
 
             step += 1
@@ -125,3 +131,9 @@ class Simulator:
         assert vehicle.is_active(current_offset, self.sim.setting.round_freq)
         return advance_vehicle(vehicle, self.sim.setting.departure_time,
                                GlobalViewDb(self.sim.global_view))
+
+    def advance_waiting_vehicle(self, vehicle: Vehicle, current_offset) -> List[FCDRecord]:
+        """Move the vehicle on its route and generate FCD records"""
+
+        assert vehicle.is_active(current_offset, self.sim.setting.round_freq)
+        return advance_waiting_vehicle(vehicle, self.sim.setting.departure_time)

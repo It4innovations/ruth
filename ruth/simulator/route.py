@@ -5,6 +5,7 @@ from typing import List, Tuple
 
 import osmnx as ox
 
+from .queues import QueuesManager
 from .segment import Route, Segment, SegmentPosition, SpeedKph
 from .simulation import FCDRecord
 from ..data.map import Map
@@ -92,6 +93,7 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
 
     fcds = []
 
+    segment = None
     if vehicle.segment_position.index < len(driving_route):
         segment = driving_route[vehicle.segment_position.index]
         if vehicle.segment_position.position == segment.length:
@@ -122,10 +124,37 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
     # logger.info(f"\n{dt} {vehicle.id} ({vehicle.start_distance_offset}) {segment.id} ({segment.length}) step: {step_m}")
     # logger.info(fcds)
 
-    if vehicle.current_node == vehicle.dest_node:
+    # fill in and out of the queues
+    if vehicle.next_node == vehicle.dest_node and vehicle.segment_position.position == segment.length:
         # stop the processing in case the vehicle reached the end
         vehicle.active = False
 
+    elif vehicle.segment_position.position == segment.length:
+        QueuesManager.add_to_queue(vehicle)
+
+    segment_old = driving_route[segment_pos_old.index]
+    if segment_pos_old.position == segment_old.length and segment_pos_old.index != vehicle.segment_position.index:
+        node_from, node_to = vehicle.osm_route[segment_pos_old.index], vehicle.osm_route[segment_pos_old.index + 1]
+        QueuesManager.remove_vehicle(vehicle, node_from, node_to)
+
+    return fcds
+
+
+def advance_waiting_vehicle(vehicle: Vehicle, departure_time: datetime) -> List[FCDRecord]:
+    current_time = departure_time + vehicle.time_offset
+    osm_route = vehicle.osm_route
+
+    driving_route = osm_route_to_py_segments(osm_route, vehicle.routing_map)
+    segment_pos_old = vehicle.segment_position
+    vehicle_end_time, segment_pos, assigned_speed_mps = move_on_segment(
+        vehicle, driving_route, current_time, float("inf")
+    )
+
+    # update the vehicle
+    vehicle.time_offset += vehicle_end_time - current_time
+
+    fcds = generate_fcds(current_time, vehicle_end_time, segment_pos_old, segment_pos, assigned_speed_mps, vehicle,
+                         driving_route)
     return fcds
 
 
