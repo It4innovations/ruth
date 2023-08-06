@@ -38,7 +38,7 @@ class Vehicle:
     border_kind: str = set_numpy_type("string")
     osm_route: List[int] = set_numpy_type("object")
     active: bool = set_numpy_type("bool")
-    """A period in wicht the raw FCD data are sampled"""
+    """A period in which the raw FCD data are sampled"""
     fcd_sampling_period: timedelta = set_numpy_type("object")
     status: str = set_numpy_type("string")
     # Kept for backwards compatibility with old input files
@@ -95,6 +95,11 @@ class Vehicle:
     def current_node(self):
         """Return the actual node which segment is in processing."""
         return self.osm_route[self.start_index]
+
+    @property
+    def next_node(self):
+        """Return the end node of segment in processing."""
+        return self.osm_route[self.start_index + 1]
 
     def shortest_path(self):
         """Compute the shortest path from the current position to the end."""
