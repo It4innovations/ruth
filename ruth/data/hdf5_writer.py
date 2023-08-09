@@ -79,12 +79,12 @@ def save_graph_to_hdf5(g, file_path):
     node_dict = OrderedDict()
     edge_data_dict = OrderedDict()
 
-    ids_from_64_to_32 = {}
+    # Dictionary to remap OSM node IDs to HDF map IDs (to fit into the size of int32)
+    osm_to_hdf_map_ids = {}
 
     for row_id, (node_id, data) in enumerate(g.nodes(data=True)):
-        ids_from_64_to_32[node_id] = row_id + 1000
-        if row_id + 1000 in node_dict:
-            print('fail')
+        osm_to_hdf_map_ids[node_id] = row_id + 1000
+        assert row_id + 1000 not in node_dict
         node_dict[row_id + 1000] = (row_id + 1000, part_name, row_id)
 
     edge_data_index = 0
@@ -151,8 +151,7 @@ def save_graph_to_hdf5(g, file_path):
         # set up edges from
         for id_from, id_to, edge_data in out_edges:
             edge_id = get_osmid_from_data(edge_data)
-            # TODO: node id change
-            node_index = node_dict[ids_from_64_to_32[id_to]][2]
+            node_index = node_dict[osm_to_hdf_map_ids[id_to]][2]
             computer_speed = get_speed_from_data(edge_data)
             length = edge_data['length']
             edge_data_index = edge_data_dict[edge_id][0]
@@ -167,7 +166,7 @@ def save_graph_to_hdf5(g, file_path):
             edges_array.append([edge_tuple])
 
         node_tuple = (
-            ids_from_64_to_32[node_id],
+            osm_to_hdf_map_ids[node_id],
             latitude_int,
             longitude_int,
             edge_out_count,
@@ -203,4 +202,4 @@ def save_graph_to_hdf5(g, file_path):
         index_group.create_dataset("EdgeData", data=edge_data_array, compression="gzip", compression_opts=4)
         index_group.create_dataset("NodeMap", data=node_map_array, compression="gzip", compression_opts=4)
 
-    return ids_from_64_to_32
+    return osm_to_hdf_map_ids

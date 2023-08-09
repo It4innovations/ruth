@@ -41,7 +41,8 @@ class Map(metaclass=Singleton):
             self.network = ox.add_edge_speeds(self.network)
         if fresh_data:
             self._store()
-        self.ids_from_64_to_32 = self.to_hdf5()
+        self.hdf5_file_path = os.path.join(data_dir, 'map.hdf5')
+        self.osm_to_hdf_map_ids = self.to_hdf5()
 
     @staticmethod
     def from_memory(pickle_state):
@@ -118,7 +119,7 @@ class Map(metaclass=Singleton):
             return None
 
     def to_hdf5(self):
-        return save_graph_to_hdf5(self.simple_network, 'data/map.hdf5')
+        return save_graph_to_hdf5(self.simple_network, self.hdf5_file_path)
 
     def _load(self):
         if self.file_path is None:
