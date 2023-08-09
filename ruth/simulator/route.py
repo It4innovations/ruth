@@ -96,11 +96,13 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
     segment = None
     if vehicle.segment_position.index < len(driving_route):
         segment = driving_route[vehicle.segment_position.index]
+        offset = vehicle.start_distance_offset
         if vehicle.segment_position.position == segment.length:
             # if the car is at the end of a segment, we want to work with the next segment
             segment = driving_route[vehicle.segment_position.index + 1]
-        los = gv_db.get(current_time, segment)
-        # los = gv_db.gv.level_of_service_for_car(current_time, segment, vehicle)
+            offset = 0.0
+        # los = gv_db.get(current_time, segment)
+        los = gv_db.gv.level_of_service_for_car(current_time, segment, vehicle.id, offset)
     else:
         los = 1.0  # the end of the route
 
