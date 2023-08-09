@@ -28,19 +28,18 @@ class GlobalView:
 
         self.by_segment[fcd.segment_id].append((fcd.datetime, fcd.vehicle_id, fcd.start_offset))
 
-    def number_of_vehicles_in_time_at_segment(self, datetime, segment_id, tolerance=None, vehicle: Vehicle = None):
+    def number_of_vehicles_in_time_at_segment(self, datetime, segment_id, tolerance=None,
+                                              vehicle_id=-1, vehicle_offset_m=0):
         tolerance = tolerance if tolerance is not None else timedelta(seconds=0)
-        min_offset = 0 if vehicle is None else vehicle.start_distance_offset
-        current_id = -1 if vehicle is None else vehicle.id
 
         vehicles = set()
-        for (dt, vehicle_id, offset) in self.by_segment.get(segment_id, []):
+        for (dt, current_vehicle_id, offset) in self.by_segment.get(segment_id, []):
             if datetime - tolerance <= dt <= datetime + tolerance:
-                if vehicle_id != current_id and offset > min_offset:
-                    vehicles.add(vehicle_id)
+                if current_vehicle_id != vehicle_id and offset > vehicle_offset_m:
+                    vehicles.add(current_vehicle_id)
         return len(vehicles)
 
-    def level_of_service_for_car(self, datetime, segment, vehicle: Vehicle, tolerance=None):
+    def level_of_service_for_car(self, datetime, segment, vehicle_id, vehicle_offset_m, tolerance=None):
         mile = 1609.344  # meters
         # density of vehicles per mile with ranges of level of service
         # https://transportgeography.org/contents/methods/transport-technical-economic-performance-indicators/levels-of-service-road-transportation/
@@ -51,10 +50,11 @@ class GlobalView:
             ((30, 42), (0.6, 0.8)),
             ((42, 67), (0.8, 1.0))]
 
-        n_vehicles = self.number_of_vehicles_in_time_at_segment(datetime, segment.id, tolerance, vehicle)
+        n_vehicles = self.number_of_vehicles_in_time_at_segment(datetime, segment.id, tolerance,
+                                                                vehicle_id, vehicle_offset_m)
 
         ending_length = 100
-        rest_segment_length = segment.length - vehicle.start_distance_offset
+        rest_segment_length = segment.length - vehicle_offset_m
         # rescale density
         if rest_segment_length < ending_length:
             n_vehicles_per_mile = n_vehicles * mile / ending_length
