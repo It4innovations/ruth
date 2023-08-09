@@ -8,6 +8,7 @@ import osmnx as ox
 from osmnx import graph_from_place, load_graphml, save_graphml
 from networkx.exception import NetworkXNoPath
 
+from .hdf5_writer import save_graph_to_hdf5
 from ..log import console_logger as cl
 from ..metaclasses import Singleton
 
@@ -22,8 +23,6 @@ def segment_weight_speed(n1, n2, data):
 
 def save(G, fname):
     nx.write_gml(G, fname)
-
-
 
 
 class Map(metaclass=Singleton):
@@ -42,6 +41,7 @@ class Map(metaclass=Singleton):
             self.network = ox.add_edge_speeds(self.network)
         if fresh_data:
             self._store()
+        self.ids_from_64_to_32 = self.to_hdf5()
 
     @staticmethod
     def from_memory(pickle_state):
@@ -117,15 +117,18 @@ class Map(metaclass=Singleton):
         except NetworkXNoPath:
             return None
 
+    def to_hdf5(self):
+        return save_graph_to_hdf5(self.simple_network, 'data/map.hdf5')
+
     def _load(self):
         if self.file_path is None:
             cl.info("Map loaded from memory object.")
         elif os.path.exists(self.file_path):
             cl.info(f"Loading network for '{self.name}' from local map.")
-            return (load_graphml(self.file_path), False)
+            return load_graphml(self.file_path), False
         else:
             cl.info(f"Loading map for {self.name} via OSM API...")
-            # ##Change from "graph_from_polygon"
+            # # Change from "graph_from_polygon"
             # network = graph_from_polygon(
             #     self.border.polygon(),
             #     network_type="drive",  # TODO: into config
@@ -134,7 +137,7 @@ class Map(metaclass=Singleton):
             #     custom_filter=admin_level_to_road_filter(self.border.admin_level),
             # )
 
-            ##Change to "graph_from_place"
+            # Change to "graph_from_place"
             network = graph_from_place(
                 'Prague, Czech republic',
                 network_type="drive",  # TODO: into config
@@ -143,7 +146,7 @@ class Map(metaclass=Singleton):
                 custom_filter=admin_level_to_road_filter(self.border.admin_level),
             )
             cl.info(f"{self.name}'s map loaded.")
-            return (network, True)
+            return network, True
 
     def _store(self):
         if self.file_path is None:
