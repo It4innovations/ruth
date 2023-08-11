@@ -43,6 +43,8 @@ class Map(metaclass=Singleton):
             self._store()
         self.hdf5_file_path = os.path.join(data_dir, 'map.hdf5')
         self.osm_to_hdf_map_ids = self.to_hdf5()
+        self.hdf_to_osm_map_ids = {v: k for (k, v) in self.osm_to_hdf_map_ids.items()}
+        assert len(self.osm_to_hdf_map_ids) == len(self.hdf_to_osm_map_ids)
 
     @staticmethod
     def from_memory(pickle_state):
@@ -120,6 +122,12 @@ class Map(metaclass=Singleton):
 
     def to_hdf5(self):
         return save_graph_to_hdf5(self.simple_network, self.hdf5_file_path)
+
+    def osm_to_hdf5_id(self, id: int) -> int:
+        return self.osm_to_hdf_map_ids[id]
+
+    def hdf5_to_osm_id(self, id: int) -> int:
+        return self.hdf_to_osm_map_ids[id]
 
     def _load(self):
         if self.file_path is None:
