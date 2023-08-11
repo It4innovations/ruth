@@ -49,6 +49,8 @@ class Simulator:
         for v in self.sim.vehicles:
             v.frequency = timedelta(seconds=5)
 
+        alternatives_provider.load_map(self.sim.routing_map)
+
         step = self.sim.number_of_steps
         while self.current_offset is not None:
             step_start_dt = datetime.now()
@@ -62,6 +64,7 @@ class Simulator:
 
             with timer_set.get("alternatives"):
                 alts = alternatives_provider.compute_alternatives(
+                    self.sim.routing_map,
                     allowed_vehicles,
                     k=self.sim.setting.k_alternatives
                 )
