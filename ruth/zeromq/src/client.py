@@ -1,11 +1,18 @@
+import dataclasses
 import logging
 
 import zmq
 import json
-from typing import List
+from typing import Any, List
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclasses.dataclass
+class Message:
+    kind: str
+    data: Any
 
 
 def segment_weight(n1, n2, data):
@@ -26,36 +33,42 @@ class Client:
 
         self.poller = zmq.Poller()
 
-    def compute(self, array: List[bytes]):
+    def compute(self, messages: List[Message]) -> List[Any]:
         self.poller.register(self.socket, zmq.POLLIN | zmq.POLLOUT)
 
         msg_send = 0
         msg_received = 0
-        msg_count = len(array)
+        msg_count = len(messages)
         results = {}
 
-        logger.debug(f"Sending {len(array)} message(s) to workers")
+        logger.debug(f"Sending {len(messages)} message(s) to workers")
 
         # Switch messages between sockets
         while msg_received < msg_count:
             socks = dict(self.poller.poll())
 
             if (socks.get(self.socket) & zmq.POLLIN) == zmq.POLLIN:
-                message_id, message = self.socket.recv_multipart()
+                message_id, status, payload = self.socket.recv_multipart()
 
                 # Decode
                 message_id = int(message_id.decode())
-                message = json.loads(message.decode())
+
+                if status != b"ok":
+                    raise Exception(f"Invalid response to {messages[message_id].kind}: {status}")
+
+                payload = json.loads(payload.decode())
 
                 # Append
-                results[message_id] = message
+                results[message_id] = payload
                 msg_received += 1
 
             if (socks.get(self.socket) & zmq.POLLOUT) == zmq.POLLOUT:
+                message = messages[msg_send]
                 # Send until all messages are sent
                 self.socket.send_multipart([
                     str(msg_send).encode(),
-                    array[msg_send]
+                    message.kind.encode(),
+                    json.dumps(message.data).encode()
                 ])
                 msg_send += 1
                 if msg_send == msg_count:
