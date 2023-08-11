@@ -2,6 +2,7 @@
 import itertools
 import os
 import pickle
+from pathlib import Path
 
 import networkx as nx
 import osmnx as ox
@@ -41,8 +42,8 @@ class Map(metaclass=Singleton):
             self.network = ox.add_edge_speeds(self.network)
         if fresh_data:
             self._store()
-        self.hdf5_file_path = os.path.join(data_dir, 'map.hdf5')
-        self.osm_to_hdf_map_ids = self.to_hdf5()
+        self.hdf5_file_path = str((Path(data_dir) / "map.hdf5").absolute())
+        self.osm_to_hdf_map_ids = self.to_hdf5(self.hdf5_file_path)
         self.hdf_to_osm_map_ids = {v: k for (k, v) in self.osm_to_hdf_map_ids.items()}
         assert len(self.osm_to_hdf_map_ids) == len(self.hdf_to_osm_map_ids)
 
@@ -120,8 +121,8 @@ class Map(metaclass=Singleton):
         except NetworkXNoPath:
             return None
 
-    def to_hdf5(self):
-        return save_graph_to_hdf5(self.simple_network, self.hdf5_file_path)
+    def to_hdf5(self, path: str):
+        return save_graph_to_hdf5(self.simple_network, path)
 
     def osm_to_hdf5_id(self, id: int) -> int:
         return self.osm_to_hdf_map_ids[id]
