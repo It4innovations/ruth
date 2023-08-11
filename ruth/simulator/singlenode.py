@@ -88,16 +88,32 @@ class Simulator:
                     vehicle.update_followup_route(route)
 
             with timer_set.get("advance_vehicle"):
+                segments_changed_speed = set()
+                for vehicle in allowed_vehicles:
+                    segments_changed_speed.add((vehicle.current_node, vehicle.next_node))
+
                 fcds = list(itertools.chain.from_iterable(
                     self.advance_vehicle(vehicle, offset) for vehicle in
                     allowed_vehicles))
+
                 fcds_waiting = list(itertools.chain.from_iterable(
                     self.advance_waiting_vehicle(vehicle, offset) for vehicle in
                     waiting_vehicles))
 
+                for vehicle in allowed_vehicles:
+                    if vehicle.active:
+                        segments_changed_speed.add((vehicle.current_node, vehicle.next_node))
+
             with timer_set.get("update"):
                 self.sim.update(fcds)
                 self.sim.update(fcds_waiting)
+
+            with timer_set.get("update_map_speeds"):
+                new_speeds = [self.sim.global_view.get_current_speed(node_from,
+                                                                     node_to,
+                                                                     self.sim.routing_map)
+                              for node_from, node_to in segments_changed_speed]
+                self.sim.routing_map.update_current_speeds(segments_changed_speed, new_speeds)
 
             with timer_set.get("compute_offset"):
                 current_offset_new = self.sim.compute_current_offset()

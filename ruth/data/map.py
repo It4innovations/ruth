@@ -3,6 +3,7 @@ import itertools
 import os
 import pickle
 from pathlib import Path
+from typing import List
 
 import networkx as nx
 import osmnx as ox
@@ -12,6 +13,7 @@ from networkx.exception import NetworkXNoPath
 from .hdf5_writer import save_graph_to_hdf5
 from ..log import console_logger as cl
 from ..metaclasses import Singleton
+from ..simulator.segment import Route, Segment
 
 
 def segment_weight(n1, n2, data):
@@ -19,11 +21,27 @@ def segment_weight(n1, n2, data):
 
 
 def segment_weight_speed(n1, n2, data):
-    return float(data['speed_kph'])
+    return float(data['current_speed'])
 
 
 def save(G, fname):
     nx.write_gml(G, fname)
+
+
+def get_osm_segment_id(node_from: int, node_to: int):
+    return f"OSM{node_from}T{node_to}"
+
+
+class MapProvider(metaclass=Singleton):
+    g = None
+
+    @staticmethod
+    def set_map(new_g):
+        MapProvider.g = new_g
+
+    @staticmethod
+    def get_map():
+        return MapProvider.g
 
 
 class Map(metaclass=Singleton):
@@ -37,15 +55,19 @@ class Map(metaclass=Singleton):
         self.border = border
         self.data_dir = data_dir
         self.network, fresh_data = self._load()
-        self.simple_network = ox.get_digraph(self.network)
         if with_speeds:
             self.network = ox.add_edge_speeds(self.network)
+            self.init_current_speeds()
+
+        self.simple_network = ox.get_digraph(self.network)
+
         if fresh_data:
             self._store()
         self.hdf5_file_path = str((Path(data_dir) / "map.hdf5").absolute())
         self.osm_to_hdf_map_ids = self.to_hdf5(self.hdf5_file_path)
         self.hdf_to_osm_map_ids = {v: k for (k, v) in self.osm_to_hdf_map_ids.items()}
         assert len(self.osm_to_hdf_map_ids) == len(self.hdf_to_osm_map_ids)
+        MapProvider().set_map(self.network)
 
     @staticmethod
     def from_memory(pickle_state):
@@ -65,10 +87,38 @@ class Map(metaclass=Singleton):
         """Name of the map."""
         return self.border.name
 
+    def init_current_speeds(self):
+        speeds = nx.get_edge_attributes(self.network, name='speed_kph')
+        nx.set_edge_attributes(self.network, values=speeds, name="current_speed")
+
+    def update_current_speeds(self, segment_ids, speeds):
+        values = {}
+        for (node_from, node_to), speed in zip(segment_ids, speeds):
+            values[(node_from, node_to)] = speed
+        nx.set_edge_attributes(self.simple_network, values=values, name='current_speed')
+
+    def get_segment_max_speed(self, node_from, node_to):
+        return self.simple_network[node_from][node_to]['speed_kph']
+
     def set_data_dir(self, path):
         if self.data_dir is not None:
             cl.warn(f"The data dir has changed from '{self.data_dir}' to '{path}.")
         self.data_dir = path
+
+    def osm_route_to_py_segments(self, osm_route: Route) -> List[Segment]:
+        """Prepare list of segments based on route."""
+        edge_data = ox.utils_graph.get_route_edge_attributes(self.network,
+                                                             osm_route)
+        edges = zip(osm_route, osm_route[1:])
+        return [
+            Segment(
+                id=get_osm_segment_id(from_, to_),
+                length=data["length"],
+                max_allowed_speed_kph=data["speed_kph"],
+            )
+            # NOTE: the zip is correct as the starting node_id is of the interest
+            for i, ((from_, to_), data) in enumerate(zip(edges, edge_data))
+        ]
 
     def shortest_path_by_gps(self, gps_start, gps_end):
         """Compute shortest path between two gps points."""

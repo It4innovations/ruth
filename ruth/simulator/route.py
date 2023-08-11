@@ -3,12 +3,9 @@ import math
 from datetime import datetime, timedelta
 from typing import List, Tuple
 
-import osmnx as ox
-
 from .queues import QueuesManager
-from .segment import Route, Segment, SegmentPosition, SpeedKph
+from .segment import Segment, SegmentPosition, SpeedKph
 from .simulation import FCDRecord
-from ..data.map import Map
 from ..losdb import GlobalViewDb
 from ..vehicle import Vehicle
 
@@ -89,7 +86,7 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
     current_time = departure_time + vehicle.time_offset
     osm_route = vehicle.osm_route
 
-    driving_route = osm_route_to_py_segments(osm_route, vehicle.routing_map)
+    driving_route = vehicle.routing_map.osm_route_to_py_segments(osm_route)
 
     fcds = []
 
@@ -146,7 +143,7 @@ def advance_waiting_vehicle(vehicle: Vehicle, departure_time: datetime) -> List[
     current_time = departure_time + vehicle.time_offset
     osm_route = vehicle.osm_route
 
-    driving_route = osm_route_to_py_segments(osm_route, vehicle.routing_map)
+    driving_route = vehicle.routing_map.osm_route_to_py_segments(osm_route)
     segment_pos_old = vehicle.segment_position
     vehicle_end_time, segment_pos, assigned_speed_mps = move_on_segment(
         vehicle, driving_route, current_time, float("inf")
@@ -158,22 +155,6 @@ def advance_waiting_vehicle(vehicle: Vehicle, departure_time: datetime) -> List[
     fcds = generate_fcds(current_time, vehicle_end_time, segment_pos_old, segment_pos, assigned_speed_mps, vehicle,
                          driving_route)
     return fcds
-
-
-def osm_route_to_py_segments(osm_route: Route, routing_map: Map) -> List[Segment]:
-    """Prepare list of segments based on route."""
-    edge_data = ox.utils_graph.get_route_edge_attributes(routing_map.network,
-                                                         osm_route)
-    edges = zip(osm_route, osm_route[1:])
-    return [
-        Segment(
-            id=f"OSM{from_}T{to_}",
-            length=data["length"],
-            max_allowed_speed_kph=data["speed_kph"],
-        )
-        # NOTE: the zip is correct as the starting node_id is of the interest
-        for i, ((from_, to_), data) in enumerate(zip(edges, edge_data))
-    ]
 
 
 def generate_fcds(start_time: datetime, end_time: datetime, start_segment_position: SegmentPosition,

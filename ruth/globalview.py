@@ -6,8 +6,7 @@ import pandas as pd
 from datetime import timedelta
 from collections import defaultdict
 
-from ruth.vehicle import Vehicle
-
+from .data.map import Map, get_osm_segment_id
 from .utils import parse_segment_id
 
 if TYPE_CHECKING:
@@ -26,14 +25,14 @@ class GlobalView:
             fcd.segment_length, fcd.status
         ))
 
-        self.by_segment[fcd.segment_id].append((fcd.datetime, fcd.vehicle_id, fcd.start_offset))
+        self.by_segment[fcd.segment_id].append((fcd.datetime, fcd.vehicle_id, fcd.start_offset, fcd.speed))
 
     def number_of_vehicles_in_time_at_segment(self, datetime, segment_id, tolerance=None,
                                               vehicle_id=-1, vehicle_offset_m=0):
         tolerance = tolerance if tolerance is not None else timedelta(seconds=0)
 
         vehicles = set()
-        for (dt, current_vehicle_id, offset) in self.by_segment.get(segment_id, []):
+        for (dt, current_vehicle_id, offset, _) in self.by_segment.get(segment_id, []):
             if datetime - tolerance <= dt <= datetime + tolerance:
                 if current_vehicle_id != vehicle_id and offset > vehicle_offset_m:
                     vehicles.add(current_vehicle_id)
@@ -97,6 +96,14 @@ class GlobalView:
         # reverse the level of service 1.0 means 100% LoS, but the input table defines it in reverse
         return los if los == float("inf") else 1.0 - los
 
+    def get_current_speed(self, node_from, node_to, routing_map: Map):
+        speeds = []
+        for _, _, _, speed in self.by_segment[get_osm_segment_id(node_from, node_to)]:
+            speeds.append(speed)
+        if len(speeds) == 0:
+            return routing_map.get_segment_max_speed(node_from, node_to)
+        return sum(speeds) / len(speeds)
+
     def to_dataframe(self):  # todo: maybe process in chunks
         columns = [
             "timestamp",
@@ -115,8 +122,8 @@ class GlobalView:
 
     def construct_by_segments_(self):
         by_segment = defaultdict(list)
-        for dt, seg_id, vehicle_id, offset, *_ in self.data:
-            by_segment[seg_id].append((dt, vehicle_id, offset))
+        for dt, seg_id, vehicle_id, offset, speed, *_ in self.data:
+            by_segment[seg_id].append((dt, vehicle_id, offset, speed))
 
         return by_segment
 
@@ -149,4 +156,3 @@ class GlobalView:
                 break
 
         self.by_segment = self.construct_by_segments_()
-
