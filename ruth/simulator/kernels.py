@@ -1,7 +1,10 @@
 from typing import List, Optional, Tuple
 
+import osmnx as ox
+from osmnx.plot import get_colors
+
 from .segment import Route
-from ..data.map import Map
+from ..data.map import Map, MapProvider
 from ..vehicle import Vehicle
 from ..zeromq.src.client import Message
 
@@ -81,10 +84,26 @@ class RouteSelectionProvider:
         raise NotImplementedError
 
 
+def plot_alternatives(route_possibilities):
+    g = MapProvider.get_map()
+    for vehicle, routes in route_possibilities:
+        colors = get_colors(len(routes), cmap="gist_rainbow", return_hex=True)
+        print(len(routes))
+        if not routes:
+            pass
+        elif len(routes) == 1:
+            ox.plot_graph_route(g, routes[0], route_color=colors[0], bgcolor="white", edge_color="black",
+                                edge_linewidth=0.3)
+        else:
+            ox.plot_graph_routes(g, routes, route_colors=colors, route_linewidth=4, node_size=0,
+                                 bgcolor="white", edge_color="black", edge_linewidth=0.3)
+
+
 class FirstRouteSelection(RouteSelectionProvider):
     """
     Selects the first route for each car.
     """
 
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
+        # plot_alternatives(route_possibilities)
         return [(vehicle, routes[0]) for (vehicle, routes) in route_possibilities]
