@@ -79,10 +79,13 @@ def save_graph_to_hdf5(g, file_path):
     node_dict = OrderedDict()
     edge_data_dict = OrderedDict()
 
-    # Dictionary to remap OSM node IDs to HDF map IDs (to fit into the size of int32)
+    # Dictionary to remap OSM node IDs to HDF map IDs
+    # (to fit into the size of int32 used in the alternatives computation)
     osm_to_hdf_map_ids = {}
 
     for row_id, (node_id, data) in enumerate(g.nodes(data=True)):
+        # Indexing with offset to avoid 0 index
+        # The range of OSM node IDs is too wide for subtracting the min value
         osm_to_hdf_map_ids[node_id] = row_id + 1000
         assert row_id + 1000 not in node_dict
         node_dict[row_id + 1000] = (row_id + 1000, part_name, row_id)
