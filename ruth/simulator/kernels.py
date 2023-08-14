@@ -1,4 +1,5 @@
 from typing import List, Optional, Tuple
+import random
 
 import osmnx as ox
 from osmnx.plot import get_colors
@@ -100,10 +101,18 @@ def plot_alternatives(route_possibilities):
 
 
 class FirstRouteSelection(RouteSelectionProvider):
+
+    def __init__(self):
+        # TODO: add seed from config
+        random.seed(1)
+
     """
     Selects the first route for each car.
     """
 
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
-        # plot_alternatives(route_possibilities)
-        return [(vehicle, routes[0]) for (vehicle, routes) in route_possibilities]
+        result = []
+        for (vehicle, routes) in route_possibilities:
+            index = random.randrange(len(routes))
+            result.append((vehicle, routes[index]))
+        return result
