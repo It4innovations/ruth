@@ -4,8 +4,7 @@ from datetime import datetime, timedelta
 from typing import Callable, List, Optional
 
 from .kernels import AlternativesProvider, RouteSelectionProvider
-from .queues import QueuesManager
-from .route import advance_vehicle, advance_waiting_vehicle
+from .route import advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
 from ..losdb import GlobalViewDb
 from ..utils import TimerSet
@@ -60,24 +59,21 @@ class Simulator:
             offset = self.sim.round_time_offset(self.current_offset)
 
             with timer_set.get("allowed_vehicles"):
-                allowed_vehicles = [v for v in self.sim.vehicles
-                                    if self.sim.is_vehicle_within_offset(v, offset)]
-
-            with timer_set.get("filter_by_queues"):
-                allowed_vehicles, waiting_vehicles = QueuesManager.filter_cars(allowed_vehicles)
+                vehicles_to_be_moved = [v for v in self.sim.vehicles
+                                        if self.sim.is_vehicle_within_offset(v, offset)]
 
             with timer_set.get("alternatives"):
                 alts = alternatives_provider.compute_alternatives(
                     self.sim.routing_map,
-                    allowed_vehicles,
+                    vehicles_to_be_moved,
                     k=self.sim.setting.k_alternatives
                 )
-                assert len(alts) == len(allowed_vehicles)
+                assert len(alts) == len(vehicles_to_be_moved)
 
             # Find which vehicles should have their routes recomputed
             with timer_set.get("collect"):
                 need_new_route = []
-                for v, alt in zip(allowed_vehicles, alts):
+                for v, alt in zip(vehicles_to_be_moved, alts):
                     if alt is not None and alt != []:
                         need_new_route.append((v, alt))
 
@@ -89,24 +85,17 @@ class Simulator:
 
             with timer_set.get("advance_vehicle"):
                 segments_changed_speed = set()
-                for vehicle in allowed_vehicles:
+                for vehicle in vehicles_to_be_moved:
                     segments_changed_speed.add((vehicle.current_node, vehicle.next_node))
 
-                fcds = list(itertools.chain.from_iterable(
-                    self.advance_vehicle(vehicle, offset) for vehicle in
-                    allowed_vehicles))
+                fcds = self.advance_vehicles(vehicles_to_be_moved.copy(), offset)
 
-                fcds_waiting = list(itertools.chain.from_iterable(
-                    self.advance_waiting_vehicle(vehicle, offset) for vehicle in
-                    waiting_vehicles))
-
-                for vehicle in allowed_vehicles:
+                for vehicle in vehicles_to_be_moved:
                     if vehicle.active:
                         segments_changed_speed.add((vehicle.current_node, vehicle.next_node))
 
             with timer_set.get("update"):
                 self.sim.update(fcds)
-                self.sim.update(fcds_waiting)
 
             with timer_set.get("update_map_speeds"):
                 new_speeds = [self.sim.global_view.get_current_speed(node_from,
@@ -128,7 +117,7 @@ class Simulator:
 
             step_dur = datetime.now() - step_start_dt
             logger.info(
-                f"{step}. active: {len(allowed_vehicles)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
+                f"{step}. active: {len(vehicles_to_be_moved)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
             self.sim.duration += step_dur
 
             if end_step_fns is not None:
@@ -136,20 +125,15 @@ class Simulator:
                     for fn in end_step_fns:
                         fn(self.state)
 
-            self.sim.save_step_info(step, len(allowed_vehicles), step_dur, timer_set.collect())
+            self.sim.save_step_info(step, len(vehicles_to_be_moved), step_dur, timer_set.collect())
 
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
 
-    def advance_vehicle(self, vehicle: Vehicle, current_offset) -> List[FCDRecord]:
-        """Move the vehicle on its route and generate FCD records"""
+    def advance_vehicles(self, vehicles: List[Vehicle], current_offset) -> List[FCDRecord]:
+        """Move the vehicles on its route and generate FCD records"""
 
-        assert vehicle.is_active(current_offset, self.sim.setting.round_freq)
-        return advance_vehicle(vehicle, self.sim.setting.departure_time,
-                               GlobalViewDb(self.sim.global_view))
-
-    def advance_waiting_vehicle(self, vehicle: Vehicle, current_offset) -> List[FCDRecord]:
-        """Move the vehicle on its route and generate FCD records"""
-
-        assert vehicle.is_active(current_offset, self.sim.setting.round_freq)
-        return advance_waiting_vehicle(vehicle, self.sim.setting.departure_time)
+        for vehicle in vehicles:
+            assert vehicle.is_active(current_offset, self.sim.setting.round_freq)
+        return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
+                                            GlobalViewDb(self.sim.global_view))
