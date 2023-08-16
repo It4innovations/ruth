@@ -199,3 +199,49 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
         status=vehicle.status
     ))
     return fcds
+
+
+def advance_vehicles_with_queues(vehicles_to_be_moved: [Vehicle], departure_time: datetime, gv_db: GlobalViewDb) -> List[FCDRecord]:
+    print(departure_time)
+    fcds = []
+    vehicles_undecided = []
+    vehicles_stopped = []
+
+    while len(vehicles_to_be_moved) > 0 or len(vehicles_undecided) > 0:
+        # while there still are vehicles to be processed
+        current_vehicle_list = vehicles_to_be_moved if len(vehicles_to_be_moved) > 0 else vehicles_undecided
+        vehicle = current_vehicle_list[0]
+        queue = QueuesManager.queues[(vehicle.current_node, vehicle.next_node)]
+
+        if vehicle not in queue:
+            current_vehicle_list.remove(vehicle)
+            new_fcds = advance_vehicle(vehicle, departure_time, gv_db)
+            fcds.extend(new_fcds)
+        elif vehicle == queue[0]:
+            # vehicle is the first one in the queue
+            current_vehicle_list.remove(vehicle)
+            new_fcds = advance_vehicle(vehicle, departure_time, gv_db)
+            fcds.extend(new_fcds)
+            was_moved = len(queue) == 0 or (vehicle != queue[0])
+            if not was_moved:
+                vehicles_stopped.append(vehicle)
+        else:
+            will_be_moved = True
+
+            for i in range(queue.index(vehicle)):
+                vehicle_in_front = queue[i]
+                if (vehicle_in_front in vehicles_stopped or
+                    (vehicle_in_front not in vehicles_to_be_moved and
+                     vehicle_in_front not in vehicles_undecided)):
+                    # if there is any vehicle in the front that is not moving this round
+                    will_be_moved = False
+                    current_vehicle_list.remove(vehicle)
+                    vehicles_stopped.append(vehicle)
+                    new_fcds = advance_waiting_vehicle(vehicle, departure_time)
+                    fcds.extend(new_fcds)
+                    break
+            if will_be_moved:
+                current_vehicle_list.remove(vehicle)
+                vehicles_undecided.append(vehicle)
+
+    return fcds
