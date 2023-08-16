@@ -15,7 +15,7 @@ from ruth.simulator import RouteRankingAlgorithms, SimSetting, Simulation, Singl
     load_vehicles
 from ruth.simulator.kernels import AlternativesProvider, FastestPathsAlternatives, \
     FirstRouteSelection, RouteSelectionProvider, ShortestPathsAlternatives, \
-    ZeroMQDistributedAlternatives
+    ZeroMQDistributedAlternatives, RandomRouteSelection
 
 
 @dataclass
@@ -278,11 +278,14 @@ def create_alternatives_provider(alternatives: AlternativesImpl) -> Alternatives
 
 class RouteSelectionImpl(str, enum.Enum):
     FIRST = "first"
+    RANDOM = "random"
 
 
 def create_route_selection_provider(route_selection: RouteSelectionImpl) -> RouteSelectionProvider:
     if route_selection == RouteSelectionImpl.FIRST:
         return FirstRouteSelection()
+    elif route_selection == RouteSelectionImpl.RANDOM:
+        return RandomRouteSelection()
     else:
         raise NotImplementedError
 
@@ -292,7 +295,7 @@ def create_route_selection_provider(route_selection: RouteSelectionImpl) -> Rout
 @click.option("--alternatives", type=click.Choice(AlternativesImpl),
               default=AlternativesImpl.FASTEST_PATHS)
 @click.option("--route-selection", type=click.Choice(RouteSelectionImpl),
-              default=RouteSelectionImpl.FIRST)
+              default=RouteSelectionImpl.RANDOM)
 @click.pass_context
 def run(ctx, vehicles_path: Path, alternatives: AlternativesImpl,
         route_selection: RouteSelectionImpl):

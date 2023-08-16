@@ -202,7 +202,6 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
 
 
 def advance_vehicles_with_queues(vehicles_to_be_moved: [Vehicle], departure_time: datetime, gv_db: GlobalViewDb) -> List[FCDRecord]:
-    print(departure_time)
     fcds = []
     vehicles_undecided = []
     vehicles_stopped = []
