@@ -1,4 +1,5 @@
 import enum
+import json
 import logging
 import os
 import sys
@@ -116,12 +117,13 @@ def start_zeromq_cluster(
 
 
 @click.group()
+@click.option('--config-file', default='config.json')
 @click.option('--debug/--no-debug', default=False)  # TODO: maybe move to top-level group
 @click.option("--task-id", type=str,
               help="A string to differentiate results if there is running more simulations"
                    " simultaneously.")
 @click.option("--departure-time", type=click.DateTime(),
-              default=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
+              default=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 @click.option("--round-frequency-s", type=int, default=5,
               help="Rounding time frequency in seconds.")
 @click.option("--k-alternatives", type=int, default=1,
@@ -134,6 +136,7 @@ def start_zeromq_cluster(
               help="Path to a saved state of simulation to continue from.")
 @click.pass_context
 def single_node_simulator(ctx,
+                          config_file,
                           debug,
                           task_id,
                           departure_time,
@@ -147,7 +150,30 @@ def single_node_simulator(ctx,
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
     ctx.ensure_object(dict)
 
+    if os.path.isfile(config_file):
+        logging.info(f"Settings taken from config file {config_file}.")
+        with open(config_file) as f:
+            config_data = json.load(f)['ruth-simulator']
+
+            debug = config_data.get('debug', debug)
+            task_id = config_data.get('task-id', task_id)
+            departure_time = config_data.get('departure-time', departure_time)
+            if type(departure_time) == str:
+                departure_time = datetime.strptime(departure_time, "%Y-%m-%d %H:%M:%S")
+
+            round_frequency_s = config_data.get('round-frequency-s', round_frequency_s)
+            k_alternatives = config_data.get('k-alternatives', k_alternatives)
+            out = config_data.get('out', out)
+            seed = config_data.get('seed', seed)
+            walltime_s = config_data.get('walltime-s', walltime_s)
+            saving_interval_s = config_data.get('saving-interval-s', saving_interval_s)
+            continue_from_config = config_data.get('continue-from', None)
+            if continue_from_config is not None:
+                continue_from = Path(continue_from)
+
     ctx.obj['DEBUG'] = debug
+    ctx.obj['config-file-path'] = config_file
+
     walltime = timedelta(seconds=walltime_s) if walltime_s is not None else None
     saving_interval = timedelta(seconds=saving_interval_s) if saving_interval_s is not None else None
     sim_state = Simulation.load(continue_from) if continue_from is not None else None
@@ -258,6 +284,7 @@ def rank_by_prob_delay(ctx,
             cluster.kill()
 
 
+@enum.unique
 class AlternativesImpl(str, enum.Enum):
     FASTEST_PATHS = "fastest-paths"
     SHORTEST_PATHS = "shortest-paths"
@@ -276,6 +303,7 @@ def create_alternatives_provider(alternatives: AlternativesImpl) -> Alternatives
         raise NotImplementedError
 
 
+@enum.unique
 class RouteSelectionImpl(str, enum.Enum):
     FIRST = "first"
     RANDOM = "random"
@@ -291,14 +319,35 @@ def create_route_selection_provider(route_selection: RouteSelectionImpl) -> Rout
 
 
 @single_node_simulator.command()
-@click.argument("vehicles_path", type=click.Path(exists=True))
+@click.option("--vehicles-path", type=click.Path(exists=True))
 @click.option("--alternatives", type=click.Choice(AlternativesImpl),
               default=AlternativesImpl.FASTEST_PATHS)
 @click.option("--route-selection", type=click.Choice(RouteSelectionImpl),
               default=RouteSelectionImpl.RANDOM)
 @click.pass_context
-def run(ctx, vehicles_path: Path, alternatives: AlternativesImpl,
+def run(ctx,
+        vehicles_path: Path,
+        alternatives: AlternativesImpl,
         route_selection: RouteSelectionImpl):
+
+    config_file = ctx.obj["config-file-path"]
+    if os.path.isfile(config_file):
+        with open(config_file) as f:
+            config_data = json.load(f)['run']
+            vehicles_path_config = config_data.get('vehicles-path', None)
+            if vehicles_path_config is not None:
+                vehicles_path = Path(vehicles_path_config)
+            alternatives_config = config_data.get('alternatives', None)
+            if alternatives_config is not None:
+                alternatives = AlternativesImpl[alternatives_config]
+            route_selection_config = config_data.get('route-selection', None)
+            if route_selection_config is not None:
+                route_selection = RouteSelectionImpl[route_selection_config]
+
+    if vehicles_path is None:
+        logging.error("Vehicle path has to be set.")
+        return 1
+
     common_args = ctx.obj["common-args"]
     out = common_args.out
     walltime = common_args.walltime
