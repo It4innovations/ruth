@@ -1,0 +1,15 @@
+{
+  "ruth-simulator":
+  {
+    "departure-time" :"2021-08-3 00:00:00",
+    "k-alternatives": 4,
+    "out" : "simulation_record.pickle",
+    "seed": 7,
+    "walltime-s" : 2000,
+    "saving-interval-s" : 100
+  },
+  "run" :
+  {
+      "vehicles-path": "benchmarks/prague/2K_15052023_2_whole_prague.parquet"
+  }
+}

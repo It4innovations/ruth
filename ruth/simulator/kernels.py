@@ -122,6 +122,7 @@ class RandomRouteSelection(RouteSelectionProvider):
 
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
         result = []
+        # plot_alternatives(route_possibilities)
         for (vehicle, routes) in route_possibilities:
             index = random.randrange(len(routes))
             result.append((vehicle, routes[index]))
