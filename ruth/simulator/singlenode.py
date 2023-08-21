@@ -52,6 +52,8 @@ class Simulator:
         alternatives_provider.load_map(self.sim.routing_map)
 
         step = self.sim.number_of_steps
+        segments_changed_speed = set()
+
         if self.sim.setting.speeds_path is not None:
             self.sim.routing_map.update_speeds_from_file(self.sim.setting.speeds_path)
         while self.current_offset is not None:
@@ -86,7 +88,6 @@ class Simulator:
                     vehicle.update_followup_route(route)
 
             with timer_set.get("advance_vehicle"):
-                segments_changed_speed = set()
                 for vehicle in vehicles_to_be_moved:
                     segments_changed_speed.add((vehicle.current_node, vehicle.next_node))
 
@@ -100,11 +101,13 @@ class Simulator:
                 self.sim.update(fcds)
 
             with timer_set.get("update_map_speeds"):
-                new_speeds = [self.sim.global_view.get_current_speed(node_from,
-                                                                     node_to,
-                                                                     self.sim.routing_map)
-                              for node_from, node_to in segments_changed_speed]
-                self.sim.routing_map.update_current_speeds(segments_changed_speed, new_speeds)
+                if step % 20 == 0:
+                    new_speeds = [self.sim.global_view.get_current_speed(node_from,
+                                                                         node_to,
+                                                                         self.sim.routing_map)
+                                  for node_from, node_to in segments_changed_speed]
+                    self.sim.routing_map.update_current_speeds(segments_changed_speed, new_speeds)
+                    segments_changed_speed = set()
 
             with timer_set.get("compute_offset"):
                 current_offset_new = self.sim.compute_current_offset()

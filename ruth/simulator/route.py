@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import List, Tuple
 
 from .queues import QueuesManager
-from .segment import Segment, SegmentPosition, SpeedKph
+from .segment import Segment, SegmentPosition, SpeedMps
 from .simulation import FCDRecord
 from ..losdb import GlobalViewDb
 from ..vehicle import Vehicle
@@ -17,7 +17,7 @@ def move_on_segment(
         segments: List[Segment],
         departure_time: datetime,
         level_of_service: float
-) -> Tuple[datetime, SegmentPosition, SpeedKph]:
+) -> Tuple[datetime, SegmentPosition, SpeedMps]:
     """
     Moves the car on its current segment.
     Returns (time, position, speed) at the end of the movement.
@@ -158,7 +158,7 @@ def advance_waiting_vehicle(vehicle: Vehicle, departure_time: datetime) -> List[
 
 
 def generate_fcds(start_time: datetime, end_time: datetime, start_segment_position: SegmentPosition,
-                  end_segment_position: SegmentPosition, speed: SpeedKph, vehicle: Vehicle,
+                  end_segment_position: SegmentPosition, speed: SpeedMps, vehicle: Vehicle,
                   driving_route: list[Segment]) -> List[FCDRecord]:
     fcds = []
 
