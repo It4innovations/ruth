@@ -52,6 +52,8 @@ class Simulator:
         alternatives_provider.load_map(self.sim.routing_map)
 
         step = self.sim.number_of_steps
+        if self.sim.setting.speeds_path is not None:
+            self.sim.routing_map.update_speeds_from_file(self.sim.setting.speeds_path)
         while self.current_offset is not None:
             step_start_dt = datetime.now()
             timer_set = TimerSet()

@@ -25,6 +25,7 @@ class CommonArgs:
     departure_time: datetime
     round_frequency: timedelta
     k_alternatives: int
+    speeds_path: str
     out: str
     seed: Optional[int] = None
     walltime: Optional[datetime] = None
@@ -36,12 +37,13 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimul
     departure_time = common_args.departure_time
     round_frequency = common_args.round_frequency
     k_alternatives = common_args.k_alternatives
+    speeds_path = common_args.speeds_path
     seed = common_args.seed
     sim_state = common_args.continue_from
 
     # TODO: solve the debug symbol
     if sim_state is None:
-        ss = SimSetting(departure_time, round_frequency, k_alternatives, seed)
+        ss = SimSetting(departure_time, round_frequency, k_alternatives, seed, speeds_path)
         vehicles = load_vehicles(vehicles_path)
         simulation = Simulation(vehicles, ss)
     else:
@@ -128,6 +130,7 @@ def start_zeromq_cluster(
               help="Rounding time frequency in seconds.")
 @click.option("--k-alternatives", type=int, default=1,
               help="Number of alternative routes.")
+@click.option("--speeds-path", type=click.Path(exists=True))
 @click.option("--out", type=str, default="out.pickle")
 @click.option("--seed", type=int, help="Fixed seed for random number generator.")
 @click.option("--walltime-s", type=int, help="Time limit in which the state of simulation is saved")
@@ -142,6 +145,7 @@ def single_node_simulator(ctx,
                           departure_time,
                           round_frequency_s,
                           k_alternatives,
+                          speeds_path,
                           out,
                           seed,
                           walltime_s,
@@ -163,13 +167,16 @@ def single_node_simulator(ctx,
 
             round_frequency_s = config_data.get('round-frequency-s', round_frequency_s)
             k_alternatives = config_data.get('k-alternatives', k_alternatives)
+            speeds_path_config = config_data.get('speeds-path', None)
+            if speeds_path_config is not None:
+                speeds_path = Path(speeds_path_config)
             out = config_data.get('out', out)
             seed = config_data.get('seed', seed)
             walltime_s = config_data.get('walltime-s', walltime_s)
             saving_interval_s = config_data.get('saving-interval-s', saving_interval_s)
             continue_from_config = config_data.get('continue-from', None)
             if continue_from_config is not None:
-                continue_from = Path(continue_from)
+                continue_from = Path(continue_from_config)
 
     ctx.obj['DEBUG'] = debug
     ctx.obj['config-file-path'] = config_file
@@ -182,6 +189,7 @@ def single_node_simulator(ctx,
                                         departure_time,
                                         timedelta(seconds=round_frequency_s),
                                         k_alternatives,
+                                        speeds_path,
                                         out,
                                         seed,
                                         walltime,
