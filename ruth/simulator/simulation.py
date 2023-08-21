@@ -56,6 +56,7 @@ class SimSetting:
     round_freq: timedelta
     k_alternatives: int = 1
     seed: InitVar = None
+    speeds_path: str = None
 
     def __post_init__(self, seed):
         if seed is not None:

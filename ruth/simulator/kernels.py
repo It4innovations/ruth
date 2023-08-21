@@ -2,6 +2,7 @@ from typing import List, Optional, Tuple
 import random
 
 import osmnx as ox
+from matplotlib import pyplot as plt
 from osmnx.plot import get_colors
 
 from .segment import Route
@@ -85,23 +86,36 @@ class RouteSelectionProvider:
         raise NotImplementedError
 
 
+def onclick(event, graph):
+    x, y = event.xdata, event.ydata
+    node = ox.nearest_nodes(graph, x, y, return_dist=False)
+    print(node)
+
+
 def plot_alternatives(route_possibilities):
     g = MapProvider.get_map()
+
+    # ec = ['blue' if (u == 25664661 and v == 27349583) else 'black' for u, v, k in g.edges(keys=True)]
+    # fig, ax = ox.plot_graph(g, node_color='w', node_edgecolor='k', node_size=2, bgcolor="white",
+    #                         node_zorder=3, edge_color=ec, edge_linewidth=0.5, show=False)
+
     for vehicle, routes in route_possibilities:
         colors = get_colors(len(routes), cmap="gist_rainbow", return_hex=True)
         print(len(routes))
         if not routes:
-            pass
+            return
         elif len(routes) == 1:
-            ox.plot_graph_route(g, routes[0], route_color=colors[0], bgcolor="white", edge_color="black",
-                                edge_linewidth=0.3)
+            fig, ax = ox.plot_graph_route(g, routes[0], route_color=colors[0], bgcolor="white", edge_color="black",
+                                          edge_linewidth=0.3, show=False, close=False)
         else:
-            ox.plot_graph_routes(g, routes, route_colors=colors, route_linewidth=4, node_size=0,
-                                 bgcolor="white", edge_color="black", edge_linewidth=0.3)
+            fig, ax = ox.plot_graph_routes(g, routes, route_colors=colors, route_linewidth=0.5, node_size=0,
+                                           node_color='black', bgcolor="white", edge_color="black", edge_linewidth=0.3,
+                                           show=False, close=False)
+        cid = fig.canvas.mpl_connect('button_press_event', lambda e: onclick(e, g))
+        plt.show()
 
 
 class FirstRouteSelection(RouteSelectionProvider):
-
     """
     Selects the first route for each car.
     """

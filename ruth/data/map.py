@@ -1,4 +1,5 @@
 """Routing map module."""
+import csv
 import itertools
 import os
 import pickle
@@ -217,6 +218,15 @@ class Map(metaclass=Singleton):
         if self.network is not None:
             save_graphml(self.network, self.file_path)
             cl.info(f"{self.name}'s map saved in {self.file_path}")
+
+    def update_speeds_from_file(self, speeds_path):
+        speeds = {}
+        with open(speeds_path, newline='') as f:
+            reader = csv.reader(f, delimiter=';')
+            next(reader, None)
+            for row in reader:
+                speeds[(row[0], row[1])] = row[2]
+        nx.set_edge_attributes(self.simple_network, values=speeds, name="speed_kph")
 
 
 def admin_level_to_road_filter(admin_level):  # TODO: where to put it?
