@@ -22,7 +22,7 @@ def segment_weight(n1, n2, data):
 
 
 def segment_weight_speed(n1, n2, data):
-    return float(data['current_speed'])
+    return float(data['current_travel_time'])
 
 
 def save(G, fname):
@@ -90,13 +90,22 @@ class Map(metaclass=Singleton):
 
     def init_current_speeds(self):
         speeds = nx.get_edge_attributes(self.network, name='speed_kph')
+        lengths = nx.get_edge_attributes(self.network, name='length')
+        travel_times = {}
+        for key, value in speeds.items():
+            travel_times[key] = float(lengths[key]) / float(value)
         nx.set_edge_attributes(self.network, values=speeds, name="current_speed")
+        nx.set_edge_attributes(self.network, values=travel_times, name="current_travel_time")
 
     def update_current_speeds(self, segment_ids, speeds):
-        values = {}
+        new_speeds = {}
+        new_travel_times = {}
+        lengths = nx.get_edge_attributes(self.simple_network, name='length')
         for (node_from, node_to), speed in zip(segment_ids, speeds):
-            values[(node_from, node_to)] = speed
-        nx.set_edge_attributes(self.simple_network, values=values, name='current_speed')
+            new_speeds[(node_from, node_to)] = speed
+            new_travel_times[(node_from, node_to)] = float(lengths[(node_from, node_to)]) / float(speed)
+        nx.set_edge_attributes(self.simple_network, values=new_speeds, name='current_speed')
+        nx.set_edge_attributes(self.simple_network, values=new_travel_times, name='current_travel_time')
 
     def get_segment_max_speed(self, node_from, node_to):
         return self.simple_network[node_from][node_to]['speed_kph']
@@ -220,13 +229,18 @@ class Map(metaclass=Singleton):
             cl.info(f"{self.name}'s map saved in {self.file_path}")
 
     def update_speeds_from_file(self, speeds_path):
+        lengths = nx.get_edge_attributes(self.simple_network, name='length')
         speeds = {}
+        travel_times = {}
         with open(speeds_path, newline='') as f:
             reader = csv.reader(f, delimiter=';')
             next(reader, None)
             for row in reader:
-                speeds[(row[0], row[1])] = row[2]
+                node_from, node_to, speed = row
+                speeds[(node_from, node_to)] = speed
+                travel_times[(node_from, node_to)] = float(lengths[(node_from, node_to)]) / float(speed)
         nx.set_edge_attributes(self.simple_network, values=speeds, name="speed_kph")
+        nx.set_edge_attributes(self.simple_network, values=travel_times, name="current_travel_time")
 
 
 def admin_level_to_road_filter(admin_level):  # TODO: where to put it?
