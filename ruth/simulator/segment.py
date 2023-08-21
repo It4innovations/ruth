@@ -2,6 +2,7 @@ import dataclasses
 from typing import List
 
 SpeedKph = float
+SpeedMps = float
 LengthMeters = float
 
 Route = List[int]
