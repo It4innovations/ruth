@@ -1,0 +1,6 @@
+flowmapviz @ git+https://code.it4i.cz/intern/trafficflowmap/flowmapviz.git@github_merge
+
+click
+osmnx
+fastparquet
+tqdm
