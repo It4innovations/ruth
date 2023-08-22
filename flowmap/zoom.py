@@ -1,7 +1,7 @@
 from matplotlib import pyplot as plt
 
-from flowmapviz.zoom import plot_graph_with_zoom
-from flowmapviz.plot import plot_routes
+from .flowmapframe.zoom import plot_graph_with_zoom
+from .flowmapframe.speeds import plot_routes
 from flowmap.ax_settings import AxSettings
 
 

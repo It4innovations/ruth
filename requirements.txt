@@ -1,6 +1,10 @@
-flowmapviz @ git+https://code.it4i.cz/intern/trafficflowmap/flowmapviz.git@github_merge
-
-click
+matplotlib
 osmnx
+numpy
+shapely
+pandas
+networkx
+setuptools
+click
 fastparquet
 tqdm

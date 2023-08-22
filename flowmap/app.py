@@ -1,7 +1,7 @@
 import click
 
 from ruth.simulator import Simulation
-from flowmapviz.plot import WidthStyle
+from .flowmapframe.plot import WidthStyle
 
 from flowmap.time_unit import TimeUnit
 from flowmap.animation import SimulationDensitiesAnimator, SimulationSpeedsAnimator
@@ -122,5 +122,4 @@ def main():
 
 
 if __name__ == '__main__':
-    pathlib.PosixPath = pathlib.WindowsPath
     main()

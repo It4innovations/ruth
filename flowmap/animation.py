@@ -11,10 +11,10 @@ from shapely import LineString
 from tqdm import tqdm
 from collections import defaultdict
 
-from flowmapviz.zoom import plot_graph_with_zoom
-from flowmapviz.plot import get_node_coordinates, WidthStyle
-from flowmapviz.speeds import plot_routes as plot_routes_speeds
-from flowmapviz.plot import plot_routes as plot_routes_densities
+from .flowmapframe.zoom import plot_graph_with_zoom
+from .flowmapframe.plot import get_node_coordinates, WidthStyle
+from .flowmapframe.speeds import plot_routes as plot_routes_speeds
+from .flowmapframe.plot import plot_routes as plot_routes_densities
 
 from ruth.utils import TimerSet
 from ruth.simulator import Simulation
