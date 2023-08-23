@@ -4,7 +4,7 @@ from ruth.simulator import Simulation
 from .flowmapframe.plot import WidthStyle
 
 from flowmap.time_unit import TimeUnit
-from flowmap.animation import SimulationDensitiesAnimator, SimulationSpeedsAnimator
+from flowmap.animation import SimulationVolumeAnimator, SimulationSpeedsAnimator
 from flowmap.info import SimulationInfo, get_real_time
 
 
@@ -56,8 +56,8 @@ def click_animation_common(function):
     default='BOXED',
     help="Choose style of width plotting"
 )
-def generate_densities_animation(**kwargs):
-    simulation_animator = SimulationDensitiesAnimator(**kwargs)
+def generate_volume_animation(**kwargs):
+    simulation_animator = SimulationVolumeAnimator(**kwargs)
     simulation_animator.run()
 
 

@@ -24,12 +24,12 @@ class NodeInTime(metaclass=Singleton):
 
 @dataclass
 class SegmentInTime(metaclass=Singleton):
-    length: InitVar[float]
     node_from: NodeInTime = field(init=False)
     node_to: NodeInTime = field(init=False)
 
     node_from_: InitVar[NodeId]
     node_to_: InitVar[NodeId]
+    length: InitVar[float]
     timestamp: InitVar[int]
     divide: InitVar[int] = field(default=2)
 

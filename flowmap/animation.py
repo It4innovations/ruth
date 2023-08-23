@@ -124,7 +124,7 @@ class SimulationAnimator(ABC):
             fontsize=25
         )
 
-        self.ax_density = self.ax_map.twinx()
+        self.ax_traffic = self.ax_map.twinx()
         self.ax_map_settings = AxSettings(self.ax_map)
 
     def _create_animation(self):
@@ -147,9 +147,9 @@ class SimulationAnimator(ABC):
             nonlocal car_coordinates, progress_bar
             if progress_bar is None:
                 progress_bar = tqdm(total=self.num_of_frames, desc='Creating animation', unit='frame', leave=True)
-            self.ax_density.clear()
-            self.ax_map_settings.apply(self.ax_density)
-            self.ax_density.axis('off')
+            self.ax_traffic.clear()
+            self.ax_map_settings.apply(self.ax_traffic)
+            self.ax_traffic.axis('off')
 
             timestamp = self.timestamp_from + i
             if i % 5 * 60 == 0:
@@ -170,7 +170,7 @@ class SimulationAnimator(ABC):
                 alphas = [1, 0.75, 0.5]
                 car_coordinates.append((xp, yp))
                 for coords, alpha in zip(reversed(car_coordinates), alphas):
-                    self.ax_density.scatter(coords[0], coords[1], facecolors='none', edgecolors='black', alpha=alpha)
+                    self.ax_traffic.scatter(coords[0], coords[1], facecolors='none', edgecolors='black', alpha=alpha)
 
             progress_bar.update(1)
             if i == self.num_of_frames - 1:
@@ -193,7 +193,7 @@ class SimulationAnimator(ABC):
         return point.x, point.y
 
 
-class SimulationDensitiesAnimator(SimulationAnimator):
+class SimulationVolumeAnimator(SimulationAnimator):
     def __init__(self, simulation_path, fps, save_path, frame_start, frames_len, width_style,
                  width_modif, title, speed, divide, max_width_count, plot_cars, zoom):
         super().__init__(
@@ -216,14 +216,14 @@ class SimulationDensitiesAnimator(SimulationAnimator):
         segments = self.timed_seg_dict[timestamp]
         nodes_from = [seg.node_from.id for seg in segments]
         nodes_to = [seg.node_to.id for seg in segments]
-        densities = [seg.counts for seg in segments]
+        vehicle_counts = [seg.counts for seg in segments]
 
         plot_routes_densities(
             self.g,
-            ax=self.ax_density,
+            ax=self.ax_traffic,
             nodes_from=nodes_from,
             nodes_to=nodes_to,
-            densities=densities,
+            densities=vehicle_counts,
             max_width_density=self.max_width_count,
             width_modifier=self.width_modif,
             width_style=self.width_style
@@ -239,15 +239,15 @@ class SimulationSpeedsAnimator(SimulationAnimator):
         segments = self.timed_seg_dict[timestamp]
         nodes_from = [seg.node_from.id for seg in segments]
         nodes_to = [seg.node_to.id for seg in segments]
-        densities = [seg.counts for seg in segments]
+        vehicle_counts = [seg.counts for seg in segments]
         speeds = [seg.speeds for seg in segments]
 
         plot_routes_speeds(
             self.g,
-            ax=self.ax_density,
+            ax=self.ax_traffic,
             nodes_from=nodes_from,
             nodes_to=nodes_to,
-            densities=densities,
+            densities=vehicle_counts,
             speeds=speeds,
             max_width_density=self.max_width_count,
             width_modifier=self.width_modif
