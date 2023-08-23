@@ -1,7 +1,7 @@
 import click
 
 from ruth.simulator import Simulation
-from .flowmapframe.plot import WidthStyle
+from flowmap.flowmapframe.plot import WidthStyle
 
 from flowmap.time_unit import TimeUnit
 from flowmap.animation import SimulationVolumeAnimator, SimulationSpeedsAnimator
