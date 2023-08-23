@@ -56,12 +56,12 @@ class SimulationAnimator(ABC):
             self._preprocess_data()
             logging.info('Data preprocessed.')
 
+        self._set_ax_settings_if_zoom()
+
         with self.ts.get("base map preparing"):
             logging.info('Preparing base map...')
             self._prepare_base_map()
             logging.info('Base map prepared.')
-
-        self._set_ax_settings_if_zoom()
 
         with self.ts.get("create animation"):
             logging.info('Creating animation...')
