@@ -67,23 +67,24 @@ class Simulator:
                                         if self.sim.is_vehicle_within_offset(v, offset)]
 
             with timer_set.get("alternatives"):
+                need_new_route = [vehicle for vehicle in vehicles_to_be_moved if vehicle.is_at_the_end_of_segment()]
                 alts = alternatives_provider.compute_alternatives(
                     self.sim.routing_map,
-                    vehicles_to_be_moved,
+                    need_new_route,
                     k=self.sim.setting.k_alternatives
                 )
-                assert len(alts) == len(vehicles_to_be_moved)
+                assert len(alts) == len(need_new_route)
 
             # Find which vehicles should have their routes recomputed
             with timer_set.get("collect"):
-                need_new_route = []
-                for v, alt in zip(vehicles_to_be_moved, alts):
+                new_vehicle_routes = []
+                for v, alt in zip(need_new_route, alts):
                     if alt is not None and alt != []:
-                        need_new_route.append((v, alt))
+                        new_vehicle_routes.append((v, alt))
 
             with timer_set.get("selected_routes"):
-                selected_plans = route_selection_provider.select_routes(need_new_route)
-                assert len(selected_plans) == len(need_new_route)
+                selected_plans = route_selection_provider.select_routes(new_vehicle_routes)
+                assert len(selected_plans) == len(new_vehicle_routes)
                 for (vehicle, route) in selected_plans:
                     vehicle.update_followup_route(route)
 
