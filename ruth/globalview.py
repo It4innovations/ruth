@@ -102,7 +102,7 @@ class GlobalView:
             speeds.append(speed)
         if len(speeds) == 0:
             return routing_map.get_segment_max_speed(node_from, node_to)
-        return sum(speeds) / len(speeds)
+        return (sum(speeds) / len(speeds)) * 3.6
 
     def to_dataframe(self):  # todo: maybe process in chunks
         columns = [
