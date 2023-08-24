@@ -11,8 +11,6 @@
   },
   "run" :
   {
-    "vehicles-path": "benchmarks/prague/2K_15052023_2_whole_prague.parquet",
-    "alternatives" :  "fastest-paths",
-    "route-selection" : "random"
+    "vehicles-path": "benchmarks/prague/2K_15052023_2_whole_prague.parquet"
   }
 }
