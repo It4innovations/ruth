@@ -33,7 +33,7 @@ class GlobalView:
 
         vehicles = set()
         for (dt, current_vehicle_id, offset, _) in self.by_segment.get(segment_id, []):
-            if datetime - tolerance <= dt <= datetime + tolerance:
+            if dt <= datetime + tolerance:
                 if current_vehicle_id != vehicle_id and offset > vehicle_offset_m:
                     vehicles.add(current_vehicle_id)
         return len(vehicles)
@@ -52,7 +52,7 @@ class GlobalView:
         n_vehicles = self.number_of_vehicles_in_time_at_segment(datetime, segment.id, tolerance,
                                                                 vehicle_id, vehicle_offset_m)
 
-        ending_length = 100
+        ending_length = 200
         rest_segment_length = segment.length - vehicle_offset_m
         # rescale density
         if rest_segment_length < ending_length:
@@ -83,8 +83,16 @@ class GlobalView:
 
         n_vehicles = self.number_of_vehicles_in_time_at_segment(datetime, segment.id, tolerance)
 
+        ending_length = 200
+        rest_segment_length = segment.length
         # rescale density
-        n_vehicles_per_mile = n_vehicles * mile / segment.length
+        if rest_segment_length < ending_length:
+            n_vehicles_per_mile = n_vehicles * mile / ending_length
+        else:
+            n_vehicles_per_mile = n_vehicles * mile / rest_segment_length
+
+        # rescale density
+        # n_vehicles_per_mile = n_vehicles * mile / segment.length
 
         los = float("inf")  # in case the vehicles are stuck in traffic jam
         for (low, high), (m, n) in ranges:

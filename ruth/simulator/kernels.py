@@ -105,8 +105,9 @@ def plot_alternatives(route_possibilities):
         if not routes:
             return
         elif len(routes) == 1:
-            fig, ax = ox.plot_graph_route(g, routes[0], route_color=colors[0], bgcolor="white", edge_color="black",
-                                          edge_linewidth=0.3, show=False, close=False)
+            fig, ax = ox.plot_graph_route(g, routes[0], route_color=colors[0], node_size=0,
+                                          node_color='black', bgcolor="white", edge_color="black", edge_linewidth=0.3,
+                                          show=False, close=False)
         else:
             fig, ax = ox.plot_graph_routes(g, routes, route_colors=colors, route_linewidth=0.5, node_size=0,
                                            node_color='black', bgcolor="white", edge_color="black", edge_linewidth=0.3,

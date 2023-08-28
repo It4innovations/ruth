@@ -56,6 +56,8 @@ class SimSetting:
     departure_time: datetime
     round_freq: timedelta
     k_alternatives: int = 1
+    map_update_freq_steps: int = 1
+    count_vehicles_tolerance: timedelta = timedelta(seconds=0)
     seed: InitVar = None
     speeds_path: str = None
 
@@ -157,6 +159,35 @@ class Simulation:
 
     def finished(self):
         return all(not v.active for v in self.vehicles)
+
+    def print_car_stats(self):
+        done = 0
+        total = 0
+        not_started = 0
+        active = 0
+        finished = 0
+        other = 0
+        for v in self.vehicles:
+            if (not v. active and v.start_index == 0) or v.osm_route is None:
+                not_started += 1
+            elif v.active:
+                active += 1
+                done += v.start_index
+                total += len(v.osm_route)
+            elif v.next_node is None or v.next_node == v.dest_node:
+                finished += 1
+                done += v.start_index
+                total += len(v.osm_route)
+            else:
+                other += 1
+
+        print(f'done segments: {done}/{total} -> {round(done*100/total, 2)}%')
+        print(f'cars not started: {not_started}')
+        all_cars = active + finished
+        print(f'cars active: {active}/{all_cars} -> {round(active*100/all_cars, 2)}%')
+        print(f'cars finished: {finished}/{all_cars} -> {round(finished*100/all_cars, 2)}%')
+        print(f'cars weird: {other}')
+        return
 
     def store(self, path):
         with open(path, 'wb') as f:
