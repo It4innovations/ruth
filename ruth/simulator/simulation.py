@@ -6,6 +6,7 @@ from typing import Dict, List
 
 import pandas as pd
 
+from .queues import QueuesManager
 from ..globalview import GlobalView
 from ..losdb import GlobalViewDb
 from ..utils import round_timedelta
@@ -84,6 +85,7 @@ class Simulation:
         self.setting = setting
         self.steps_info = []
         self.duration = timedelta(seconds=0)
+        self.queues_manager = QueuesManager()
 
     def __getstate__(self):
         routing_map = self.routing_map

@@ -71,11 +71,14 @@ def store_simulation_at_interval(saving_interval: Optional[timedelta], name: str
 
     def store(simulation: Simulation):
         nonlocal last_saved
-        """Store the state of the simulation at walltime."""
+        """Store the state of the simulation at interval."""
         now = datetime.now()
         if saving_interval is not None and (now - last_saved) >= saving_interval:
-            simulation.store(f"{name}-interval.pickle")
+            simulation.store(f"{name}-interval-temp.pickle")
             last_saved = now
+            if os.path.isfile(f"{name}-interval.pickle"):
+                os.remove(f"{name}-interval.pickle")
+            os.rename(f"{name}-interval-temp.pickle", f"{name}-interval.pickle")
 
     return store
 
@@ -347,10 +350,10 @@ def run(ctx,
                 vehicles_path = Path(vehicles_path_config)
             alternatives_config = config_data.get('alternatives', None)
             if alternatives_config is not None:
-                alternatives = AlternativesImpl[alternatives_config]
+                alternatives = AlternativesImpl(alternatives_config)
             route_selection_config = config_data.get('route-selection', None)
             if route_selection_config is not None:
-                route_selection = RouteSelectionImpl[route_selection_config]
+                route_selection = RouteSelectionImpl(route_selection_config)
 
     if vehicles_path is None:
         logging.error("Vehicle path has to be set.")

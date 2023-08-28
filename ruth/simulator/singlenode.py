@@ -142,4 +142,4 @@ class Simulator:
         for vehicle in vehicles:
             assert vehicle.is_active(current_offset, self.sim.setting.round_freq)
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
-                                            GlobalViewDb(self.sim.global_view))
+                                            GlobalViewDb(self.sim.global_view), self.sim.queues_manager)

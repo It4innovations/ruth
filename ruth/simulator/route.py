@@ -80,7 +80,7 @@ def move_on_segment(
 
 
 def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
-                    gv_db: GlobalViewDb) -> List[FCDRecord]:
+                    gv_db: GlobalViewDb, queues_manager: QueuesManager = None) -> List[FCDRecord]:
     """Advance a vehicle on a route."""
 
     current_time = departure_time + vehicle.time_offset
@@ -128,13 +128,15 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
         # stop the processing in case the vehicle reached the end
         vehicle.active = False
 
-    elif vehicle.segment_position.position == segment.length:
-        QueuesManager.add_to_queue(vehicle)
+    elif queues_manager is not None and vehicle.segment_position.position == segment.length:
+        queues_manager.add_to_queue(vehicle)
 
     segment_old = driving_route[segment_pos_old.index]
-    if segment_pos_old.position == segment_old.length and segment_pos_old.index != vehicle.segment_position.index:
+    if (queues_manager is not None
+            and segment_pos_old.position == segment_old.length
+            and segment_pos_old.index != vehicle.segment_position.index):
         node_from, node_to = vehicle.osm_route[segment_pos_old.index], vehicle.osm_route[segment_pos_old.index + 1]
-        QueuesManager.remove_vehicle(vehicle, node_from, node_to)
+        queues_manager.remove_vehicle(vehicle, node_from, node_to)
 
     return fcds
 
@@ -201,7 +203,8 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
     return fcds
 
 
-def advance_vehicles_with_queues(vehicles_to_be_moved: [Vehicle], departure_time: datetime, gv_db: GlobalViewDb) -> List[FCDRecord]:
+def advance_vehicles_with_queues(vehicles_to_be_moved: list[Vehicle], departure_time: datetime,
+                                 gv_db: GlobalViewDb, queues_manager: QueuesManager) -> List[FCDRecord]:
     fcds = []
     vehicles_undecided = []
     vehicles_stopped = []
@@ -210,16 +213,18 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: [Vehicle], departure_time
         # while there still are vehicles to be processed
         current_vehicle_list = vehicles_to_be_moved if len(vehicles_to_be_moved) > 0 else vehicles_undecided
         vehicle = current_vehicle_list[0]
-        queue = QueuesManager.queues[(vehicle.current_node, vehicle.next_node)]
+        queue = queues_manager.queues[(vehicle.current_node, vehicle.next_node)]
+        while len(queue) != 0 and queue[0].is_active:
+            queues_manager.remove_vehicle(queue[0], vehicle.current_node, vehicle.next_node)
 
         if vehicle not in queue:
             current_vehicle_list.remove(vehicle)
-            new_fcds = advance_vehicle(vehicle, departure_time, gv_db)
+            new_fcds = advance_vehicle(vehicle, departure_time, gv_db, queues_manager)
             fcds.extend(new_fcds)
         elif vehicle == queue[0]:
             # vehicle is the first one in the queue
             current_vehicle_list.remove(vehicle)
-            new_fcds = advance_vehicle(vehicle, departure_time, gv_db)
+            new_fcds = advance_vehicle(vehicle, departure_time, gv_db, queues_manager)
             fcds.extend(new_fcds)
             was_moved = len(queue) == 0 or (vehicle != queue[0])
             if not was_moved:
@@ -230,8 +235,8 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: [Vehicle], departure_time
             for i in range(queue.index(vehicle)):
                 vehicle_in_front = queue[i]
                 if (vehicle_in_front in vehicles_stopped or
-                    (vehicle_in_front not in vehicles_to_be_moved and
-                     vehicle_in_front not in vehicles_undecided)):
+                        (vehicle_in_front not in vehicles_to_be_moved and
+                         vehicle_in_front not in vehicles_undecided)):
                     # if there is any vehicle in the front that is not moving this round
                     will_be_moved = False
                     current_vehicle_list.remove(vehicle)
