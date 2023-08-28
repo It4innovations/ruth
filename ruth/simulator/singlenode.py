@@ -102,7 +102,7 @@ class Simulator:
                 self.sim.update(fcds)
 
             with timer_set.get("update_map_speeds"):
-                if step % 20 == 0:
+                if step % self.sim.setting.map_update_freq_steps == 0:
                     new_speeds = [self.sim.global_view.get_current_speed(node_from,
                                                                          node_to,
                                                                          self.sim.routing_map)
@@ -142,4 +142,5 @@ class Simulator:
         for vehicle in vehicles:
             assert vehicle.is_active(current_offset, self.sim.setting.round_freq)
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
-                                            GlobalViewDb(self.sim.global_view), self.sim.queues_manager)
+                                            GlobalViewDb(self.sim.global_view), self.sim.queues_manager,
+                                            self.sim.setting.count_vehicles_tolerance)

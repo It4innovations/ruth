@@ -25,6 +25,8 @@ class CommonArgs:
     departure_time: datetime
     round_frequency: timedelta
     k_alternatives: int
+    map_update_freq_steps: int
+    count_vehicles_tolerance: timedelta
     speeds_path: str
     out: str
     seed: Optional[int] = None
@@ -37,13 +39,16 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimul
     departure_time = common_args.departure_time
     round_frequency = common_args.round_frequency
     k_alternatives = common_args.k_alternatives
+    map_update_freq_steps = common_args.map_update_freq_steps
+    count_vehicles_tolerance = common_args.count_vehicles_tolerance
     speeds_path = common_args.speeds_path
     seed = common_args.seed
     sim_state = common_args.continue_from
 
     # TODO: solve the debug symbol
     if sim_state is None:
-        ss = SimSetting(departure_time, round_frequency, k_alternatives, seed, speeds_path)
+        ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq_steps, count_vehicles_tolerance,
+                        seed, speeds_path)
         vehicles = load_vehicles(vehicles_path)
         simulation = Simulation(vehicles, ss)
     else:
@@ -133,6 +138,10 @@ def start_zeromq_cluster(
               help="Rounding time frequency in seconds.")
 @click.option("--k-alternatives", type=int, default=1,
               help="Number of alternative routes.")
+@click.option("--map-update-freq-steps", type=int, default=1,
+              help="Step frequency of changing the map with current speeds.")
+@click.option("--count-vehicles-tolerance", type=int, default=1,
+              help="Time tolerance in seconds for counting cars on a segment for LoS.")
 @click.option("--speeds-path", type=click.Path(exists=True))
 @click.option("--out", type=str, default="out.pickle")
 @click.option("--seed", type=int, help="Fixed seed for random number generator.")
@@ -148,6 +157,8 @@ def single_node_simulator(ctx,
                           departure_time,
                           round_frequency_s,
                           k_alternatives,
+                          map_update_freq_steps,
+                          count_vehicles_tolerance,
                           speeds_path,
                           out,
                           seed,
@@ -170,6 +181,8 @@ def single_node_simulator(ctx,
 
             round_frequency_s = config_data.get('round-frequency-s', round_frequency_s)
             k_alternatives = config_data.get('k-alternatives', k_alternatives)
+            map_update_freq_steps = config_data.get('map-update-freq-steps', map_update_freq_steps)
+            count_vehicles_tolerance = config_data.get('count-vehicles-tolerance', count_vehicles_tolerance)
             speeds_path_config = config_data.get('speeds-path', None)
             if speeds_path_config is not None:
                 speeds_path = Path(speeds_path_config)
@@ -192,6 +205,8 @@ def single_node_simulator(ctx,
                                         departure_time,
                                         timedelta(seconds=round_frequency_s),
                                         k_alternatives,
+                                        map_update_freq_steps,
+                                        timedelta(seconds=count_vehicles_tolerance),
                                         speeds_path,
                                         out,
                                         seed,

@@ -3,7 +3,9 @@
   {
     "departure-time" :"2021-08-3 00:00:00",
     "round-frequency-s" : 5,
-    "k-alternatives": 4,
+    "k-alternatives": 1,
+    "map-update-freq-steps" : 1,
+    "count-vehicles-tolerance" : 5,
     "out" : "simulation_record.pickle",
     "seed": 7,
     "walltime-s" : 2000,
@@ -11,6 +13,8 @@
   },
   "run" :
   {
-    "vehicles-path": "benchmarks/prague/2K_15052023_2_whole_prague.parquet"
+    "vehicles-path": "benchmarks/prague/2K_15052023_2_whole_prague.parquet",
+    "alternatives": "fastest-paths",
+    "route-selection": "first"
   }
 }
