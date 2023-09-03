@@ -150,6 +150,6 @@ def calculate_equidistant_coords(x, y, distances):
                 x_eq[i], x_eq2[i] = x_eq2[i], x_eq[i]
                 y_eq[i], y_eq2[i] = y_eq2[i], y_eq[i]
         except RuntimeWarning:
-            print("warning lol")
+            pass
 
     return x_eq, y_eq, x_eq2, y_eq2
