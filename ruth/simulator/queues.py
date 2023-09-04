@@ -1,5 +1,5 @@
 from collections import defaultdict, deque
-from ruth.vehicle import Vehicle
+from ..vehicle import Vehicle
 
 
 class QueuesManager:
