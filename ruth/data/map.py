@@ -8,8 +8,6 @@ from typing import List
 
 import networkx as nx
 import osmnx as ox
-from matplotlib import pyplot as plt
-from matplotlib.colors import BoundaryNorm, ListedColormap
 from osmnx import graph_from_place, load_graphml, save_graphml
 from networkx.exception import NetworkXNoPath
 
@@ -35,18 +33,6 @@ def get_osm_segment_id(node_from: int, node_to: int):
     return f"OSM{node_from}T{node_to}"
 
 
-class MapProvider(metaclass=Singleton):
-    g = None
-
-    @staticmethod
-    def set_map(new_g):
-        MapProvider.g = new_g
-
-    @staticmethod
-    def get_map():
-        return MapProvider.g
-
-
 class Map(metaclass=Singleton):
     """Routing map."""
 
@@ -70,7 +56,6 @@ class Map(metaclass=Singleton):
         self.osm_to_hdf_map_ids = self.to_hdf5(self.hdf5_file_path)
         self.hdf_to_osm_map_ids = {v: k for (k, v) in self.osm_to_hdf_map_ids.items()}
         assert len(self.osm_to_hdf_map_ids) == len(self.hdf_to_osm_map_ids)
-        MapProvider().set_map(self.network)
 
     @staticmethod
     def from_memory(pickle_state):
@@ -250,30 +235,6 @@ class Map(metaclass=Singleton):
         nx.set_edge_attributes(self.simple_network, values=new_speeds, name='speed_kph')
         nx.set_edge_attributes(self.simple_network, values=new_speeds, name='current_speed')
         nx.set_edge_attributes(self.simple_network, values=new_travel_times, name='current_travel_time')
-
-    def plot_map_for_debug(self, name):
-        # only used for debug purposes
-
-        g = nx.MultiDiGraph(self.simple_network)
-
-        speeds_thresholds = [0, 20, 40, 60]
-        cmap = ListedColormap(['red', 'orange', 'green'])
-
-        # norm = plt.Normalize(vmin=0, vmax=60)
-        norm = BoundaryNorm(speeds_thresholds, cmap.N)
-        ec = []
-        for u, v, key, data in g.edges(keys=True, data=True):
-            e = cmap(norm(data['current_speed']))
-            ec.append(e)
-
-        fig, ax = ox.plot_graph(g, node_size=0, edge_color=ec, edge_linewidth=1, bgcolor="white", show=False,
-                                close=False)
-        size = fig.get_size_inches()
-        new_size = 20
-        size[1] = size[1] * new_size / size[0]
-        size[0] = new_size
-        fig.set_size_inches(size)
-        plt.savefig(name)
 
 
 def admin_level_to_road_filter(admin_level):  # TODO: where to put it?
