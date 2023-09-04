@@ -95,7 +95,7 @@ class RandomRouteSelection(RouteSelectionProvider):
 
     def __init__(self):
         # TODO: add seed from config
-        random.seed(1)
+        self.generator = random.Random(1)
 
     """
     Selects random route for each car.
@@ -104,6 +104,6 @@ class RandomRouteSelection(RouteSelectionProvider):
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
         result = []
         for (vehicle, routes) in route_possibilities:
-            index = random.randrange(len(routes))
-            result.append((vehicle, routes[index]))
+            route = self.generator.choice(routes)
+            result.append((vehicle, route))
         return result
