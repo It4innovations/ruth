@@ -107,17 +107,19 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
     segment = driving_route[segment_pos.index]
 
     # fill in and out of the queues
-    if vehicle.next_node == vehicle.dest_node and vehicle.segment_position.position == segment.length:
+    if vehicle.next_node == vehicle.dest_node and vehicle.start_distance_offset == segment.length:
         # stop the processing in case the vehicle reached the end
         vehicle.active = False
 
-    elif queues_manager is not None and vehicle.segment_position.position == segment.length:
+    elif queues_manager is not None and vehicle.start_distance_offset == segment.length:
+        # if the vehicle is at the end of the segment, add it to the queue
         queues_manager.add_to_queue(vehicle)
 
     segment_old = driving_route[segment_pos_old.index]
     if (queues_manager is not None
             and segment_pos_old.position == segment_old.length
             and segment_pos_old.index != vehicle.segment_position.index):
+        # remove vehicle from outdated queue if it changed segment
         node_from, node_to = vehicle.osm_route[segment_pos_old.index], vehicle.osm_route[segment_pos_old.index + 1]
         queues_manager.remove_vehicle(vehicle, node_from, node_to)
 
