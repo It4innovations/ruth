@@ -13,7 +13,5 @@ class QueuesManager:
     def remove_vehicle(self, vehicle: Vehicle, node_from, node_to):
         queue = self.queues[(node_from, node_to)]
         if len(queue) != 0:
-            check = queue[0]
-            if check == vehicle:
-                popped_vehicle = queue.popleft()
-                # assert popped_vehicle == vehicle
+            popped_vehicle = queue.popleft()
+            assert popped_vehicle == vehicle
