@@ -14,9 +14,10 @@ logger = logging.getLogger(__name__)
 
 def move_on_segment(
         vehicle: Vehicle,
-        segments: List[Segment],
-        departure_time: datetime,
-        level_of_service: float
+        driving_route: List[Segment],
+        current_time: datetime,
+        gv_db: GlobalViewDb,
+        count_vehicles_tolerance: timedelta = timedelta(seconds=0)
 ) -> Tuple[datetime, SegmentPosition, SpeedMps]:
     """
     Moves the car on its current segment.
@@ -24,24 +25,32 @@ def move_on_segment(
     """
     segment_position = vehicle.segment_position
     start_position = segment_position.position
-    current_segment = segments[segment_position.index]
+    current_segment = driving_route[segment_position.index]
     assert segment_position.position <= current_segment.length
 
-    if start_position == current_segment.length:
-        start_position = 0.0
-        segment_position = SegmentPosition(segment_position.index + 1, start_position)
-        current_segment = segments[segment_position.index]
+    if vehicle.segment_position.index < len(driving_route):
+        if start_position == current_segment.length:
+            # if the car is at the end of a segment, we want to work with the next segment
+            start_position = 0.0
+            segment_position = SegmentPosition(segment_position.index + 1, start_position)
+            current_segment = driving_route[segment_position.index]
+
+        level_of_service = gv_db.gv.level_of_service_for_car(current_time, current_segment, vehicle.id,
+                                                             start_position, count_vehicles_tolerance)
+    else:
+        # the end of the driving route
+        level_of_service = 1.0
 
     # if car is stuck in traffic jam, it will not move and its speed will be 0
     if level_of_service == float("inf"):
         # in case the vehicle is stuck in traffic jam just move the time
-        return departure_time + vehicle.frequency, vehicle.segment_position, 0.0
+        return current_time + vehicle.frequency, vehicle.segment_position, 0.0
 
     # Speed in m/s
     speed_mps = (current_segment.max_allowed_speed_kph * level_of_service) * (1000 / 3600)
     if math.isclose(speed_mps, 0.0):
         # in case the vehicle is not moving, move the time and keep the previous position
-        return departure_time + vehicle.frequency, vehicle.segment_position, 0.0
+        return current_time + vehicle.frequency, vehicle.segment_position, 0.0
 
     frequency_s = vehicle.frequency.total_seconds()
     elapsed_m = frequency_s * speed_mps
@@ -49,7 +58,7 @@ def move_on_segment(
 
     if end_position < current_segment.length:
         return (
-            departure_time + timedelta(seconds=frequency_s),
+            current_time + timedelta(seconds=frequency_s),
             SegmentPosition(index=segment_position.index, position=end_position),
             speed_mps
         )
@@ -58,7 +67,7 @@ def move_on_segment(
         travel_distance_m = current_segment.length - start_position
         travel_time = travel_distance_m / speed_mps
         return (
-            departure_time + timedelta(seconds=travel_time),
+            current_time + timedelta(seconds=travel_time),
             SegmentPosition(segment_position.index, current_segment.length),
             speed_mps
         )
@@ -70,28 +79,13 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
     """Advance a vehicle on a route."""
 
     current_time = departure_time + vehicle.time_offset
-    osm_route = vehicle.osm_route
-
-    driving_route = vehicle.routing_map.osm_route_to_py_segments(osm_route)
-
     fcds = []
 
-    segment = None
-    if vehicle.segment_position.index < len(driving_route):
-        segment = driving_route[vehicle.segment_position.index]
-        offset = vehicle.start_distance_offset
-        if vehicle.segment_position.position == segment.length:
-            # if the car is at the end of a segment, we want to work with the next segment
-            segment = driving_route[vehicle.segment_position.index + 1]
-            offset = 0.0
-        # los = gv_db.get(current_time, segment)
-        los = gv_db.gv.level_of_service_for_car(current_time, segment, vehicle.id,
-                                                offset, count_vehicles_tolerance)
-    else:
-        los = 1.0  # the end of the route
+    osm_route = vehicle.osm_route
+    driving_route = vehicle.routing_map.osm_route_to_py_segments(osm_route)
 
     vehicle_end_time, segment_pos, assigned_speed_mps = move_on_segment(
-        vehicle, driving_route, current_time, los
+        vehicle, driving_route, current_time, gv_db, count_vehicles_tolerance
     )
 
     segment_pos_old = vehicle.segment_position
@@ -109,6 +103,8 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
     # dt = departure_time + vehicle.time_offset
     # logger.info(f"\n{dt} {vehicle.id} ({vehicle.start_distance_offset}) {segment.id} ({segment.length}) step: {step_m}")
     # logger.info(fcds)
+
+    segment = driving_route[segment_pos.index]
 
     # fill in and out of the queues
     if vehicle.next_node == vehicle.dest_node and vehicle.segment_position.position == segment.length:
