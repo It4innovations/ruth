@@ -23,60 +23,45 @@ def move_on_segment(
     Returns (time, position, speed) at the end of the movement.
     """
     segment_position = vehicle.segment_position
-    segment = segments[segment_position.index]
-    assert segment_position.position <= segment.length
+    start_position = segment_position.position
+    current_segment = segments[segment_position.index]
+    assert segment_position.position <= current_segment.length
+
+    if start_position == current_segment.length:
+        start_position = 0.0
+        segment_position = SegmentPosition(segment_position.index + 1, start_position)
+        current_segment = segments[segment_position.index]
 
     # if car is stuck in traffic jam, it will not move and its speed will be 0
     if level_of_service == float("inf"):
         # in case the vehicle is stuck in traffic jam just move the time
-        return departure_time + vehicle.frequency, segment_position, 0.0
+        return departure_time + vehicle.frequency, vehicle.segment_position, 0.0
 
     # Speed in m/s
-    speed_mps = (segment.max_allowed_speed_kph * level_of_service) * (1000 / 3600)
+    speed_mps = (current_segment.max_allowed_speed_kph * level_of_service) * (1000 / 3600)
     if math.isclose(speed_mps, 0.0):
-        return departure_time + vehicle.frequency, segment_position, 0.0
+        # in case the vehicle is not moving, move the time and keep the previous position
+        return departure_time + vehicle.frequency, vehicle.segment_position, 0.0
 
-    start_position = segment_position.position
     frequency_s = vehicle.frequency.total_seconds()
     elapsed_m = frequency_s * speed_mps
     end_position = start_position + elapsed_m
 
-    if end_position < segment.length:
-        # We stay on the same segment
+    if end_position < current_segment.length:
         return (
             departure_time + timedelta(seconds=frequency_s),
             SegmentPosition(index=segment_position.index, position=end_position),
             speed_mps
         )
     else:
-        # The car has finished the segment
-        if start_position == segment.length:
-            # We have been at the end of the segment the previous round, we will jump to the next segment
-            next_segment = segments[segment_position.index + 1]
-            if elapsed_m > next_segment.length:
-                # if the car makes it to the end of the next segment, it will stay at the end of it
-                # travel distance is the length of the next segment
-                travel_time = next_segment.length / speed_mps
-                return (
-                    departure_time + timedelta(seconds=travel_time),
-                    SegmentPosition(segment_position.index + 1, next_segment.length),
-                    speed_mps
-                )
-            else:
-                return (
-                    departure_time + timedelta(seconds=frequency_s),
-                    SegmentPosition(segment_position.index + 1, elapsed_m),
-                    speed_mps
-                )
-        else:
-            # we just finished the segment, we will stay at the end of it
-            travel_distance_m = segment.length - start_position
-            travel_time = travel_distance_m / speed_mps
-            return (
-                departure_time + timedelta(seconds=travel_time),
-                SegmentPosition(segment_position.index, segment.length),
-                speed_mps
-            )
+        # The car has finished the segment, it stays at the end of it
+        travel_distance_m = current_segment.length - start_position
+        travel_time = travel_distance_m / speed_mps
+        return (
+            departure_time + timedelta(seconds=travel_time),
+            SegmentPosition(segment_position.index, current_segment.length),
+            speed_mps
+        )
 
 
 def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
