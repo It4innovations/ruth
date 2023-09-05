@@ -24,6 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             "ruth-simulator = ruth.tools.simulator:main",
+            "ruth-simulator-conf = ruth.tools.simulator_conf:main",
             "ruth-data-preprocessing = ruth.tools.preprocessbenchmarkdata:main",
             "ruth-split-segment-id = ruth.tools.splitsegmentid:main",
             "ruth-show-gv = ruth.tools.vizglobalview:viz",

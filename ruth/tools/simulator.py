@@ -1,7 +1,7 @@
 import enum
-import json
 import logging
 import os
+import shutil
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -11,10 +11,10 @@ from typing import List, Optional
 import click
 from probduration import HistoryHandler
 
-from ruth.losdb import FreeFlowDb, ProbProfileDb
-from ruth.simulator import RouteRankingAlgorithms, SimSetting, Simulation, SingleNodeSimulator, \
+from ..losdb import FreeFlowDb, ProbProfileDb
+from ..simulator import RouteRankingAlgorithms, SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
-from ruth.simulator.kernels import AlternativesProvider, FastestPathsAlternatives, \
+from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, \
     FirstRouteSelection, RouteSelectionProvider, ShortestPathsAlternatives, \
     ZeroMQDistributedAlternatives, RandomRouteSelection
 
@@ -23,32 +23,34 @@ from ruth.simulator.kernels import AlternativesProvider, FastestPathsAlternative
 class CommonArgs:
     task_id: str
     departure_time: datetime
-    round_frequency: timedelta
+    round_frequency_s: timedelta
     k_alternatives: int
     map_update_freq_steps: int
-    count_vehicles_tolerance: timedelta
-    speeds_path: str
-    out: str
+    count_vehicles_tolerance_s: timedelta
+    speeds_path: Optional[str] = None
+    out: str = "simulation-record.pickle"
     seed: Optional[int] = None
-    walltime: Optional[datetime] = None
-    saving_interval: Optional[datetime] = None
+    walltime_s: Optional[timedelta] = None
+    saving_interval_s: Optional[timedelta] = None
     continue_from: Optional[Simulation] = None
 
 
 def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimulator:
     departure_time = common_args.departure_time
-    round_frequency = common_args.round_frequency
+    round_frequency_s = common_args.round_frequency_s
     k_alternatives = common_args.k_alternatives
     map_update_freq_steps = common_args.map_update_freq_steps
-    count_vehicles_tolerance = common_args.count_vehicles_tolerance
-    speeds_path = common_args.speeds_path
+    count_vehicles_tolerance_s = common_args.count_vehicles_tolerance_s
     seed = common_args.seed
+    speeds_path = common_args.speeds_path
     sim_state = common_args.continue_from
 
     # TODO: solve the debug symbol
     if sim_state is None:
-        ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq_steps, count_vehicles_tolerance,
-                        seed, speeds_path)
+        if vehicles_path is None:
+            raise ValueError("Either vehicles_path or continue_from must be specified.")
+        ss = SimSetting(departure_time, round_frequency_s, k_alternatives, map_update_freq_steps,
+                        count_vehicles_tolerance_s, seed, speeds_path=speeds_path)
         vehicles = load_vehicles(vehicles_path)
         simulation = Simulation(vehicles, ss)
     else:
@@ -81,9 +83,7 @@ def store_simulation_at_interval(saving_interval: Optional[timedelta], name: str
         if saving_interval is not None and (now - last_saved) >= saving_interval:
             simulation.store(f"{name}-interval-temp.pickle")
             last_saved = now
-            if os.path.isfile(f"{name}-interval.pickle"):
-                os.remove(f"{name}-interval.pickle")
-            os.rename(f"{name}-interval-temp.pickle", f"{name}-interval.pickle")
+            shutil.move(f"{name}-interval-temp.pickle", f"{name}-interval.pickle")
 
     return store
 
@@ -127,7 +127,6 @@ def start_zeromq_cluster(
 
 
 @click.group()
-@click.option('--config-file', default='config.json')
 @click.option('--debug/--no-debug', default=False)  # TODO: maybe move to top-level group
 @click.option("--task-id", type=str,
               help="A string to differentiate results if there is running more simulations"
@@ -146,12 +145,12 @@ def start_zeromq_cluster(
 @click.option("--out", type=str, default="out.pickle")
 @click.option("--seed", type=int, help="Fixed seed for random number generator.")
 @click.option("--walltime-s", type=int, help="Time limit in which the state of simulation is saved")
-@click.option("--saving-interval-s", type=int, help="Time interval in which the state of simulation periodically is saved")
+@click.option("--saving-interval-s", type=int,
+              help="Time interval in which the state of simulation periodically is saved")
 @click.option("--continue-from", type=click.Path(exists=True),
               help="Path to a saved state of simulation to continue from.")
 @click.pass_context
 def single_node_simulator(ctx,
-                          config_file,
                           debug,
                           task_id,
                           departure_time,
@@ -168,51 +167,25 @@ def single_node_simulator(ctx,
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
     ctx.ensure_object(dict)
 
-    if os.path.isfile(config_file):
-        logging.info(f"Settings taken from config file {config_file}.")
-        with open(config_file) as f:
-            config_data = json.load(f)['ruth-simulator']
-
-            debug = config_data.get('debug', debug)
-            task_id = config_data.get('task-id', task_id)
-            departure_time = config_data.get('departure-time', departure_time)
-            if type(departure_time) == str:
-                departure_time = datetime.strptime(departure_time, "%Y-%m-%d %H:%M:%S")
-
-            round_frequency_s = config_data.get('round-frequency-s', round_frequency_s)
-            k_alternatives = config_data.get('k-alternatives', k_alternatives)
-            map_update_freq_steps = config_data.get('map-update-freq-steps', map_update_freq_steps)
-            count_vehicles_tolerance = config_data.get('count-vehicles-tolerance', count_vehicles_tolerance)
-            speeds_path_config = config_data.get('speeds-path', None)
-            if speeds_path_config is not None:
-                speeds_path = Path(speeds_path_config)
-            out = config_data.get('out', out)
-            seed = config_data.get('seed', seed)
-            walltime_s = config_data.get('walltime-s', walltime_s)
-            saving_interval_s = config_data.get('saving-interval-s', saving_interval_s)
-            continue_from_config = config_data.get('continue-from', None)
-            if continue_from_config is not None:
-                continue_from = Path(continue_from_config)
-
     ctx.obj['DEBUG'] = debug
-    ctx.obj['config-file-path'] = config_file
-
     walltime = timedelta(seconds=walltime_s) if walltime_s is not None else None
     saving_interval = timedelta(seconds=saving_interval_s) if saving_interval_s is not None else None
     sim_state = Simulation.load(continue_from) if continue_from is not None else None
 
-    ctx.obj['common-args'] = CommonArgs(task_id,
-                                        departure_time,
-                                        timedelta(seconds=round_frequency_s),
-                                        k_alternatives,
-                                        map_update_freq_steps,
-                                        timedelta(seconds=count_vehicles_tolerance),
-                                        speeds_path,
-                                        out,
-                                        seed,
-                                        walltime,
-                                        saving_interval,
-                                        sim_state)
+    ctx.obj['common-args'] = CommonArgs(
+                                    task_id=task_id,
+                                    departure_time=departure_time,
+                                    round_frequency_s=timedelta(seconds=round_frequency_s),
+                                    k_alternatives=k_alternatives,
+                                    map_update_freq_steps=1,
+                                    count_vehicles_tolerance_s=timedelta(seconds=5),
+                                    speeds_path=speeds_path,
+                                    out=out,
+                                    seed=seed,
+                                    walltime_s=walltime,
+                                    saving_interval_s=saving_interval,
+                                    continue_from=sim_state
+                                )
 
 
 @single_node_simulator.command()
@@ -342,42 +315,29 @@ def create_route_selection_provider(route_selection: RouteSelectionImpl) -> Rout
         return RandomRouteSelection()
     else:
         raise NotImplementedError
+        print(route_selection)
 
 
 @single_node_simulator.command()
-@click.option("--vehicles-path", type=click.Path(exists=True))
+@click.argument("vehicles_path", type=click.Path(exists=True))
 @click.option("--alternatives", type=click.Choice(AlternativesImpl),
               default=AlternativesImpl.FASTEST_PATHS)
 @click.option("--route-selection", type=click.Choice(RouteSelectionImpl),
-              default=RouteSelectionImpl.RANDOM)
+              default=RouteSelectionImpl.FIRST)
 @click.pass_context
 def run(ctx,
         vehicles_path: Path,
         alternatives: AlternativesImpl,
         route_selection: RouteSelectionImpl):
-
-    config_file = ctx.obj["config-file-path"]
-    if os.path.isfile(config_file):
-        with open(config_file) as f:
-            config_data = json.load(f)['run']
-            vehicles_path_config = config_data.get('vehicles-path', None)
-            if vehicles_path_config is not None:
-                vehicles_path = Path(vehicles_path_config)
-            alternatives_config = config_data.get('alternatives', None)
-            if alternatives_config is not None:
-                alternatives = AlternativesImpl(alternatives_config)
-            route_selection_config = config_data.get('route-selection', None)
-            if route_selection_config is not None:
-                route_selection = RouteSelectionImpl(route_selection_config)
-
-    if vehicles_path is None:
-        logging.error("Vehicle path has to be set.")
-        return 1
-
     common_args = ctx.obj["common-args"]
+    run_inner(common_args, vehicles_path, alternatives, route_selection)
+
+
+def run_inner(common_args: CommonArgs, vehicles_path: Path, alternatives: AlternativesImpl,
+              route_selection: RouteSelectionImpl):
     out = common_args.out
-    walltime = common_args.walltime
-    saving_interval = common_args.saving_interval
+    walltime = common_args.walltime_s
+    saving_interval = common_args.saving_interval_s
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
     simulator = prepare_simulator(common_args, vehicles_path)
