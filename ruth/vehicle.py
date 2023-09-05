@@ -157,8 +157,9 @@ class Vehicle:
         return self.active and within_offset == round_timedelta(self.time_offset, freq)
 
     def is_at_the_end_of_segment(self):
-        driving_route = self.routing_map.osm_route_to_py_segments(self.osm_route)
-        return self.segment_position.position == driving_route[self.segment_position.index].length
+        segment_osm_ids = self.osm_route[self.start_index:self.start_index + 2]
+        driving_route = self.routing_map.osm_route_to_py_segments(segment_osm_ids)
+        return self.segment_position.position == driving_route[0].length
 
     def __repr__(self):
         return f"Vehicle(id={self.id}, active={self.active}, pos={self.segment_position})"

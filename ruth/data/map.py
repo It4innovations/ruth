@@ -105,18 +105,17 @@ class Map(metaclass=Singleton):
 
     def osm_route_to_py_segments(self, osm_route: Route) -> List[Segment]:
         """Prepare list of segments based on route."""
-        edge_data = ox.utils_graph.get_route_edge_attributes(self.network,
-                                                             osm_route)
-        edges = zip(osm_route, osm_route[1:])
-        return [
-            Segment(
-                id=get_osm_segment_id(from_, to_),
+        result = []
+        for u, v in zip(osm_route[:-1], osm_route[1:]):
+            # if there are parallel edges between two nodes, select the one with the
+            # lowest value of minimize_key
+            data = self.simple_network.get_edge_data(u, v)
+            result.append(Segment(
+                id=get_osm_segment_id(u, v),
                 length=data["length"],
                 max_allowed_speed_kph=data["speed_kph"],
-            )
-            # NOTE: the zip is correct as the starting node_id is of the interest
-            for i, ((from_, to_), data) in enumerate(zip(edges, edge_data))
-        ]
+            ))
+        return result
 
     def shortest_path_by_gps(self, gps_start, gps_end):
         """Compute shortest path between two gps points."""
