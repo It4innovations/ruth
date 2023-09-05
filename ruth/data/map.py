@@ -49,6 +49,7 @@ class Map(metaclass=Singleton):
             self.init_current_speeds()
 
         self.simple_network = ox.get_digraph(self.network)
+        self.segment_lengths = nx.get_edge_attributes(self.simple_network, name='length')
 
         if fresh_data:
             self._store()
@@ -77,20 +78,18 @@ class Map(metaclass=Singleton):
 
     def init_current_speeds(self):
         speeds = nx.get_edge_attributes(self.network, name='speed_kph')
-        lengths = nx.get_edge_attributes(self.network, name='length')
         travel_times = {}
         for key, value in speeds.items():
-            travel_times[key] = float(lengths[key]) * 3.6 / float(value)
+            travel_times[key] = float(self.segment_lengths[key]) * 3.6 / float(value)
         nx.set_edge_attributes(self.network, values=speeds, name="current_speed")
         nx.set_edge_attributes(self.network, values=travel_times, name="current_travel_time")
 
     def update_current_speeds(self, segment_ids, speeds):
         new_speeds = {}
         new_travel_times = {}
-        lengths = nx.get_edge_attributes(self.simple_network, name='length')
         for (node_from, node_to), speed in zip(segment_ids, speeds):
             new_speeds[(node_from, node_to)] = speed
-            travel_time = float('inf') if speed == 0 else float(lengths[(node_from, node_to)]) * 3.6 / float(speed)
+            travel_time = float('inf') if speed == 0 else float(self.segment_lengths[(node_from, node_to)]) * 3.6 / float(speed)
             new_travel_times[(node_from, node_to)] = travel_time
         nx.set_edge_attributes(self.simple_network, values=new_speeds, name='current_speed')
         nx.set_edge_attributes(self.simple_network, values=new_travel_times, name='current_travel_time')
@@ -219,7 +218,6 @@ class Map(metaclass=Singleton):
         """Update max speed on segment based on file config."""
         new_speeds = {}
         new_travel_times = {}
-        lengths = nx.get_edge_attributes(self.simple_network, name='length')
 
         with open(speeds_path, newline='') as f:
             reader = csv.reader(f, delimiter=';')
@@ -228,7 +226,7 @@ class Map(metaclass=Singleton):
                 node_from, node_to, speed = int(row[0]), int(row[1]), float(row[2])
 
             new_speeds[(node_from, node_to)] = speed
-            travel_time = float('inf') if speed == 0 else float(lengths[(node_from, node_to)]) * 3.6 / float(speed)
+            travel_time = float('inf') if speed == 0 else float(self.segment_lengths[(node_from, node_to)]) * 3.6 / float(speed)
             new_travel_times[(node_from, node_to)] = travel_time
 
         nx.set_edge_attributes(self.simple_network, values=new_speeds, name='speed_kph')
