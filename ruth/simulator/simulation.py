@@ -7,6 +7,7 @@ from typing import Dict, List
 import pandas as pd
 
 from .queues import QueuesManager
+from .segment import SpeedMps, LengthMeters
 from ..globalview import GlobalView
 from ..losdb import GlobalViewDb
 from ..utils import round_timedelta
@@ -18,9 +19,9 @@ class FCDRecord:
     datetime: datetime
     vehicle_id: int
     segment_id: str
-    start_offset: float
-    speed: float
-    segment_length: float
+    start_offset: LengthMeters
+    speed: SpeedMps
+    segment_length: LengthMeters
     status: str
 
 
