@@ -44,12 +44,15 @@ class Map(metaclass=Singleton):
         self.border = border
         self.data_dir = data_dir
         self.network, fresh_data = self._load()
+
         if with_speeds:
             self.network = ox.add_edge_speeds(self.network)
-            self.init_current_speeds()
 
         self.simple_network = ox.get_digraph(self.network)
         self.segment_lengths = nx.get_edge_attributes(self.simple_network, name='length')
+
+        if with_speeds:
+            self.init_current_speeds()
 
         if fresh_data:
             self._store()
@@ -77,12 +80,12 @@ class Map(metaclass=Singleton):
         return self.border.name
 
     def init_current_speeds(self):
-        speeds = nx.get_edge_attributes(self.network, name='speed_kph')
+        speeds = nx.get_edge_attributes(self.simple_network, name='speed_kph')
         travel_times = {}
         for key, value in speeds.items():
             travel_times[key] = float(self.segment_lengths[key]) * 3.6 / float(value)
-        nx.set_edge_attributes(self.network, values=speeds, name="current_speed")
-        nx.set_edge_attributes(self.network, values=travel_times, name="current_travel_time")
+        nx.set_edge_attributes(self.simple_network, values=speeds, name="current_speed")
+        nx.set_edge_attributes(self.simple_network, values=travel_times, name="current_travel_time")
 
     def update_current_speeds(self, segment_ids, speeds):
         new_speeds = {}
@@ -102,18 +105,19 @@ class Map(metaclass=Singleton):
             cl.warn(f"The data dir has changed from '{self.data_dir}' to '{path}.")
         self.data_dir = path
 
+    def get_osm_segment(self, node_from, node_to):
+        data = self.simple_network.get_edge_data(node_from, node_to)
+        return Segment(
+            id=get_osm_segment_id(node_from, node_to),
+            length=data["length"],
+            max_allowed_speed_kph=data["speed_kph"],
+        )
+
     def osm_route_to_py_segments(self, osm_route: Route) -> List[Segment]:
         """Prepare list of segments based on route."""
         result = []
         for u, v in zip(osm_route[:-1], osm_route[1:]):
-            # if there are parallel edges between two nodes, select the one with the
-            # lowest value of minimize_key
-            data = self.simple_network.get_edge_data(u, v)
-            result.append(Segment(
-                id=get_osm_segment_id(u, v),
-                length=data["length"],
-                max_allowed_speed_kph=data["speed_kph"],
-            ))
+            result.append(self.get_osm_segment(u, v))
         return result
 
     def shortest_path_by_gps(self, gps_start, gps_end):
