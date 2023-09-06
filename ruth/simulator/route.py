@@ -74,7 +74,7 @@ def move_on_segment(
 
 
 def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
-                    gv_db: GlobalViewDb, queues_manager: QueuesManager = None,
+                    gv_db: GlobalViewDb, queues_manager: QueuesManager,
                     count_vehicles_tolerance: timedelta = timedelta(seconds=0)) -> List[FCDRecord]:
     """Advance a vehicle on a route."""
 
@@ -111,13 +111,12 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
         # stop the processing in case the vehicle reached the end
         vehicle.active = False
 
-    elif queues_manager is not None and vehicle.start_distance_offset == segment.length:
+    elif vehicle.start_distance_offset == segment.length:
         # if the vehicle is at the end of the segment, add it to the queue
         queues_manager.add_to_queue(vehicle)
 
     segment_old = driving_route[segment_pos_old.index]
-    if (queues_manager is not None
-            and segment_pos_old.position == segment_old.length
+    if (segment_pos_old.position == segment_old.length
             and segment_pos_old.index != vehicle.segment_position.index):
         # remove vehicle from outdated queue if it changed segment
         node_from, node_to = vehicle.osm_route[segment_pos_old.index], vehicle.osm_route[segment_pos_old.index + 1]
@@ -132,9 +131,11 @@ def advance_waiting_vehicle(vehicle: Vehicle, departure_time: datetime) -> List[
 
     driving_route = vehicle.routing_map.osm_route_to_py_segments(osm_route)
     segment_pos_old = vehicle.segment_position
-    vehicle_end_time, segment_pos, assigned_speed_mps = move_on_segment(
-        vehicle, driving_route, current_time, float("inf")
-    )
+
+    # in case the vehicle is not moving, move the time and keep the previous position
+    vehicle_end_time = current_time + vehicle.frequency
+    segment_pos = vehicle.segment_position
+    assigned_speed_mps = SpeedMps(0.0)
 
     # update the vehicle
     vehicle.time_offset += vehicle_end_time - current_time
