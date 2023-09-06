@@ -7,6 +7,7 @@ from datetime import timedelta
 from collections import defaultdict
 
 from .data.map import Map, get_osm_segment_id
+from .simulator.segment import SpeedKph
 from .utils import parse_segment_id
 
 if TYPE_CHECKING:
@@ -104,13 +105,13 @@ class GlobalView:
         # reverse the level of service 1.0 means 100% LoS, but the input table defines it in reverse
         return los if los == float("inf") else 1.0 - los
 
-    def get_current_speed(self, node_from, node_to, routing_map: Map):
+    def get_current_speed(self, node_from, node_to, routing_map: Map) -> SpeedKph:
         speeds = []
         for _, _, _, speed in self.by_segment[get_osm_segment_id(node_from, node_to)]:
             speeds.append(speed)
         if len(speeds) == 0:
             return routing_map.get_segment_max_speed(node_from, node_to)
-        return (sum(speeds) / len(speeds)) * 3.6
+        return SpeedKph(sum(speeds) / len(speeds))
 
     def to_dataframe(self):  # todo: maybe process in chunks
         columns = [

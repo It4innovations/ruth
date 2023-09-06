@@ -14,7 +14,7 @@ from networkx.exception import NetworkXNoPath
 from .hdf5_writer import save_graph_to_hdf5
 from ..log import console_logger as cl
 from ..metaclasses import Singleton
-from ..simulator.segment import Route, Segment
+from ..simulator.segment import Route, Segment, SpeedKph
 
 
 def segment_weight(n1, n2, data):
@@ -87,7 +87,7 @@ class Map(metaclass=Singleton):
         nx.set_edge_attributes(self.simple_network, values=speeds, name="current_speed")
         nx.set_edge_attributes(self.simple_network, values=travel_times, name="current_travel_time")
 
-    def update_current_speeds(self, segment_ids, speeds):
+    def update_current_speeds(self, segment_ids, speeds: List[SpeedKph]):
         new_speeds = {}
         new_travel_times = {}
         for (node_from, node_to), speed in zip(segment_ids, speeds):
@@ -97,7 +97,7 @@ class Map(metaclass=Singleton):
         nx.set_edge_attributes(self.simple_network, values=new_speeds, name='current_speed')
         nx.set_edge_attributes(self.simple_network, values=new_travel_times, name='current_travel_time')
 
-    def get_segment_max_speed(self, node_from, node_to):
+    def get_segment_max_speed(self, node_from: int, node_to: int):
         return self.simple_network[node_from][node_to]['speed_kph']
 
     def set_data_dir(self, path):
@@ -105,7 +105,7 @@ class Map(metaclass=Singleton):
             cl.warn(f"The data dir has changed from '{self.data_dir}' to '{path}.")
         self.data_dir = path
 
-    def get_osm_segment(self, node_from, node_to):
+    def get_osm_segment(self, node_from: int, node_to: int):
         data = self.simple_network.get_edge_data(node_from, node_to)
         return Segment(
             id=get_osm_segment_id(node_from, node_to),
@@ -127,7 +127,7 @@ class Map(metaclass=Singleton):
 
         if type(gps_start) == "list" or type(gps_start) == tuple:
             gps_start_ = list(gps_start)
-            gps_end = list(gps_end)
+            gps_end_ = list(gps_end)
         else:
             gps_start_ = [gps_start]
             gps_end_ = [gps_end]

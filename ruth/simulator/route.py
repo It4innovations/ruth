@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import List, Tuple
 
 from .queues import QueuesManager
-from .segment import Segment, SegmentPosition, SpeedMps
+from .segment import Segment, SegmentPosition, SpeedMps, LengthMeters, speed_kph_to_mps
 from .simulation import FCDRecord
 from ..losdb import GlobalViewDb
 from ..vehicle import Vehicle
@@ -31,7 +31,7 @@ def move_on_segment(
     if vehicle.segment_position.index < len(driving_route):
         if start_position == current_segment.length:
             # if the car is at the end of a segment, we want to work with the next segment
-            start_position = 0.0
+            start_position = LengthMeters(0.0)
             segment_position = SegmentPosition(segment_position.index + 1, start_position)
             current_segment = driving_route[segment_position.index]
 
@@ -44,17 +44,17 @@ def move_on_segment(
     # if car is stuck in traffic jam, it will not move and its speed will be 0
     if level_of_service == float("inf"):
         # in case the vehicle is stuck in traffic jam just move the time
-        return current_time + vehicle.frequency, vehicle.segment_position, 0.0
+        return current_time + vehicle.frequency, vehicle.segment_position, SpeedMps(0.0)
 
     # Speed in m/s
-    speed_mps = (current_segment.max_allowed_speed_kph * level_of_service) * (1000 / 3600)
+    speed_mps = speed_kph_to_mps(current_segment.max_allowed_speed_kph * level_of_service)
     if math.isclose(speed_mps, 0.0):
         # in case the vehicle is not moving, move the time and keep the previous position
-        return current_time + vehicle.frequency, vehicle.segment_position, 0.0
+        return current_time + vehicle.frequency, vehicle.segment_position, SpeedMps(0.0)
 
     frequency_s = vehicle.frequency.total_seconds()
     elapsed_m = frequency_s * speed_mps
-    end_position = start_position + elapsed_m
+    end_position = LengthMeters(start_position + elapsed_m)
 
     if end_position < current_segment.length:
         return (
