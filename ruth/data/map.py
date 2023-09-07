@@ -223,7 +223,7 @@ class Map(metaclass=Singleton):
         new_speeds = {}
         new_travel_times = {}
 
-        with open(speeds_path, newline='') as f:
+        with open(speeds_path) as f:
             reader = csv.reader(f, delimiter=';')
             next(reader, None)
             for row in reader:
