@@ -34,7 +34,7 @@ class GlobalView:
 
         vehicles = set()
         for (dt, current_vehicle_id, offset, _) in self.by_segment.get(segment_id, []):
-            if dt <= datetime + tolerance:
+            if datetime - tolerance <= dt <= datetime + tolerance:
                 if current_vehicle_id != vehicle_id and offset > vehicle_offset_m:
                     vehicles.add(current_vehicle_id)
         return len(vehicles)
