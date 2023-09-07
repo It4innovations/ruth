@@ -73,10 +73,13 @@ class GlobalView:
         # reverse the level of service 1.0 means 100% LoS, but the input table defines it in reverse
         return los if los == float("inf") else 1.0 - los
 
-    def get_current_speed(self, node_from, node_to, routing_map: Map) -> SpeedKph:
-        speeds = []
-        for _, _, _, speed in self.by_segment[get_osm_segment_id(node_from, node_to)]:
-            speeds.append(speed)
+    def get_segment_speed(self, node_from, node_to, routing_map: Map) -> SpeedKph:
+        speeds = {}
+        by_segment = self.by_segment[get_osm_segment_id(node_from, node_to)]
+        by_segment.sort(key=lambda x: x[0])
+        for _, vehicle_id, _, speed in by_segment:
+            speeds[vehicle_id] = speed
+        speeds = list(speeds.values())
         if len(speeds) == 0:
             return routing_map.get_segment_max_speed(node_from, node_to)
         return SpeedKph(sum(speeds) / len(speeds))
