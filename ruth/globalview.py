@@ -39,7 +39,7 @@ class GlobalView:
                     vehicles.add(current_vehicle_id)
         return len(vehicles)
 
-    def level_of_service_for_car(self, datetime, segment, vehicle_id, vehicle_offset_m, tolerance=None):
+    def level_of_service_in_time_at_segment(self, datetime, segment, vehicle_id=-1, vehicle_offset_m=0, tolerance=None):
         mile = 1609.344  # meters
         # density of vehicles per mile with ranges of level of service
         # https://transportgeography.org/contents/methods/transport-technical-economic-performance-indicators/levels-of-service-road-transportation/
@@ -60,40 +60,6 @@ class GlobalView:
             n_vehicles_per_mile = n_vehicles * mile / ending_length
         else:
             n_vehicles_per_mile = n_vehicles * mile / rest_segment_length
-
-        los = float("inf")  # in case the vehicles are stuck in traffic jam
-        for (low, high), (m, n) in ranges:
-            if n_vehicles_per_mile < high:
-                d = high - low  # size of range between two densities
-                los = m + ((n_vehicles_per_mile - low) * 0.2 / d)  # -low => shrink to the size of the range
-                break
-
-        # reverse the level of service 1.0 means 100% LoS, but the input table defines it in reverse
-        return los if los == float("inf") else 1.0 - los
-
-    def level_of_service_in_time_at_segment(self, datetime, segment, tolerance=None):
-        mile = 1609.344 # meters
-        # density of vehicles per mile with ranges of level of service
-        # https://transportgeography.org/contents/methods/transport-technical-economic-performance-indicators/levels-of-service-road-transportation/
-        ranges = [
-            ( (0, 12), (0.0, 0.2)),
-            ((12, 20), (0.2, 0.4)),
-            ((20, 30), (0.4, 0.6)),
-            ((30, 42), (0.6, 0.8)),
-            ((42, 67), (0.8, 1.0))]
-
-        n_vehicles = self.number_of_vehicles_in_time_at_segment(datetime, segment.id, tolerance)
-
-        ending_length = 200
-        rest_segment_length = segment.length
-        # rescale density
-        if rest_segment_length < ending_length:
-            n_vehicles_per_mile = n_vehicles * mile / ending_length
-        else:
-            n_vehicles_per_mile = n_vehicles * mile / rest_segment_length
-
-        # rescale density
-        # n_vehicles_per_mile = n_vehicles * mile / segment.length
 
         los = float("inf")  # in case the vehicles are stuck in traffic jam
         for (low, high), (m, n) in ranges:
