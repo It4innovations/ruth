@@ -103,7 +103,7 @@ class Simulator:
 
             with timer_set.get("update_map_speeds"):
                 if step % self.sim.setting.map_update_freq_steps == 0:
-                    new_speeds = [self.sim.global_view.get_current_speed(node_from,
+                    new_speeds = [self.sim.global_view.get_segment_speed(node_from,
                                                                          node_to,
                                                                          self.sim.routing_map)
                                   for node_from, node_to in segments_changed_speed]
