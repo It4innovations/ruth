@@ -35,7 +35,7 @@ def move_on_segment(
             segment_position = SegmentPosition(segment_position.index + 1, start_position)
             current_segment = driving_route[segment_position.index]
 
-        level_of_service = gv_db.gv.level_of_service_for_car(current_time, current_segment, vehicle.id,
+        level_of_service = gv_db.gv.level_of_service_in_time_at_segment(current_time, current_segment, vehicle.id,
                                                              start_position, count_vehicles_tolerance)
     else:
         # the end of the driving route
