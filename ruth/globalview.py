@@ -53,6 +53,8 @@ class GlobalView:
         n_vehicles = self.number_of_vehicles_in_time_at_segment(datetime, segment.id, tolerance,
                                                                 vehicle_id, vehicle_offset_m)
 
+        # NOTE: the ending length is set to avoid massive LoS increase at the end of the segments and also on short
+        # segments, can be replaced with different LoS ranges for different road types in the future
         ending_length = 200
         rest_segment_length = segment.length - vehicle_offset_m
         # rescale density
