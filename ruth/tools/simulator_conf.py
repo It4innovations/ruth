@@ -16,7 +16,7 @@ from ..tools.simulator import run_inner
 @serde(rename_all="kebabcase", type_check=Strict)
 @dataclass
 class CommonArgs:
-    task_id: str = ""
+    task_id: Optional[str] = None
     departure_time: datetime = field(serializer=lambda x: x.strftime("%Y-%m-%d %H:%M:%S"),
                                      deserializer=lambda x: datetime.strptime(x, "%Y-%m-%d %H:%M:%S"),
                                      default=datetime.now())
