@@ -139,7 +139,7 @@ def start_zeromq_cluster(
               help="Number of alternative routes.")
 @click.option("--map-update-freq-steps", type=int, default=1,
               help="Step frequency of changing the map with current speeds.")
-@click.option("--count-vehicles-tolerance", type=int, default=1,
+@click.option("--count-vehicles-tolerance-s", type=int, default=1,
               help="Time tolerance in seconds for counting cars on a segment for LoS.")
 @click.option("--speeds-path", type=click.Path(exists=True))
 @click.option("--out", type=str, default="out.pickle")
@@ -157,7 +157,7 @@ def single_node_simulator(ctx,
                           round_frequency_s,
                           k_alternatives,
                           map_update_freq_steps,
-                          count_vehicles_tolerance,
+                          count_vehicles_tolerance_s,
                           speeds_path,
                           out,
                           seed,
@@ -177,8 +177,8 @@ def single_node_simulator(ctx,
                                     departure_time=departure_time,
                                     round_frequency_s=timedelta(seconds=round_frequency_s),
                                     k_alternatives=k_alternatives,
-                                    map_update_freq_steps=1,
-                                    count_vehicles_tolerance_s=timedelta(seconds=5),
+                                    map_update_freq_steps=map_update_freq_steps,
+                                    count_vehicles_tolerance_s=timedelta(seconds=count_vehicles_tolerance_s),
                                     speeds_path=speeds_path,
                                     out=out,
                                     seed=seed,
