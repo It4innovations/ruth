@@ -13,19 +13,21 @@ from shapely.geometry import Point, MultiPoint, Polygon
 from tqdm import tqdm
 
 from ..data.border import Border, BorderType, PolygonBorderDef
-from ..data.map import Map
-
+from ..data.map import Map, BBox
 
 routing_map = None
 
 
-def gps_to_nodes_with_shortest_path(od_for_id, poly_wkt, border_kind, current_date, data_dir):
+def create_routing_map(poly_wkt, border_kind, bbox, current_date, data_dir):
+    b_def = PolygonBorderDef(poly_wkt)
+    border = Border(f"{b_def.md5()}_{border_kind}", b_def, BorderType.parse(border_kind), data_dir, True)
+    return Map(border, bbox, download_date=current_date, data_dir=data_dir, save_hdf=False)
 
+
+def gps_to_nodes_with_shortest_path(od_for_id, poly_wkt, border_kind, bbox, current_date, data_dir):
     global routing_map
     if routing_map is None:
-        b_def = PolygonBorderDef(poly_wkt)
-        b = Border(f"{b_def.md5()}_{border_kind}", b_def, BorderType.parse(border_kind), data_dir, True)
-        routing_map = Map(b, download_date=current_date, data_dir=data_dir, save_hdf=False)
+        routing_map = create_routing_map(poly_wkt, border_kind, bbox, current_date, data_dir)
 
     id, origin_lon, origin_lat, destination_lon, destination_lat, time_offset = od_for_id
 
@@ -46,7 +48,8 @@ def get_active_and_state(row):
 
 
 @click.command()
-@click.argument("od-matrix-path", type=click.Path(exists=True))
+@click.argument("od-matrix-path", type=click.Path(exists=True), metavar='<OD_MATRIX_PATH>')
+@click.argument('bounding-coords', nargs=4, type=float, metavar='<BOUNDING_COORDS - NORTH WEST SOUTH EAST>')
 @click.option("--csv-separator", type=str, default=";", help="Default: [';'].")
 @click.option("--frequency", type=int, default="20",
               help="Default: 20s. A period in which a vehicle asks for rerouting in seconds.")
@@ -59,7 +62,9 @@ def get_active_and_state(row):
 @click.option("--nproc", type=int, default=1, help="Default 1. Number of used processes.")
 @click.option("--data-dir", type=click.Path(), default="./data", help="Default './data'.")
 @click.option("--out", type=click.Path(), default="out.parquet", help="Default 'out.parquet'.")
-def convert(od_matrix_path, csv_separator, frequency, fcd_sampling_period, border, border_kind, nproc, data_dir, out):
+def convert(od_matrix_path, bounding_coords, csv_separator, frequency, fcd_sampling_period, border, border_kind, nproc,
+            data_dir, out):
+    global routing_map
     odm_df = pd.read_csv(od_matrix_path, sep=csv_separator)
 
     orig_points = odm_df[["lon_from", "lat_from"]].apply(lambda p: Point(*p), axis=1)
@@ -75,18 +80,18 @@ def convert(od_matrix_path, csv_separator, frequency, fcd_sampling_period, borde
     else:
         border_poly = shapely.wkt.loads(border)
 
-    b_def = PolygonBorderDef(border_poly.wkt)
-    b = Border(f"{b_def.md5()}_{border_kind}", b_def, BorderType.parse(border_kind), data_dir, True)
+    north, west, south, east = bounding_coords
+    bbox = BBox(north, west, south, east)
     current_date = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
-    routing_map = Map(b, current_date, data_dir=data_dir)
+    routing_map = create_routing_map(border_poly.wkt, border_kind, bbox, current_date, data_dir)
 
     with Pool(processes=nproc) as p:
 
         od_nodes = []
         with tqdm(total=len(odm_df)) as pbar:
             for odn in p.imap(partial(gps_to_nodes_with_shortest_path,
-                                      poly_wkt=border_poly.wkt, current_date=current_date,
-                                      border_kind=border_kind, data_dir=data_dir),
+                                      poly_wkt=border_poly.wkt, border_kind=border_kind, bbox=bbox,
+                                      current_date=current_date, data_dir=data_dir),
                               odm_df[["id",
                                       "lon_from", "lat_from",
                                       "lon_to", "lat_to",

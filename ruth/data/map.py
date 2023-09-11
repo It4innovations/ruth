@@ -13,6 +13,7 @@ import networkx as nx
 import osmnx as ox
 import osmnx.settings
 from osmnx import graph_from_place, load_graphml, save_graphml
+from osmnx import load_graphml, save_graphml, graph_from_bbox
 from networkx.exception import NetworkXNoPath
 
 from .hdf5_writer import save_graph_to_hdf5
@@ -44,15 +45,27 @@ def get_osm_segment_id(node_from: int, node_to: int):
     return f"OSM{node_from}T{node_to}"
 
 
+class BBox:
+    def __init__(self, north, west, south, east):
+        self.north = north
+        self.west = west
+        self.south = south
+        self.east = east
+
+    def get_coords(self):
+        return self.north, self.west, self.south, self.east
+
+
 class Map(metaclass=Singleton):
     """Routing map."""
 
-    def __init__(self, border, download_date, data_dir="./data", with_speeds=True, save_hdf=True):
+    def __init__(self, border, bbox, download_date, data_dir="./data", with_speeds=True, save_hdf=True):
         """Initialize a map via the border.
 
         If `data_dir` provided, the map is loaded from locally stored maps preferably.
         """
         self.border = border
+        self.bbox = bbox
         self.download_date = download_date
         self.data_dir = data_dir
         self.network, fresh_data = self._load()
@@ -229,25 +242,16 @@ class Map(metaclass=Singleton):
             return load_graphml(self.file_path), False
         else:
             cl.info(f"Loading map for {self.name} via OSM API...")
-            # # Change from "graph_from_polygon"
-            # network = graph_from_polygon(
-            #     self.border.polygon(),
-            #     network_type="drive",  # TODO: into config
-            #     retain_all=True,
-            #     clean_periphery=False,
-            #     custom_filter=admin_level_to_road_filter(self.border.admin_level),
-            # )
 
             osmnx.settings.overpass_settings = f"[out:json][timeout:{{timeout}}][date:'{self.download_date}']"
 
-            # Change to "graph_from_place"
-            network = graph_from_place(
-                'Prague, Czech republic',
-                network_type="drive",  # TODO: into config
-                retain_all=True,
-                clean_periphery=False,
-                custom_filter=admin_level_to_road_filter(self.border.admin_level),
-            )
+            north, west, south, east = self.bbox.get_coords()
+            network = graph_from_bbox(north, south, east, west,
+                                      network_type="drive",
+                                      retain_all=True,
+                                      clean_periphery=False,
+                                      custom_filter=admin_level_to_road_filter(self.border.admin_level))
+
             cl.info(f"{self.name}'s map loaded.")
             return network, True
 
