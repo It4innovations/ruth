@@ -1,6 +1,6 @@
 import sys
 from collections import namedtuple
-from dataclasses import InitVar, asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, InitVar
 from datetime import timedelta
 from typing import Any, List, Optional, Tuple
 
@@ -9,7 +9,7 @@ from networkx.exception import NodeNotFound
 
 from .data.map import Map
 from .data.segment import Route, SegmentPosition
-from .utils import get_map, round_timedelta
+from .utils import round_timedelta, get_map
 
 
 def set_numpy_type(name, fld=None):
@@ -33,9 +33,6 @@ class Vehicle:
     start_distance_offset: float = set_numpy_type("float64")
     origin_node: int = set_numpy_type("int64")
     dest_node: int = set_numpy_type("int64")
-    border_id: str = set_numpy_type("string")
-    border: str = set_numpy_type("string")  # polygon definition
-    border_kind: str = set_numpy_type("string")
     download_date: str = set_numpy_type("string")
     osm_route: List[int] = set_numpy_type("object")
     active: bool = set_numpy_type("bool")
@@ -49,6 +46,7 @@ class Vehicle:
     def __post_init__(self, routing_map):
         # NOTE: the routing map is not among attributes of dataclass
         # => does not affect the conversion to pandas.Series
+        # TODO: FIX
         if routing_map is None:
             self.routing_map = get_map(self.border, self.border_kind, self.download_date,
                                        with_speeds=True, name=self.border_id)

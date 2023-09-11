@@ -55,16 +55,19 @@ class BBox:
     def get_coords(self):
         return self.north, self.west, self.south, self.east
 
+    @property
+    def name(self):
+        return f"{self.north}-{self.west}-{self.south}-{self.east}".replace('.', "_")
+
 
 class Map(metaclass=Singleton):
     """Routing map."""
 
-    def __init__(self, border, bbox, download_date, data_dir="./data", with_speeds=True, save_hdf=True):
-        """Initialize a map via the border.
-
+    def __init__(self, bbox, download_date, data_dir="./data", with_speeds=True, save_hdf=True):
+        """
+        Initialize a map via the border.
         If `data_dir` provided, the map is loaded from locally stored maps preferably.
         """
-        self.border = border
         self.bbox = bbox
         self.download_date = download_date
         self.data_dir = data_dir
@@ -114,7 +117,7 @@ class Map(metaclass=Singleton):
     @property
     def name(self):
         """Name of the map."""
-        return self.border.name + "_" + self.download_date.replace(":", "-")
+        return self.bbox.name + "_" + self.download_date.replace(":", "-")
 
     def edges(self):
         return self.current_network.edges()
@@ -249,8 +252,7 @@ class Map(metaclass=Singleton):
             network = graph_from_bbox(north, south, east, west,
                                       network_type="drive",
                                       retain_all=True,
-                                      clean_periphery=False,
-                                      custom_filter=admin_level_to_road_filter(self.border.admin_level))
+                                      clean_periphery=False)
 
             cl.info(f"{self.name}'s map loaded.")
             return network, True
