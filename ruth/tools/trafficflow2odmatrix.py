@@ -1,11 +1,9 @@
-
 import os
 import click
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import shapely.wkt
-from shapely.geometry import Polygon, MultiPoint, LinearRing
 import random as rnd
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -13,10 +11,8 @@ from typing import List
 
 import logging
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 DT_FMT = "%Y-%m-%d %H:%M:%S%z"
 
@@ -38,7 +34,6 @@ class ODMatrix:
     TIME_OFFSET = "start_offset_s"
     FREQUENCY = "route_step_s"
     FCD_SAMPLING_PERIOD = "log_step_s"
-    BORDER = "border"
 
     COLUMNS = [
         LAT_FROM,
@@ -48,11 +43,9 @@ class ODMatrix:
         TIME_OFFSET,
         FREQUENCY,
         FCD_SAMPLING_PERIOD,
-        BORDER,
     ]
 
     def __init__(self):
-
         # TODO: change after the refactoring of the preprocessing will be done
         # ODMatrix.TIME_OFFSET: pd.Series(dtype="timedelta64[s]"),
         # ODMatrix.FREQUENCY: pd.Series(dtype="timedelta64[s]"),
@@ -67,18 +60,15 @@ class ODMatrix:
                 ODMatrix.TIME_OFFSET: pd.Series(dtype="int64"),
                 ODMatrix.FREQUENCY: pd.Series(dtype="int64"),
                 ODMatrix.FCD_SAMPLING_PERIOD: pd.Series(dtype="int64"),
-                ODMatrix.BORDER: pd.Series(dtype="str"),
             }
         )
 
     def add(
-        self,
-        records: List[Record],
-        frequency: timedelta,
-        fcd_sampling_period: timedelta,
-        border: str,
+            self,
+            records: List[Record],
+            frequency: timedelta,
+            fcd_sampling_period: timedelta,
     ):
-
         # compute time offsets
         records = sorted(records, key=lambda record: record.datetime)
         assert len(records) > 0
@@ -100,10 +90,10 @@ class ODMatrix:
             ),
             records,
         )
-        new_data = pd.DataFrame(records, columns=ODMatrix.COLUMNS[:-3])
+        new_data = pd.DataFrame(records, columns=ODMatrix.COLUMNS[:-2])
         new_data[
-            [ODMatrix.FREQUENCY, ODMatrix.FCD_SAMPLING_PERIOD, ODMatrix.BORDER]
-        ] = (to_secs(frequency), to_secs(fcd_sampling_period), border)
+            [ODMatrix.FREQUENCY, ODMatrix.FCD_SAMPLING_PERIOD]
+        ] = (to_secs(frequency), to_secs(fcd_sampling_period))
 
         self.data = pd.concat([self.data, new_data])
         self.data.index.name = "id"  # name the id column as excepted in the following tools
@@ -162,8 +152,7 @@ def convert(traffic_flow_file_path, frequency_s, fcd_sampling_period_s, out):
 
        For each device two random GPS points are generated, one in origin rectangle (LAT_FROM, LON_FROM) and the other
      in destination rectangle (LAT_TO, LON_TO). A departure time offset is also randomly picked from
-     the time window (TIME_OFFSET). The border of routing area is computed as an extended convex hull of
-     the origin/destination points.
+     the time window (TIME_OFFSET).
     """
     logger.info(f"Converting the traffic flow to O/D matrix.")
     logger.info(f" * input: {traffic_flow_file_path}")
@@ -172,7 +161,6 @@ def convert(traffic_flow_file_path, frequency_s, fcd_sampling_period_s, out):
 
     df = pd.read_csv(traffic_flow_file_path)
 
-    points = []
     records = []
     for i, record in tqdm(df.iterrows(), total=len(df)):
         start_time = datetime.strptime(
@@ -183,37 +171,26 @@ def convert(traffic_flow_file_path, frequency_s, fcd_sampling_period_s, out):
 
         n = record.count_devices
         points_from = n_random_points(n, *poly_from.bounds)
-        points += points_from[:]
 
         poly_to = shapely.wkt.loads(record.geom_rectangle_to)
         points_to = n_random_points(n, *poly_to.bounds)
-        points += points_to[:]
 
         for arrow in zip(points_from, points_to):
             (x_from, y_from), (x_to, y_to) = arrow
             dt = rnd_time_in_range(start_time, end_time)
             records.append(Record(y_from, x_from, y_to, x_to, dt))
 
-    # compute border
-    mpt = MultiPoint(points)
-    c_hull = mpt.convex_hull  # that's a polygon around the portion of the map
-
-    poly_line = LinearRing(c_hull.boundary)
-
-    # TODO: expose the offset parameter. But in a "human way".
-    # Maybe provide two borders one for simulation and the second for observation
-    expanded_boundary = poly_line.parallel_offset(0.1, side="left")
-
-    border = Polygon(expanded_boundary)
-
     od_matrix = ODMatrix()
     od_matrix.add(
         records,
         timedelta(seconds=frequency_s),
         timedelta(seconds=fcd_sampling_period_s),
-        border.wkt,
     )
 
     out_path = os.path.abspath(out)
     od_matrix.store(out_path)
     logger.info(f"O/D matrix generated into: {out_path}.")
+
+
+if __name__ == "__main__":
+    convert()
