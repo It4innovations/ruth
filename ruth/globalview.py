@@ -28,10 +28,11 @@ class GlobalView:
 
         self.by_segment[fcd.segment_id].append((fcd.datetime, fcd.vehicle_id, fcd.start_offset, fcd.speed))
 
-    def number_of_vehicles_in_time_at_segment(self, datetime, segment_id, tolerance=None,
-                                              vehicle_id=-1, vehicle_offset_m=0):
-        tolerance = tolerance if tolerance is not None else timedelta(seconds=0)
+    def number_of_vehicles_ahead(self, datetime, segment_id, tolerance=None, vehicle_id=-1, vehicle_offset_m=0):
+        # counts all vehicles ahead of the vehicle with vehicle_id at the given segment_id at given time range
+        # if case vehicle_id not set, then all vehicles are counted
 
+        tolerance = tolerance if tolerance is not None else timedelta(seconds=0)
         vehicles = set()
         for (dt, current_vehicle_id, offset, _) in self.by_segment.get(segment_id, []):
             if datetime - tolerance <= dt <= datetime + tolerance:
@@ -39,7 +40,7 @@ class GlobalView:
                     vehicles.add(current_vehicle_id)
         return len(vehicles)
 
-    def level_of_service_in_time_at_segment(self, datetime, segment, vehicle_id=-1, vehicle_offset_m=0, tolerance=None):
+    def level_of_service_in_front_of_vehicle(self, datetime, segment, vehicle_id=-1, vehicle_offset_m=0, tolerance=None):
         mile = 1609.344  # meters
         # density of vehicles per mile with ranges of level of service
         # https://transportgeography.org/contents/methods/transport-technical-economic-performance-indicators/levels-of-service-road-transportation/
@@ -50,7 +51,7 @@ class GlobalView:
             ((30, 42), (0.6, 0.8)),
             ((42, 67), (0.8, 1.0))]
 
-        n_vehicles = self.number_of_vehicles_in_time_at_segment(datetime, segment.id, tolerance,
+        n_vehicles = self.number_of_vehicles_ahead(datetime, segment.id, tolerance,
                                                                 vehicle_id, vehicle_offset_m)
 
         # NOTE: the ending length is set to avoid massive LoS increase at the end of the segments and also on short
@@ -72,6 +73,9 @@ class GlobalView:
 
         # reverse the level of service 1.0 means 100% LoS, but the input table defines it in reverse
         return los if los == float("inf") else 1.0 - los
+
+    def level_of_service_in_time_at_segment(self, datetime, segment):
+        return self.level_of_service_in_front_of_vehicle(datetime, segment, -1, 0, None)
 
     def get_segment_speed(self, node_from, node_to, routing_map: Map) -> SpeedKph:
         speeds = {}
