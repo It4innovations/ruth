@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from probduration import Segment
 
-from ..utils import get_map, round_datetime
+from ..utils import round_datetime
 from ..globalview import GlobalView
 from ..simulator import Simulation
 
@@ -62,7 +62,8 @@ def aggregate(sim_path, round_freq_s, out=None):
 
     print("History rounded")
     aggregated_gv = GlobalView(data=rounded_history)
-    unique_segments_in_time = set((row[0], row[1], segment_lengths[row[1]]) for row in aggregated_gv.data)
+    unique_segments_in_time = [(row[0], row[1], segment_lengths[row[1]]) for row in aggregated_gv.data]
+    unique_segments_in_time = list(dict.fromkeys(unique_segments_in_time))
 
     print(f"Computing the aggregation for {len(unique_segments_in_time)} items...")
     # records = map(partial(timed_segment_to_record, aggregated_gv=aggregated_gv), unique_segments_in_time)
