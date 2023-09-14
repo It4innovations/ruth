@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import List, Tuple
 
 from .queues import QueuesManager
-from .segment import Segment, SegmentPosition, SpeedMps, LengthMeters, speed_kph_to_mps
+from ..data.segment import Segment, SegmentPosition, SpeedMps, LengthMeters, speed_kph_to_mps
 from .simulation import FCDRecord
 from ..losdb import GlobalViewDb
 from ..vehicle import Vehicle

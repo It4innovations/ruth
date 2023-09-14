@@ -7,7 +7,7 @@ from datetime import timedelta
 from collections import defaultdict
 
 from .data.map import Map, get_osm_segment_id
-from .simulator.segment import SpeedKph
+from .data.segment import SpeedKph
 from .utils import parse_segment_id
 
 if TYPE_CHECKING:

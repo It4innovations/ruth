@@ -14,7 +14,7 @@ from networkx.exception import NetworkXNoPath
 from .hdf5_writer import save_graph_to_hdf5
 from ..log import console_logger as cl
 from ..metaclasses import Singleton
-from ..simulator.segment import Route, Segment, SpeedKph
+from ..data.segment import Route, Segment, SpeedKph
 
 
 def segment_weight(n1, n2, data):

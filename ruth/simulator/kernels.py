@@ -1,7 +1,7 @@
 from typing import List, Optional, Tuple
 import random
 
-from .segment import Route
+from ..data.segment import Route
 from ..data.map import Map
 from ..vehicle import Vehicle
 from ..zeromq.src.client import Message
