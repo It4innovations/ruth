@@ -108,6 +108,8 @@ class Simulator:
                                                                          self.sim.routing_map)
                                   for node_from, node_to in segments_changed_speed]
                     self.sim.routing_map.update_current_speeds(segments_changed_speed, new_speeds)
+                    alternatives_provider.load_map(self.sim.routing_map)
+
                     segments_changed_speed = set()
 
             with timer_set.get("compute_offset"):

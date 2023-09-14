@@ -16,6 +16,9 @@ def get_osmid_from_data(data):
 
 
 def get_speed_from_data(data):
+    if 'current_speed' in data:
+        return data['current_speed']
+
     if 'speed_kph' in data:
         return data['speed_kph']
 
