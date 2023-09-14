@@ -48,6 +48,7 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         Loads updated information from the passed map.
         """
         # TODO: implement with broadcast
+        map.save_hdf()
         self.client.compute([Message(kind="load-map", data=map.hdf5_file_path)])
 
     def compute_alternatives(self, map: Map, vehicles: List[Vehicle], k: int) -> List[
