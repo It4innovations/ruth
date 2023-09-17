@@ -1,6 +1,7 @@
 import numpy as np
 
 from dataclasses import dataclass, InitVar, field
+from collections import defaultdict
 from pandas import to_datetime
 from networkx import MultiDiGraph as Graph
 from typing import NewType
@@ -8,6 +9,14 @@ from typing import NewType
 from ruth.metaclasses import Singleton
 
 NodeId = NewType('NodeId', int)
+
+
+class PreprocessedData:
+    def __init__(self, segments, timed_segments, number_of_vehicles, number_of_finished_vehicles_in_time):
+        self.segments = segments
+        self.timed_segments = timed_segments
+        self.number_of_vehicles = number_of_vehicles
+        self.number_of_finished_vehicles_in_time = number_of_finished_vehicles_in_time
 
 
 @dataclass
@@ -95,6 +104,7 @@ class Record:
     status: str
     node_from: NodeId
     node_to: NodeId
+    active: bool = None
     length: InitVar[float] = None
     graph: InitVar[Graph] = None
 
@@ -138,7 +148,7 @@ def dataframe_to_sorted_records(df, graph, speed, fps):
     df['timestamp'] = to_datetime(df['timestamp']).astype(np.int64) // 10 ** 6  # resolution in milliseconds
 
     df['timestamp'] = df['timestamp'].div(1000 * interval).round().astype(np.int64)
-    df = df.groupby(['timestamp', 'vehicle_id']).first().reset_index()
+    df = df.groupby(['timestamp', 'vehicle_id']).last().reset_index()
 
     records = [Record(**kwargs, graph=graph) for kwargs in df.to_dict(orient='records')]
     records = sorted(records, key=lambda x: (x.vehicle_id, x.timestamp))
@@ -146,14 +156,19 @@ def dataframe_to_sorted_records(df, graph, speed, fps):
     return records
 
 
-def fill_missing_times(df, graph, speed=1, fps=25, divide: int = 2):
+def get_number_of_vehicles(df):
+    return df['vehicle_id'].nunique()
+
+
+def preprocess_data(df, graph, speed=1, fps=25, divide: int = 2):
     assert (
             divide >= 2
     ), f"Invalid value of divide '{divide}'. It must be greater or equal to 2."
 
     timed_segments = set()
     segments = set()
-
+    number_of_vehicles = get_number_of_vehicles(df)
+    number_of_finished_vehicles_in_time = defaultdict(int)
     records = dataframe_to_sorted_records(df, graph, speed, fps)
 
     for i, (processing_record, next_record) in enumerate(
@@ -165,9 +180,11 @@ def fill_missing_times(df, graph, speed=1, fps=25, divide: int = 2):
                 or processing_record.vehicle_id != next_record.vehicle_id
         ):
             timed_segments.add(add_vehicle(processing_record, divide))
+            if processing_record.active is False:
+                number_of_finished_vehicles_in_time[processing_record.timestamp] += 1
+
         else:  # fill missing records
             new_timestamps = [*range(processing_record.timestamp, next_record.timestamp)]
-            new_params = []
 
             new_speeds = np.linspace(
                 processing_record.speed_mps,
@@ -209,4 +226,4 @@ def fill_missing_times(df, graph, speed=1, fps=25, divide: int = 2):
             for record, (timestamp, start_offset_m, speed_mps) in zip(processing_segments, new_params):
                 timed_segments.add(add_vehicle(record, divide, timestamp, start_offset_m, speed_mps))
 
-    return timed_segments, segments
+    return PreprocessedData(segments, timed_segments, number_of_vehicles, number_of_finished_vehicles_in_time)

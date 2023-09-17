@@ -21,7 +21,7 @@ from ruth.simulator import Simulation
 
 from flowmap.ax_settings import AxSettings
 from flowmap.zoom import get_zoom
-from flowmap.input import fill_missing_times
+from flowmap.input import preprocess_data
 
 
 class SimulationAnimator(ABC):
@@ -78,20 +78,22 @@ class SimulationAnimator(ABC):
         self.sim_history = sim.history.to_dataframe()
 
     def _preprocess_data(self):
-        timed_segments, self.segments = fill_missing_times(self.sim_history, self.g, self.speed, self.fps, self.divide)
-
-        timestamps = [seg.timestamp for seg in timed_segments]
+        preprocessed_data = preprocess_data(self.sim_history, self.g, self.speed, self.fps, self.divide)
+        self.segments = preprocessed_data.segments
+        self.number_of_vehicles = preprocessed_data.number_of_vehicles
+        self.number_of_finished_vehicles_in_time = preprocessed_data.number_of_finished_vehicles_in_time
+        timestamps = [seg.timestamp for seg in preprocessed_data.timed_segments]
         min_timestamp = min(timestamps)
         max_timestamp = max(timestamps)
 
         if self.max_width_count is None:
-            self.max_width_count = max([max(seg.counts) for seg in timed_segments])
+            self.max_width_count = max([max(seg.counts) for seg in preprocessed_data.timed_segments])
         self.timestamp_from = min_timestamp + self.frame_start
-        self.num_of_frames = max_timestamp - self.timestamp_from
+        self.num_of_frames = max_timestamp - self.timestamp_from + 1  # + 1 to include the last frame
         self.num_of_frames = min(int(self.frames_len), self.num_of_frames) if self.frames_len else self.num_of_frames
 
         self.timed_seg_dict = defaultdict(list)
-        for seg in timed_segments:
+        for seg in preprocessed_data.timed_segments:
             self.timed_seg_dict[seg.timestamp].append(seg)
 
     def _set_ax_settings_if_zoom(self):
@@ -117,13 +119,19 @@ class SimulationAnimator(ABC):
 
         plt.title(self.title, fontsize=40)
         self.time_text = plt.figtext(
-            0.5,
+            0.3,
             0.09,
             datetime.utcfromtimestamp(self.timestamp_from * 1000 * self.interval // 10 ** 3),
-            ha='center',
-            fontsize=25
+            ha='right',
+            fontsize=20
         )
-
+        self.finished_vehicles_text = plt.figtext(
+            0.7,
+            0.09,
+            f'Finished vehicles: {self.number_of_finished_vehicles_in_time[self.timestamp_from]} / {self.number_of_vehicles}',
+            ha='left',
+            fontsize=20
+        )
         self.ax_traffic = self.ax_map.twinx()
         self.ax_map_settings = AxSettings(self.ax_map)
 
@@ -142,9 +150,10 @@ class SimulationAnimator(ABC):
     def _animate(self):
         car_coordinates = []
         progress_bar = None
+        current_number_of_finished_vehicles = 0
 
         def step(i):
-            nonlocal car_coordinates, progress_bar
+            nonlocal car_coordinates, progress_bar, current_number_of_finished_vehicles
             if progress_bar is None:
                 progress_bar = tqdm(total=self.num_of_frames, desc='Creating animation', unit='frame', leave=True)
             self.ax_traffic.clear()
@@ -154,6 +163,10 @@ class SimulationAnimator(ABC):
             timestamp = self.timestamp_from + i
             if i % 5 * 60 == 0:
                 self.time_text.set_text(datetime.utcfromtimestamp(timestamp * 1000 * self.interval // 10 ** 3))
+
+            current_number_of_finished_vehicles += self.number_of_finished_vehicles_in_time[timestamp]
+            self.finished_vehicles_text.set_text(
+                f'Finished vehicles: {current_number_of_finished_vehicles} / {self.number_of_vehicles}')
 
             segments = self._plot_routes(timestamp)
 
