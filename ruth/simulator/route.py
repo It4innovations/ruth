@@ -148,7 +148,7 @@ def advance_waiting_vehicle(vehicle: Vehicle, departure_time: datetime) -> List[
 
 def generate_fcds(start_time: datetime, end_time: datetime, start_segment_position: SegmentPosition,
                   end_segment_position: SegmentPosition, speed: SpeedMps, vehicle: Vehicle,
-                  driving_route: list[Segment]) -> List[FCDRecord]:
+                  driving_route: List[Segment]) -> List[FCDRecord]:
     fcds = []
 
     step_m = speed * (vehicle.fcd_sampling_period / timedelta(seconds=1))
@@ -190,7 +190,7 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
     return fcds
 
 
-def advance_vehicles_with_queues(vehicles_to_be_moved: list[Vehicle], departure_time: datetime,
+def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_time: datetime,
                                  gv_db: GlobalViewDb, queues_manager: QueuesManager,
                                  count_vehicles_tolerance) -> List[FCDRecord]:
     fcds = []
