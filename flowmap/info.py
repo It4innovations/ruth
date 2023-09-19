@@ -46,6 +46,10 @@ class SimulationInfo:
                 finished_journey = False
                 break
             segments_visited.add(record.segment_id)
+
+        if vehicle_records[-1].active:
+            finished_journey = False
+
         return len(list(segments_visited)), finished_journey
 
     def _get_records_split_by_vehicle(self):
@@ -123,25 +127,23 @@ class SimulationInfo:
         current_finished_vehicle_count = 0
         timestamp_at_point = self.min_timestamp
 
-        VehicleStatus = namedtuple('VehicleStatus', ['start_timestamp', 'end_timestamp', 'segments'])
-        vehicles_statuses = {}
+        vehicles_segments = {}
 
         vehicles_records = self._get_records_split_by_vehicle()
         for _, vehicle_records in enumerate(vehicles_records):
-            vehicles_statuses[vehicle_records[0].vehicle_id] = VehicleStatus(vehicle_records[0].timestamp,
-                                                                             vehicle_records[-1].timestamp, set())
+            vehicles_segments[vehicle_records[0].vehicle_id] = set()
 
         records_sorted = sorted(self.records, key=lambda x: x.timestamp)
         segments_count_finished_sum = 0
         for _, record in enumerate(records_sorted):
             if current_finished_vehicle_count >= finished_vehicle_count_at_point:
                 break
-            vehicle_status = vehicles_statuses[record.vehicle_id]
-            vehicle_status.segments.add(record.segment_id)
+            vehicle_segments = vehicles_segments[record.vehicle_id]
+            vehicle_segments.add(record.segment_id)
             timestamp_at_point = record.timestamp
-            if record.timestamp == vehicle_status.end_timestamp:
+            if not record.active:
                 current_finished_vehicle_count += 1
-                segments_count_finished_sum += len(list(vehicle_status.segments))
+                segments_count_finished_sum += len(list(vehicle_segments))
 
         real_time_minutes = get_real_time(self.simulation, TimeUnit.MINUTES)
         remaining_vehicles_count = self.vehicles_count - current_finished_vehicle_count
@@ -157,8 +159,8 @@ class SimulationInfo:
         vehicles_started_count = 0
         vehicles_left_initial_segment_count = 0
         segments_count_sum = 0
-        for vehicle_status in vehicles_statuses.values():
-            segments = list(vehicle_status.segments)
+        for vehicle_segments in vehicles_segments.values():
+            segments = list(vehicle_segments)
             segments_count = len(segments)
             segments_count_sum += segments_count
             if segments_count > 0:
