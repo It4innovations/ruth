@@ -24,7 +24,9 @@ class CommonArgs:
                                          deserializer=lambda x: timedelta(seconds=x),
                                          default=timedelta(seconds=5))
     k_alternatives: int = 1
-    map_update_freq_steps: int = 1
+    map_update_freq_s: timedelta = field(serializer=lambda x: x.total_seconds(),
+                                         deserializer=lambda x: timedelta(seconds=x),
+                                         default=timedelta(seconds=1))
     count_vehicles_tolerance_s: timedelta = field(serializer=lambda x: x.total_seconds(),
                                                   deserializer=lambda x: timedelta(seconds=x),
                                                   default=timedelta(seconds=5))
