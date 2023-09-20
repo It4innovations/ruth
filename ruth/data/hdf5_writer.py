@@ -176,9 +176,6 @@ def save_graph_to_hdf5(g, file_path):
             computer_speed = get_speed_from_data(edge_data)
             length = edge_data['length']
 
-            if edge_id not in edge_data_dict:
-                continue
-
             edge_data_index = edge_data_dict[edge_id][0]
 
             edge_tuple = (
