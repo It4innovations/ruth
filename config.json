@@ -4,7 +4,7 @@
     "departure-time" :"2021-08-3 00:00:00",
     "round-frequency-s" : 5,
     "k-alternatives": 1,
-    "map-update-freq-steps" : 1,
+    "map-update-freq-s" : 1,
     "count-vehicles-tolerance" : 5,
     "out" : "simulation_record.pickle",
     "seed": 7,

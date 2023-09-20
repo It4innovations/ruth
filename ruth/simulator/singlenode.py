@@ -52,6 +52,7 @@ class Simulator:
         alternatives_provider.load_map(self.sim.routing_map)
 
         step = self.sim.number_of_steps
+        last_map_update = self.current_offset
         segments_changed_speed = set()
 
         if self.sim.setting.speeds_path is not None:
@@ -102,7 +103,7 @@ class Simulator:
                 self.sim.update(fcds)
 
             with timer_set.get("update_map_speeds"):
-                if step % self.sim.setting.map_update_freq_steps == 0:
+                if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
                     new_speeds = [self.sim.global_view.get_segment_speed(node_from,
                                                                          node_to,
                                                                          self.sim.routing_map)
@@ -111,6 +112,7 @@ class Simulator:
                     alternatives_provider.load_map(self.sim.routing_map)
 
                     segments_changed_speed = set()
+                    last_map_update = self.current_offset
 
             with timer_set.get("compute_offset"):
                 current_offset_new = self.sim.compute_current_offset()
