@@ -296,8 +296,9 @@ def create_alternatives_provider(alternatives: AlternativesImpl) -> Alternatives
     elif alternatives == AlternativesImpl.SHORTEST_PATHS:
         return ShortestPathsAlternatives()
     elif alternatives == AlternativesImpl.DISTRIBUTED:
-        # TODO: parse port from CLI
-        return ZeroMQDistributedAlternatives(port=5555)
+        from ..zeromq.src.client import Client
+        client = Client(port=5555)
+        return ZeroMQDistributedAlternatives(client=client)
     else:
         raise NotImplementedError
 
