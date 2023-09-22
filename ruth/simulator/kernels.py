@@ -41,9 +41,10 @@ class ShortestPathsAlternatives(AlternativesProvider):
 
 
 class ZeroMQDistributedAlternatives(AlternativesProvider):
-    def __init__(self, port: int):
-        from ..zeromq.src.client import Client
-        self.client = Client(port=port)
+    from ..zeromq.src.client import Client
+
+    def __init__(self, client: Client):
+        self.client = client
 
     def load_map(self, map: Map):
         """
