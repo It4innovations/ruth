@@ -45,7 +45,7 @@ def get_osm_segment_id(node_from: int, node_to: int):
     return f"OSM{node_from}T{node_to}"
 
 
-class BBox:
+class BBox(metaclass=Singleton):
     def __init__(self, north, west, south, east):
         self.north = north
         self.west = west
@@ -251,8 +251,7 @@ class Map(metaclass=Singleton):
             north, west, south, east = self.bbox.get_coords()
             network = graph_from_bbox(north, south, east, west,
                                       network_type="drive",
-                                      retain_all=True,
-                                      clean_periphery=False)
+                                      retain_all=False)
 
             cl.info(f"{self.name}'s map loaded.")
             return network, True

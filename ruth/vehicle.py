@@ -9,7 +9,7 @@ from networkx.exception import NodeNotFound
 
 from .data.map import Map
 from .data.segment import Route, SegmentPosition
-from .utils import round_timedelta, get_map
+from .utils import round_timedelta, get_map_from_bbox
 
 
 def set_numpy_type(name, fld=None):
@@ -39,17 +39,18 @@ class Vehicle:
     """A period in which the raw FCD data are sampled"""
     fcd_sampling_period: timedelta = set_numpy_type("object")
     status: str = set_numpy_type("string")
-    # Kept for backwards compatibility with old input files
-    leap_history: Any = None
+    bbox_lat_max: float = set_numpy_type("float64")
+    bbox_lon_min: float = set_numpy_type("float64")
+    bbox_lat_min: float = set_numpy_type("float64")
+    bbox_lon_max: float = set_numpy_type("float64")
     routing_map: InitVar[Map] = None
 
     def __post_init__(self, routing_map):
         # NOTE: the routing map is not among attributes of dataclass
         # => does not affect the conversion to pandas.Series
-        # TODO: FIX
         if routing_map is None:
-            self.routing_map = get_map(self.border, self.border_kind, self.download_date,
-                                       with_speeds=True, name=self.border_id)
+            self.routing_map = get_map_from_bbox(self.bbox_lat_max, self.bbox_lon_min, self.bbox_lat_min,
+                                                 self.bbox_lon_max, self.download_date)
         else:
             self.routing_map = routing_map
 
