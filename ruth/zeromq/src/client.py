@@ -21,7 +21,7 @@ def segment_weight(n1, n2, data):
 
 
 class Client:
-    def __init__(self, port: int = 5560, watermark: int = 8192):
+    def __init__(self, port: int = 5560, broadcast_port: int = 5561, watermark: int = 8192):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.DEALER)
 
@@ -30,6 +30,11 @@ class Client:
 
         self.address = f"tcp://127.0.0.1:{port}"
         self.socket.bind(self.address)
+
+        # Create broadcast socket
+        self.broadcast_socket = self.context.socket(zmq.PUB)
+        self.broadcast_address = f"tcp://127.0.0.1:{broadcast_port}"
+        self.broadcast_socket.bind(self.broadcast_address)
 
         self.poller = zmq.Poller()
 
@@ -76,3 +81,13 @@ class Client:
 
         # Sort by id
         return [value for (_, value) in sorted(results.items(), key=lambda item: item[0])]
+
+    def broadcast(self, message: Message):
+        """
+        Broadcasts given message to all currently connected workers.
+        """
+        func_call = f"traffic-sim:{message.kind}"
+        self.broadcast_socket.send_multipart([
+            str(func_call).encode(),
+            json.dumps(message.data).encode()
+        ])
