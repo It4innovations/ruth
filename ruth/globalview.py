@@ -23,7 +23,7 @@ class GlobalView:
     def add(self, fcd: "FCDRecord"):
         self.data.append((
             fcd.datetime, fcd.segment_id, fcd.vehicle_id, fcd.start_offset, fcd.speed,
-            fcd.segment_length, fcd.status
+            fcd.segment_length, fcd.status, fcd.active
         ))
 
         self.by_segment[fcd.segment_id].append((fcd.datetime, fcd.vehicle_id, fcd.start_offset, fcd.speed))
@@ -96,7 +96,8 @@ class GlobalView:
             "start_offset_m",
             "speed_mps",
             "segment_length",
-            "status"
+            "status",
+            "active"
         ]
 
         df = pd.DataFrame(self.data, columns=columns)

@@ -89,10 +89,6 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
     )
 
     segment_pos_old = vehicle.segment_position
-    # NOTE: the segment position index may end out of segments
-    if segment_pos.index < len(driving_route):
-        fcds = generate_fcds(current_time, vehicle_end_time, segment_pos_old, segment_pos, assigned_speed_mps, vehicle,
-                             driving_route)
 
     # update the vehicle
     vehicle.time_offset += vehicle_end_time - current_time
@@ -123,6 +119,11 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
             # if the vehicle is at the end of the segment and was not there before, add it to the queue
             queues_manager.add_to_queue(vehicle)
 
+    # NOTE: the segment position index may end out of segments
+    if segment_pos.index < len(driving_route):
+        fcds = generate_fcds(current_time, vehicle_end_time, segment_pos_old, segment_pos, assigned_speed_mps, vehicle,
+                             driving_route, remains_active=vehicle.active)
+
     return fcds
 
 
@@ -142,13 +143,13 @@ def advance_waiting_vehicle(vehicle: Vehicle, departure_time: datetime) -> List[
     vehicle.time_offset += vehicle_end_time - current_time
 
     fcds = generate_fcds(current_time, vehicle_end_time, segment_pos_old, segment_pos, assigned_speed_mps, vehicle,
-                         driving_route)
+                         driving_route, remains_active=True)
     return fcds
 
 
 def generate_fcds(start_time: datetime, end_time: datetime, start_segment_position: SegmentPosition,
                   end_segment_position: SegmentPosition, speed: SpeedMps, vehicle: Vehicle,
-                  driving_route: List[Segment]) -> List[FCDRecord]:
+                  driving_route: List[Segment], remains_active: bool) -> List[FCDRecord]:
     fcds = []
 
     step_m = speed * (vehicle.fcd_sampling_period / timedelta(seconds=1))
@@ -174,7 +175,8 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
             segment_length=current_segment.length,
             start_offset=current_position,
             speed=speed,
-            status=vehicle.status
+            status=vehicle.status,
+            active=True
         ))
 
     # store end of the movement
@@ -185,7 +187,8 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
         segment_length=current_segment.length,
         start_offset=end_segment_position.position,
         speed=speed,
-        status=vehicle.status
+        status=vehicle.status,
+        active=remains_active
     ))
     return fcds
 

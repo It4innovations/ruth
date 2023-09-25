@@ -23,6 +23,7 @@ class FCDRecord:
     speed: SpeedMps
     segment_length: LengthMeters
     status: str
+    active: bool
 
 
 @dataclass
