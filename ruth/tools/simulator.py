@@ -360,8 +360,13 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path, alternatives: Altern
 
 
 def main():
+    log_level = logging.INFO
+    log_level_env = os.environ.get("LOG_LEVEL", "")
+    if log_level_env.lower() == "debug":
+        log_level = logging.DEBUG
+
     logging.basicConfig(
-        level=logging.INFO,
+        level=log_level,
         format="%(asctime)s %(name)s:%(levelname)-4s %(message)s",
         datefmt="%d-%m-%Y %H:%M:%S",
         force=True
