@@ -1,3 +1,4 @@
+import logging
 import re
 import time
 from datetime import datetime, timedelta
@@ -60,6 +61,13 @@ def round_datetime(dt: datetime, freq: timedelta):
     td_rounded = round_timedelta(td, freq)
 
     return rest + td_rounded
+
+
+def is_root_debug_logging() -> bool:
+    """
+    Returns true if the global (root) logger has at least `logging.DEBUG` level.
+    """
+    return logging.getLogger().isEnabledFor(logging.DEBUG)
 
 
 class Timer:
