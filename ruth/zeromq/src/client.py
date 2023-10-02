@@ -50,7 +50,10 @@ class Client:
 
         # Switch messages between sockets
         while msg_received < msg_count:
-            socks = dict(self.poller.poll())
+            result = self.poller.poll(timeout=timeout_s * 1000)
+            if not result:
+                raise Exception(f"ZeroMQ communication has timed out after {timeout_s} second(s)")
+            socks = dict(result)
 
             if (socks.get(self.socket) & zmq.POLLIN) == zmq.POLLIN:
                 message_id, status, payload = self.socket.recv_multipart()
