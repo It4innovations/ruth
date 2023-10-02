@@ -1,8 +1,10 @@
+import logging
 from typing import List, Optional, Tuple
 import random
 
 from ..data.segment import Route
 from ..data.map import Map
+from ..utils import is_root_debug_logging
 from ..vehicle import Vehicle
 from ..zeromq.src.client import Message
 
@@ -57,9 +59,15 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
             "destination": map.osm_to_hdf5_id(v.next_routing_od_nodes[1]),
             "max_routes": k
         }) for v in vehicles]
-        # logging.info(f"Sending alternatives to distributed worker: {messages}")
+
+        # The formatting can be expensive, so we explicitly set if debug logging is enabled first
+        if is_root_debug_logging():
+            logging.debug(f"Sending alternatives to distributed worker: {messages}")
+
         results = self.client.compute(messages)
-        # logging.info(f"Response from worker: {results}")
+
+        if is_root_debug_logging():
+            logging.debug(f"Response from worker: {results}")
         remapped_routes = [
             [[map.hdf5_to_osm_id(node_id) for node_id in route] for route in result["routes"]]
             for result in results
