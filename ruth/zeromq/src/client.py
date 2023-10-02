@@ -28,17 +28,17 @@ class Client:
         self.socket.set(zmq.SNDHWM, watermark)
         self.socket.set(zmq.RCVHWM, watermark)
 
-        self.address = f"tcp://127.0.0.1:{port}"
+        self.address = f"tcp://*:{port}"
         self.socket.bind(self.address)
 
         # Create broadcast socket
         self.broadcast_socket = self.context.socket(zmq.PUB)
-        self.broadcast_address = f"tcp://127.0.0.1:{broadcast_port}"
+        self.broadcast_address = f"tcp://*:{broadcast_port}"
         self.broadcast_socket.bind(self.broadcast_address)
 
         self.poller = zmq.Poller()
 
-    def compute(self, messages: List[Message]) -> List[Any]:
+    def compute(self, messages: List[Message], timeout_s=10) -> List[Any]:
         self.poller.register(self.socket, zmq.POLLIN | zmq.POLLOUT)
 
         msg_send = 0
