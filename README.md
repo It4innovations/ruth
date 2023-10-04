@@ -2,6 +2,8 @@
 
 FlowMapVideo is a tool for visualizing the evolution of traffic flow over time. The output is a video with a map showing the traffic flow intensities at each time interval. The animation is generated using the [FlowMapFrame](flowmap/flowmapframe) library to render individual frames based on the output of the [Ruth](https://github.com/It4innovations/ruth) traffic simulator. It is designed for linux systems.
 
+![Traffic Flow](./images/traffic-flow.png)
+
 ## Installation
 
 ### Prerequisites
