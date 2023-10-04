@@ -17,19 +17,21 @@ from ..simulator import Simulation
 class Record:
     segment_osm_id: str
     fcd_time_calc: datetime
-    los: float
     segment_length: float
+    max_speed: float
+    current_speed: float
 
     def __repr__(self):
-        return f"{self.segment_osm_id};{self.fcd_time_calc.strftime('%Y-%m-%d %H:%M')};{self.los};{self.segment_length}"
+        return (f"{self.segment_osm_id};{self.fcd_time_calc.strftime('%Y-%m-%d %H:%M')};"
+                f"{self.segment_length};{self.max_speed};{self.current_speed}")
 
 
-def timed_segment_to_record(dt, seg_id, length, aggregated_gv):
-    seg = Segment(seg_id, length, 0)  # NOTE: 0 is the max. allowed speed, which is not used in this context.
+def timed_segment_to_record(dt, seg_id, length, max_speed, aggregated_gv):
+    seg = Segment(seg_id, length, max_speed)
     los = aggregated_gv.level_of_service_in_time_at_segment(dt, seg)
     if float('inf') == los:
         los = 0.0
-    return Record(seg_id, dt, los, length)
+    return Record(seg_id, dt, length, max_speed, max_speed * los)
 
 
 def aggregate(sim_path, round_freq_s, out=None):
@@ -51,7 +53,7 @@ def aggregate(sim_path, round_freq_s, out=None):
         osm_id = f"OSM{u}T{v}"
         if osm_id in segment_ids:
             if "length" in data:
-                segment_lengths[osm_id] = data["length"]
+                segment_lengths[osm_id] = data["length"], data['speed_kph']
             else:
                 assert False, "Segment without assigned length!"
 
@@ -68,12 +70,12 @@ def aggregate(sim_path, round_freq_s, out=None):
     print(f"Computing the aggregation for {len(unique_segments_in_time)} items...")
     # records = map(partial(timed_segment_to_record, aggregated_gv=aggregated_gv), unique_segments_in_time)
     records = []
-    for dt, seg_id, length in tqdm(unique_segments_in_time):
-        records.append(timed_segment_to_record(dt, seg_id, length, aggregated_gv))
+    for dt, seg_id, (length, max_speed) in tqdm(unique_segments_in_time):
+        records.append(timed_segment_to_record(dt, seg_id, length, max_speed, aggregated_gv))
     print("Data aggregated.")
 
     with open(out, "w") as csv:
-        csv.write("segment_osm_id;fcd_time_calc;los;segment_length\n")
+        csv.write("segment_osm_id;fcd_time_calc;max_speed;current_speed\n")
         csv.write("\n".join(map(repr, records)))
 
     print(f"Aggregated FCDs are written within '{out}'.")
