@@ -28,10 +28,10 @@ class Record:
 
 def timed_segment_to_record(dt, seg_id, length, max_speed, aggregated_gv):
     seg = Segment(seg_id, length, max_speed)
-    los = aggregated_gv.level_of_service_in_time_at_segment(dt, seg)
-    if float('inf') == los:
-        los = 0.0
-    return Record(seg_id, dt, length, max_speed, max_speed * los)
+    current_speed = aggregated_gv.speed_in_time_at_segment(dt, seg)
+    if current_speed is None:
+        current_speed = max_speed
+    return Record(seg_id, dt, length, max_speed, current_speed)
 
 
 def aggregate(sim_path, round_freq_s, out=None):
@@ -48,12 +48,12 @@ def aggregate(sim_path, round_freq_s, out=None):
     df_ni = df.reset_index()
     segment_ids = df_ni["segment_id"].unique()
     m = sim.routing_map
-    segment_lengths = dict()
+    segment_data = dict()
     for u, v, data in m.network.edges(data=True):
         osm_id = f"OSM{u}T{v}"
         if osm_id in segment_ids:
             if "length" in data:
-                segment_lengths[osm_id] = data["length"], data['speed_kph']
+                segment_data[osm_id] = data["length"], data['speed_kph']
             else:
                 assert False, "Segment without assigned length!"
 
@@ -64,7 +64,7 @@ def aggregate(sim_path, round_freq_s, out=None):
 
     print("History rounded")
     aggregated_gv = GlobalView(data=rounded_history)
-    unique_segments_in_time = [(row[0], row[1], segment_lengths[row[1]]) for row in aggregated_gv.data]
+    unique_segments_in_time = [(row[0], row[1], segment_data[row[1]]) for row in aggregated_gv.data]
     unique_segments_in_time = list(dict.fromkeys(unique_segments_in_time))
 
     print(f"Computing the aggregation for {len(unique_segments_in_time)} items...")
