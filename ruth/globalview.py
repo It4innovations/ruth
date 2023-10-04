@@ -77,6 +77,12 @@ class GlobalView:
     def level_of_service_in_time_at_segment(self, datetime, segment):
         return self.level_of_service_in_front_of_vehicle(datetime, segment, -1, 0, None)
 
+    def speed_in_time_at_segment(self, datetime, segment):
+        speeds = [speed for dt, _, _, speed in self.by_segment.get(segment.id, []) if dt == datetime]
+        if len(speeds) == 0:
+            return None
+        return sum(speeds) / len(speeds)
+
     def get_segment_speed(self, node_from, node_to, routing_map: Map) -> SpeedKph:
         speeds = {}
         by_segment = self.by_segment[get_osm_segment_id(node_from, node_to)]
