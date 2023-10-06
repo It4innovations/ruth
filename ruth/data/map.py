@@ -4,6 +4,8 @@ import itertools
 import os
 import pickle
 import shutil
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -17,6 +19,17 @@ from .hdf5_writer import save_graph_to_hdf5
 from ..log import console_logger as cl
 from ..metaclasses import Singleton
 from ..data.segment import Route, Segment, SpeedKph
+
+
+@dataclass
+class TemporarySpeed:
+    node_from: int
+    node_to: int
+    temporary_speed: SpeedKph
+    original_max_speed: SpeedKph
+    timestamp_from: datetime
+    timestamp_to: datetime
+    active: bool
 
 
 def segment_weight(n1, n2, data):
@@ -47,6 +60,7 @@ class Map(metaclass=Singleton):
         self.download_date = download_date
         self.data_dir = data_dir
         self.network, fresh_data = self._load()
+        self.temporary_speeds = []
 
         if with_speeds:
             self.network = ox.add_edge_speeds(self.network)
@@ -92,11 +106,15 @@ class Map(metaclass=Singleton):
         """Name of the map."""
         return self.border.name + "_" + self.download_date
 
+    def get_travel_time(self, node_from: int, node_to: int, speed_kph: SpeedKph):
+        return float('inf') if speed_kph == 0 else float(
+            self.segment_lengths[(node_from, node_to)]) * 3.6 / float(speed_kph)
+
     def init_current_speeds(self):
         speeds = nx.get_edge_attributes(self.simple_network, name='speed_kph')
         travel_times = {}
-        for key, value in speeds.items():
-            travel_times[key] = float(self.segment_lengths[key]) * 3.6 / float(value)
+        for (node_from, node_to), speed in speeds.items():
+            travel_times[(node_from, node_to)] = self.get_travel_time(node_from, node_to, speed)
         nx.set_edge_attributes(self.simple_network, values=speeds, name="current_speed")
         nx.set_edge_attributes(self.simple_network, values=travel_times, name="current_travel_time")
 
@@ -104,9 +122,10 @@ class Map(metaclass=Singleton):
         new_speeds = {}
         new_travel_times = {}
         for (node_from, node_to), speed in zip(segment_ids, speeds):
+            max_speed = self.get_segment_max_speed(node_from, node_to)
+            speed = speed if speed < max_speed else max_speed
             new_speeds[(node_from, node_to)] = speed
-            travel_time = float('inf') if speed == 0 else float(self.segment_lengths[(node_from, node_to)]) * 3.6 / float(speed)
-            new_travel_times[(node_from, node_to)] = travel_time
+            new_travel_times[(node_from, node_to)] = self.get_travel_time(node_from, node_to, speed)
         nx.set_edge_attributes(self.simple_network, values=new_speeds, name='current_speed')
         nx.set_edge_attributes(self.simple_network, values=new_travel_times, name='current_travel_time')
 
@@ -230,24 +249,36 @@ class Map(metaclass=Singleton):
             save_graphml(self.network, self.file_path)
             cl.info(f"{self.name}'s map saved in {self.file_path}")
 
-    def update_speeds_from_file(self, speeds_path):
-        """Update max speed on segment based on file config."""
-        new_speeds = {}
-        new_travel_times = {}
+    def init_temporary_max_speeds(self, speeds_path):
+        """Load temporary speeds from csv file."""
+        timestamp_format = '%Y-%m-%d %H:%M:%S'
 
         with open(speeds_path) as f:
             reader = csv.reader(f, delimiter=';')
             next(reader, None)
             for row in reader:
                 node_from, node_to, speed = int(row[0]), int(row[1]), float(row[2])
+                timestamp_from = datetime.strptime(row[3], timestamp_format)
+                timestamp_to = datetime.strptime(row[4], timestamp_format)
 
-            new_speeds[(node_from, node_to)] = speed
-            travel_time = float('inf') if speed == 0 else float(self.segment_lengths[(node_from, node_to)]) * 3.6 / float(speed)
-            new_travel_times[(node_from, node_to)] = travel_time
+                self.temporary_speeds.append(TemporarySpeed(node_from, node_to, speed,
+                                                            self.get_segment_max_speed(node_from, node_to),
+                                                            timestamp_from, timestamp_to, False))
 
-        nx.set_edge_attributes(self.simple_network, values=new_speeds, name='speed_kph')
-        nx.set_edge_attributes(self.simple_network, values=new_speeds, name='current_speed')
-        nx.set_edge_attributes(self.simple_network, values=new_travel_times, name='current_travel_time')
+        self.temporary_speeds.sort(key=lambda x: x.timestamp_from)
+
+    def update_temporary_max_speeds(self, timestamp: datetime):
+        """Update max speeds according to the temporary speeds."""
+        new_max_speeds = {}
+        for ts in self.temporary_speeds:
+            if timestamp > ts.timestamp_to:
+                new_max_speeds[(ts.node_from, ts.node_to)] = ts.original_max_speed
+                self.temporary_speeds.remove(ts)
+            elif ts.timestamp_from <= timestamp <= ts.timestamp_to and not ts.active:
+                new_max_speeds[(ts.node_from, ts.node_to)] = ts.temporary_speed
+                ts.active = True
+
+        nx.set_edge_attributes(self.simple_network, values=new_max_speeds, name='speed_kph')
 
 
 def admin_level_to_road_filter(admin_level):  # TODO: where to put it?
