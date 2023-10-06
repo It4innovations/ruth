@@ -26,56 +26,57 @@ class Record:
                 f"{self.segment_length};{self.max_speed};{self.current_speed}")
 
 
-def timed_segment_to_record(dt, seg_id, length, max_speed, aggregated_gv):
+def get_temporary_speed(dt, node_from, node_to, temporary_speeds):
+    for ts in temporary_speeds:
+        if ts.node_from == node_from and ts.node_to == node_to and ts.timestamp_from <= dt <= ts.timestamp_to:
+            return ts.temporary_speed
+    return None
+
+
+def timed_segment_to_record(dt, node_from, node_to, length, max_speed, aggregated_gv, temporary_speeds):
+    seg_id = f"OSM{node_from}T{node_to}"
     seg = Segment(seg_id, length, max_speed)
     current_speed = aggregated_gv.speed_in_time_at_segment(dt, seg)
     if current_speed is None:
-        current_speed = max_speed
-    return Record(seg_id, dt, length, max_speed, current_speed)
+        temporary_speed = get_temporary_speed(dt, node_from, node_to, temporary_speeds)
+        current_speed = temporary_speed if temporary_speed is not None else max_speed
+    return Record(seg_id, dt, round(length, 2), round(max_speed, 2), round(current_speed, 2))
 
 
 def aggregate(sim_path, round_freq_s, out=None):
     sim = Simulation.load(sim_path)
     round_freq = timedelta(seconds=round_freq_s)
 
-    # collect lengths of the segments
-    vehicle_representative = sim.vehicles[0]
-    df = pd.DataFrame(sim.history.data,
-                      columns=["timestamp", "segment_id", "vehicle_id",
-                               "start_offset", "speed", "segment_length",
-                               "status", "active"])
+    temporary_max_speeds = sim.routing_map.temporary_speeds
 
-    df_ni = df.reset_index()
-    segment_ids = df_ni["segment_id"].unique()
     m = sim.routing_map
     segment_data = dict()
     for u, v, data in m.network.edges(data=True):
-        osm_id = f"OSM{u}T{v}"
-        if osm_id in segment_ids:
-            if "length" in data:
-                segment_data[osm_id] = data["length"], data['speed_kph']
-            else:
-                assert False, "Segment without assigned length!"
+        # osm_id = f"OSM{u}T{v}"
+        if "length" in data:
+            segment_data[(u, v)] = (data["length"], data['speed_kph'])
+        else:
+            assert False, "Segment without assigned length!"
 
     rounded_history = []
     for dt, *vals in sim.history.data:
         dt_rounded = round_datetime(dt, round_freq)
         rounded_history.append((dt_rounded, *vals))
-
     print("History rounded")
-    aggregated_gv = GlobalView(data=rounded_history)
-    unique_segments_in_time = [(row[0], row[1], segment_data[row[1]]) for row in aggregated_gv.data]
-    unique_segments_in_time = list(dict.fromkeys(unique_segments_in_time))
 
-    print(f"Computing the aggregation for {len(unique_segments_in_time)} items...")
-    # records = map(partial(timed_segment_to_record, aggregated_gv=aggregated_gv), unique_segments_in_time)
+    sim_start = rounded_history[0][0]
+    sim_end = rounded_history[-1][0]
+    aggregated_gv = GlobalView(data=rounded_history)
+
     records = []
-    for dt, seg_id, (length, max_speed) in tqdm(unique_segments_in_time):
-        records.append(timed_segment_to_record(dt, seg_id, length, max_speed, aggregated_gv))
-    print("Data aggregated.")
+    for (node_from, node_to), (seg_length, seg_speed) in tqdm(segment_data.items(), unit=' segment'):
+        for time in pd.date_range(start=sim_start, end=sim_end, freq=round_freq):
+            record = timed_segment_to_record(time, node_from, node_to, seg_length, seg_speed,
+                                             aggregated_gv, temporary_max_speeds)
+            records.append(record)
 
     with open(out, "w") as csv:
-        csv.write("segment_osm_id;fcd_time_calc;max_speed;current_speed\n")
+        csv.write("segment_osm_id;fcd_time_calc;segment_length;max_speed;current_speed\n")
         csv.write("\n".join(map(repr, records)))
 
     print(f"Aggregated FCDs are written within '{out}'.")
