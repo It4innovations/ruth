@@ -66,13 +66,24 @@ class Simulator:
         last_map_update = self.current_offset
         segments_changed_speed = set()
 
-        if self.sim.setting.speeds_path is not None:
-            self.sim.routing_map.update_speeds_from_file(self.sim.setting.speeds_path)
         while self.current_offset is not None:
             step_start_dt = datetime.now()
             timer_set = TimerSet()
 
             offset = self.sim.round_time_offset(self.current_offset)
+
+            with timer_set.get("update_map_speeds"):
+                self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
+                if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
+                    new_speeds = [self.sim.global_view.get_segment_speed(node_from,
+                                                                         node_to,
+                                                                         self.sim.routing_map)
+                                  for node_from, node_to in segments_changed_speed]
+                    self.sim.routing_map.update_current_speeds(segments_changed_speed, new_speeds)
+                    alternatives_provider.load_map(self.sim.routing_map)
+
+                    segments_changed_speed = set()
+                    last_map_update = self.current_offset
 
             with timer_set.get("allowed_vehicles"):
                 vehicles_to_be_moved = [v for v in self.sim.vehicles
@@ -113,18 +124,6 @@ class Simulator:
 
             with timer_set.get("update"):
                 self.sim.update(fcds)
-
-            with timer_set.get("update_map_speeds"):
-                if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
-                    new_speeds = [self.sim.global_view.get_segment_speed(node_from,
-                                                                         node_to,
-                                                                         self.sim.routing_map)
-                                  for node_from, node_to in segments_changed_speed]
-                    self.sim.routing_map.update_current_speeds(segments_changed_speed, new_speeds)
-                    alternatives_provider.load_map(self.sim.routing_map)
-
-                    segments_changed_speed = set()
-                    last_map_update = self.current_offset
 
             with timer_set.get("compute_offset"):
                 current_offset_new = self.sim.compute_current_offset()
