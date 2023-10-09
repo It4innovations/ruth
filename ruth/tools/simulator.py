@@ -11,12 +11,13 @@ from typing import List, Optional
 import click
 from probduration import HistoryHandler
 
+from ..zeromq.src.client import Client
 from ..losdb import FreeFlowDb, ProbProfileDb
 from ..simulator import RouteRankingAlgorithms, SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
 from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, \
     FirstRouteSelection, RouteSelectionProvider, ShortestPathsAlternatives, \
-    ZeroMQDistributedAlternatives, RandomRouteSelection
+    ZeroMQDistributedAlternatives, RandomRouteSelection, ZeroMQDistributedPTDRRouteSelection
 
 
 @dataclass
@@ -169,7 +170,8 @@ def single_node_simulator(ctx,
 
     ctx.obj['DEBUG'] = debug
     walltime = timedelta(seconds=walltime_s) if walltime_s is not None else None
-    saving_interval = timedelta(seconds=saving_interval_s) if saving_interval_s is not None else None
+    saving_interval = timedelta(
+        seconds=saving_interval_s) if saving_interval_s is not None else None
     sim_state = Simulation.load(continue_from) if continue_from is not None else None
 
     ctx.obj['common-args'] = CommonArgs(
@@ -283,6 +285,17 @@ def rank_by_prob_delay(ctx,
             cluster.kill()
 
 
+class ZeroMqContext:
+    def __init__(self):
+        self.clients = {}
+
+    def get_or_create_client(self, port: int) -> Client:
+        if port not in self.clients:
+            assert (port + 1) not in self.clients
+            self.clients[port] = Client(port=port, broadcast_port=port + 1)
+        return self.clients[port]
+
+
 @enum.unique
 class AlternativesImpl(str, enum.Enum):
     FASTEST_PATHS = "fastest-paths"
@@ -290,15 +303,14 @@ class AlternativesImpl(str, enum.Enum):
     DISTRIBUTED = "distributed"
 
 
-def create_alternatives_provider(alternatives: AlternativesImpl) -> AlternativesProvider:
+def create_alternatives_provider(alternatives: AlternativesImpl,
+                                 zmq_ctx: ZeroMqContext) -> AlternativesProvider:
     if alternatives == AlternativesImpl.FASTEST_PATHS:
         return FastestPathsAlternatives()
     elif alternatives == AlternativesImpl.SHORTEST_PATHS:
         return ShortestPathsAlternatives()
     elif alternatives == AlternativesImpl.DISTRIBUTED:
-        from ..zeromq.src.client import Client
-        client = Client(port=5555)
-        return ZeroMQDistributedAlternatives(client=client)
+        return ZeroMQDistributedAlternatives(client=zmq_ctx.get_or_create_client(5555))
     else:
         raise NotImplementedError
 
@@ -307,16 +319,19 @@ def create_alternatives_provider(alternatives: AlternativesImpl) -> Alternatives
 class RouteSelectionImpl(str, enum.Enum):
     FIRST = "first"
     RANDOM = "random"
+    DISTRIBUTED = "distributed"
 
 
-def create_route_selection_provider(route_selection: RouteSelectionImpl) -> RouteSelectionProvider:
+def create_route_selection_provider(route_selection: RouteSelectionImpl,
+                                    zeromq_ctx: ZeroMqContext) -> RouteSelectionProvider:
     if route_selection == RouteSelectionImpl.FIRST:
         return FirstRouteSelection()
     elif route_selection == RouteSelectionImpl.RANDOM:
         return RandomRouteSelection()
+    elif route_selection == RouteSelectionImpl.DISTRIBUTED:
+        return ZeroMQDistributedPTDRRouteSelection(client=zeromq_ctx.get_or_create_client(5555))
     else:
         raise NotImplementedError
-        print(route_selection)
 
 
 @single_node_simulator.command()
@@ -350,8 +365,9 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path, alternatives: Altern
     if saving_interval is not None:
         end_step_fns.append(store_simulation_at_interval(saving_interval, f"run{task_id}"))
 
-    alternatives_provider = create_alternatives_provider(alternatives)
-    route_selection_provider = create_route_selection_provider(route_selection)
+    zmq_ctx = ZeroMqContext()
+    alternatives_provider = create_alternatives_provider(alternatives, zmq_ctx=zmq_ctx)
+    route_selection_provider = create_route_selection_provider(route_selection, zeromq_ctx=zmq_ctx)
     simulator.simulate(
         alternatives_provider=alternatives_provider,
         route_selection_provider=route_selection_provider,
