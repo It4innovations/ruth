@@ -145,11 +145,11 @@ class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
     the shortest route for each car.
     """
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
-        # TODO: calculate the correct time offset for Monte Carlo
         messages = [Message(kind="monte-carlo", data={
             "routes": routes,
-            "frequency": vehicle.frequency,
-            "departure_time": vehicle.time_offset
+            "frequency": vehicle.frequency.total_seconds(),
+            # TODO: calculate the correct time offset for Monte Carlo
+            "departure_time": 0
         }) for (vehicle, routes) in route_possibilities]
 
         if is_root_debug_logging():
