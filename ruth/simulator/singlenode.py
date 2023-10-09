@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import Callable, List, Optional
 
 from .kernels import AlternativesProvider, RouteSelectionProvider
+from .ptdr import LosAtTimeOfWeek, SegmentPTDRData
 from .route import advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
 from ..losdb import GlobalViewDb
@@ -50,6 +51,15 @@ class Simulator:
             v.frequency = timedelta(seconds=5)
 
         alternatives_provider.load_map(self.sim.routing_map)
+
+        # TODO: load PTDR profiles somehow
+        profiles = [SegmentPTDRData(
+            id=node_id,
+            length=100,
+            max_speed=100,
+            profiles=[LosAtTimeOfWeek(values=[0] * 4, cumprobs=[0] * 4) for _ in range(672)]
+        ) for node_id in list((1, 2, 3))]
+        route_selection_provider.update_segment_profiles(profiles)
 
         step = self.sim.number_of_steps
         last_map_update = self.current_offset
