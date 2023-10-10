@@ -20,25 +20,30 @@ class CommonArgs:
     departure_time: datetime = field(serializer=lambda x: x.strftime("%Y-%m-%d %H:%M:%S"),
                                      deserializer=lambda x: datetime.strptime(x, "%Y-%m-%d %H:%M:%S"),
                                      default=datetime.now())
-    round_frequency_s: timedelta = field(serializer=lambda x: x.total_seconds(),
-                                         deserializer=lambda x: timedelta(seconds=x),
-                                         default=timedelta(seconds=5))
+    round_frequency: timedelta = field(rename="round-frequency-s",
+                                       serializer=lambda x: x.total_seconds(),
+                                       deserializer=lambda x: timedelta(seconds=x),
+                                       default=timedelta(seconds=5))
     k_alternatives: int = 1
-    map_update_freq_s: timedelta = field(serializer=lambda x: x.total_seconds(),
-                                         deserializer=lambda x: timedelta(seconds=x),
-                                         default=timedelta(seconds=1))
-    count_vehicles_tolerance_s: timedelta = field(serializer=lambda x: x.total_seconds(),
-                                                  deserializer=lambda x: timedelta(seconds=x),
-                                                  default=timedelta(seconds=5))
+    map_update_freq: timedelta = field(rename="map-update-freq-s",
+                                       serializer=lambda x: x.total_seconds(),
+                                       deserializer=lambda x: timedelta(seconds=x),
+                                       default=timedelta(seconds=1))
+    count_vehicles_tolerance: timedelta = field(rename="count-vehicles-tolerance-s",
+                                                serializer=lambda x: x.total_seconds(),
+                                                deserializer=lambda x: timedelta(seconds=x),
+                                                default=timedelta(seconds=5))
     speeds_path: Optional[str] = None
     out: str = "simulation-record.pickle"
     seed: Optional[int] = None
-    walltime_s: Optional[timedelta] = field(serializer=lambda x: x.total_seconds(),
-                                            deserializer=lambda x: timedelta(seconds=x),
-                                            default=None)
-    saving_interval_s: Optional[timedelta] = field(serializer=lambda x: x.total_seconds(),
-                                                   deserializer=lambda x: timedelta(seconds=x),
-                                                   default=None)
+    walltime: Optional[timedelta] = field(rename="walltime-s",
+                                          serializer=lambda x: x.total_seconds(),
+                                          deserializer=lambda x: timedelta(seconds=x),
+                                          default=None)
+    saving_interval: Optional[timedelta] = field(rename="saving-interval-s",
+                                                 serializer=lambda x: x.total_seconds(),
+                                                 deserializer=lambda x: timedelta(seconds=x),
+                                                 default=None)
     continue_from: Optional[Simulation] = field(serializer=lambda x: x.store("continue-from.pickle"),
                                                 deserializer=lambda x: Simulation.load(x),
                                                 default=None)
