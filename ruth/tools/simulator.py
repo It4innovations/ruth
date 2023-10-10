@@ -23,24 +23,24 @@ from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, 
 class CommonArgs:
     task_id: str
     departure_time: datetime
-    round_frequency_s: timedelta
+    round_frequency: timedelta
     k_alternatives: int
-    map_update_freq_s: timedelta
-    count_vehicles_tolerance_s: timedelta
+    map_update_freq: timedelta
+    count_vehicles_tolerance: timedelta
     speeds_path: Optional[str] = None
     out: str = "simulation-record.pickle"
     seed: Optional[int] = None
-    walltime_s: Optional[timedelta] = None
-    saving_interval_s: Optional[timedelta] = None
+    walltime: Optional[timedelta] = None
+    saving_interval: Optional[timedelta] = None
     continue_from: Optional[Simulation] = None
 
 
 def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimulator:
     departure_time = common_args.departure_time
-    round_frequency_s = common_args.round_frequency_s
+    round_frequency = common_args.round_frequency
     k_alternatives = common_args.k_alternatives
-    map_update_freq_s = common_args.map_update_freq_s
-    count_vehicles_tolerance_s = common_args.count_vehicles_tolerance_s
+    map_update_freq = common_args.map_update_freq
+    count_vehicles_tolerance_s = common_args.count_vehicles_tolerance
     seed = common_args.seed
     speeds_path = common_args.speeds_path
     sim_state = common_args.continue_from
@@ -49,7 +49,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimul
     if sim_state is None:
         if vehicles_path is None:
             raise ValueError("Either vehicles_path or continue_from must be specified.")
-        ss = SimSetting(departure_time, round_frequency_s, k_alternatives, map_update_freq_s,
+        ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
                         count_vehicles_tolerance_s, seed, speeds_path=speeds_path)
         vehicles = load_vehicles(vehicles_path)
         simulation = Simulation(vehicles, ss)
@@ -175,15 +175,15 @@ def single_node_simulator(ctx,
     ctx.obj['common-args'] = CommonArgs(
                                     task_id=task_id,
                                     departure_time=departure_time,
-                                    round_frequency_s=timedelta(seconds=round_frequency_s),
+                                    round_frequency=timedelta(seconds=round_frequency_s),
                                     k_alternatives=k_alternatives,
-                                    map_update_freq_s=timedelta(seconds=map_update_freq_s),
-                                    count_vehicles_tolerance_s=timedelta(seconds=count_vehicles_tolerance_s),
+                                    map_update_freq=timedelta(seconds=map_update_freq_s),
+                                    count_vehicles_tolerance=timedelta(seconds=count_vehicles_tolerance_s),
                                     speeds_path=speeds_path,
                                     out=out,
                                     seed=seed,
-                                    walltime_s=walltime,
-                                    saving_interval_s=saving_interval,
+                                    walltime=walltime,
+                                    saving_interval=saving_interval,
                                     continue_from=sim_state
                                 )
 
@@ -336,8 +336,8 @@ def run(ctx,
 def run_inner(common_args: CommonArgs, vehicles_path: Path, alternatives: AlternativesImpl,
               route_selection: RouteSelectionImpl):
     out = common_args.out
-    walltime = common_args.walltime_s
-    saving_interval = common_args.saving_interval_s
+    walltime = common_args.walltime
+    saving_interval = common_args.saving_interval
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
     simulator = prepare_simulator(common_args, vehicles_path)
