@@ -1,11 +1,19 @@
 import click
-
+import pathlib
 from ruth.simulator import Simulation
 from flowmap.flowmapframe.plot import WidthStyle
 
 from flowmap.time_unit import TimeUnit
 from flowmap.animation import SimulationVolumeAnimator, SimulationSpeedsAnimator
 from flowmap.info import SimulationInfo, get_real_time
+
+
+def set_path():
+    # simulations generated on Linux can't be loaded on Windows and vice versa without changing the path
+    if platform.system() == "Windows":
+        pathlib.PosixPath = pathlib.WindowsPath
+    elif platform.system() == "Linux":
+        pathlib.WindowsPath = pathlib.PosixPath
 
 
 @click.group()
@@ -124,4 +132,5 @@ def main():
 
 
 if __name__ == '__main__':
+    set_path()
     main()
