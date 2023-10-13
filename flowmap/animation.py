@@ -24,9 +24,14 @@ from flowmap.zoom import get_zoom
 from flowmap.input import preprocess_data
 
 
+def _load_file_content(path):
+    with open(path, 'r') as f:
+        return f.read()
+
+
 class SimulationAnimator(ABC):
     def __init__(self, simulation_path, fps, save_path, frame_start, frames_len,
-                 width_modif, title, speed, divide, max_width_count, plot_cars, zoom):
+                 width_modif, title, description_path, speed, divide, max_width_count, plot_cars, zoom):
         self.simulation_path = simulation_path
         self.fps = fps
         self.save_path = save_path
@@ -34,6 +39,7 @@ class SimulationAnimator(ABC):
         self.frames_len = frames_len
         self.width_modif = width_modif
         self.title = title
+        self.description = _load_file_content(description_path) if description_path else None
         self.speed = speed
         self.divide = divide
         self.max_width_count = max_width_count
@@ -132,6 +138,18 @@ class SimulationAnimator(ABC):
             ha='left',
             fontsize=20
         )
+        if self.description:
+            txt = plt.figtext(
+                0.5,
+                0.08,
+                self.description,
+                ha='center',
+                va='top',
+                fontsize=10,
+                wrap=True
+            )
+            txt._get_wrap_line_width = lambda: 1400
+
         self.ax_traffic = self.ax_map.twinx()
         self.ax_map_settings = AxSettings(self.ax_map)
 

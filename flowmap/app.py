@@ -27,6 +27,8 @@ def click_animation_common(function):
         help="Adjust width."
     )(function)
     function = click.option('--title', '-t', default='', help="Set video title")(function)
+    function = click.option('--description-path', default='', help="Path to the file with description to be added to "
+                                                                   "the video.")(function)
     function = click.option('--speed', '-s', default=1, help="Set video speed.")(function)
     function = click.option(
         '--divide',
