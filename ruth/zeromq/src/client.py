@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+import time
 
 import zmq
 import json
@@ -37,6 +38,9 @@ class Client:
         self.broadcast_socket.bind(self.broadcast_address)
 
         self.poller = zmq.Poller()
+
+        # Give subscribers a chance to join
+        time.sleep(1)
 
     def compute(self, messages: List[Message], timeout_s=10) -> List[Any]:
         self.poller.register(self.socket, zmq.POLLIN | zmq.POLLOUT)
