@@ -48,6 +48,8 @@ class Client:
 
         logger.debug(f"Sending {len(messages)} message(s) to workers")
 
+        total_size = 0
+
         # Switch messages between sockets
         while msg_received < msg_count:
             result = self.poller.poll(timeout=timeout_s * 1000)
@@ -72,16 +74,20 @@ class Client:
 
             if (socks.get(self.socket) & zmq.POLLOUT) == zmq.POLLOUT:
                 message = messages[msg_send]
+                payload = json.dumps(message.data).encode()
+                total_size += len(payload)
+
                 # Send until all messages are sent
                 self.socket.send_multipart([
                     str(msg_send).encode(),
                     message.kind.encode(),
-                    json.dumps(message.data).encode()
+                    payload
                 ])
                 msg_send += 1
                 if msg_send == msg_count:
                     self.poller.modify(self.socket, zmq.POLLIN)
 
+        logger.debug(f"Sent {total_size} bytes")
         # Sort by id
         return [value for (_, value) in sorted(results.items(), key=lambda item: item[0])]
 
@@ -90,7 +96,10 @@ class Client:
         Broadcasts given message to all currently connected workers.
         """
         func_call = f"traffic-sim:{message.kind}"
+
+        payload = json.dumps(message.data).encode()
+        logger.debug(f"Broadcasting {func_call}, {len(payload)} bytes")
         self.broadcast_socket.send_multipart([
             str(func_call).encode(),
-            json.dumps(message.data).encode()
+            payload
         ])
