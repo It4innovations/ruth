@@ -1,4 +1,3 @@
-import itertools
 import logging
 from datetime import datetime, timedelta
 from typing import Callable, List, Optional
@@ -57,8 +56,8 @@ class Simulator:
             id=node_id,
             length=100,
             max_speed=100,
-            profiles=[LosAtTimeOfWeek(values=[0] * 4, cumprobs=[0] * 4) for _ in range(672)]
-        ) for node_id in list((1, 2, 3))]
+            profiles=[LosAtTimeOfWeek(values=[0.1, 0.3, 0.5, 1.0], cumprobs=[0, 0.2, 0.5, 0.8]) for _ in range(672)]
+        ) for node_id in list(self.sim.routing_map.network.nodes())]
         route_selection_provider.update_segment_profiles(profiles)
 
         step = self.sim.number_of_steps

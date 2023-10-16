@@ -88,7 +88,8 @@ class RouteSelectionProvider:
     For a given list of alternatives (k per vehicle), select the best route for each vehicle.
     """
 
-    # FIXME: it's a hack to have this method here, but for now it's OK
+    # FIXME: it's a hack to have this method here, not all route selection implementations care
+    # about profiles
     def update_segment_profiles(self, segments: List[SegmentPTDRData]):
         pass
 
@@ -148,7 +149,7 @@ class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
         messages = [Message(kind="monte-carlo", data={
             "routes": routes,
             "frequency": vehicle.frequency.total_seconds(),
-            # TODO: calculate the correct time offset for Monte Carlo
+            # TODO: calculate the correct time offset within the week for Monte Carlo
             "departure_time": 0
         }) for (vehicle, routes) in route_possibilities]
 
