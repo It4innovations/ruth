@@ -41,7 +41,7 @@ def aggregate(sim_path, round_freq_s, out=None):
     df = pd.DataFrame(sim.history.data,
                       columns=["timestamp", "segment_id", "vehicle_id",
                                "start_offset", "speed", "segment_length",
-                               "status"])
+                               "status", "active"])
 
     df_ni = df.reset_index()
     segment_ids = df_ni["segment_id"].unique()
