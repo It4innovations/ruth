@@ -9,6 +9,7 @@ from typing import List
 
 import networkx as nx
 import osmnx as ox
+import osmnx.settings
 from osmnx import graph_from_place, load_graphml, save_graphml
 from networkx.exception import NetworkXNoPath
 
@@ -37,12 +38,13 @@ def get_osm_segment_id(node_from: int, node_to: int):
 class Map(metaclass=Singleton):
     """Routing map."""
 
-    def __init__(self, border, data_dir="./data", with_speeds=True):
+    def __init__(self, border, download_date,  data_dir="./data", with_speeds=True, save_hdf=True):
         """Initialize a map via the border.
 
         If `data_dir` provided, the map is loaded from locally stored maps preferably.
         """
         self.border = border
+        self.download_date = download_date
         self.data_dir = data_dir
         self.network, fresh_data = self._load()
 
@@ -58,8 +60,9 @@ class Map(metaclass=Singleton):
         if fresh_data:
             self._store()
 
-        self.hdf5_file_path = str((Path(self.data_dir) / "map.hdf5").absolute())
-        self.save_hdf()
+        if save_hdf:
+            self.hdf5_file_path = str((Path(self.data_dir) / "map.hdf5").absolute())
+            self.save_hdf()
 
     def save_hdf(self) -> str:
         temp_path = str((Path(self.data_dir) / "map-temp.hdf5").absolute())
@@ -87,7 +90,7 @@ class Map(metaclass=Singleton):
     @property
     def name(self):
         """Name of the map."""
-        return self.border.name
+        return self.border.name + "_" + self.download_date
 
     def init_current_speeds(self):
         speeds = nx.get_edge_attributes(self.simple_network, name='speed_kph')
@@ -203,6 +206,8 @@ class Map(metaclass=Singleton):
             #     clean_periphery=False,
             #     custom_filter=admin_level_to_road_filter(self.border.admin_level),
             # )
+
+            osmnx.settings.overpass_settings = f"[out:json][timeout:{{timeout}}][date:'{self.download_date}']"
 
             # Change to "graph_from_place"
             network = graph_from_place(
