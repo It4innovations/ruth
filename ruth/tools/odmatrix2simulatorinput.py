@@ -6,7 +6,7 @@ import shapely.wkt
 import osmnx as ox
 import pandas as pd
 import numpy as np
-from datetime import timedelta
+from datetime import timedelta, datetime
 from functools import partial
 from multiprocessing import Pool
 from shapely.geometry import Point, MultiPoint, Polygon
@@ -19,13 +19,13 @@ from ..data.map import Map
 routing_map = None
 
 
-def gps_to_nodes_with_shortest_path(od_for_id, poly_wkt, border_kind, data_dir):
+def gps_to_nodes_with_shortest_path(od_for_id, poly_wkt, border_kind, current_date, data_dir):
 
     global routing_map
     if routing_map is None:
         b_def = PolygonBorderDef(poly_wkt)
         b = Border(f"{b_def.md5()}_{border_kind}", b_def, BorderType.parse(border_kind), data_dir, True)
-        routing_map = Map(b, data_dir=data_dir)
+        routing_map = Map(b, download_date=current_date, data_dir=data_dir, save_hdf=False)
 
     id, origin_lon, origin_lat, destination_lon, destination_lat, time_offset = od_for_id
 
@@ -75,12 +75,18 @@ def convert(od_matrix_path, csv_separator, frequency, fcd_sampling_period, borde
     else:
         border_poly = shapely.wkt.loads(border)
 
+    b_def = PolygonBorderDef(border_poly.wkt)
+    b = Border(f"{b_def.md5()}_{border_kind}", b_def, BorderType.parse(border_kind), data_dir, True)
+    current_date = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    routing_map = Map(b, current_date, data_dir=data_dir)
+
     with Pool(processes=nproc) as p:
 
         od_nodes = []
         with tqdm(total=len(odm_df)) as pbar:
             for odn in p.imap(partial(gps_to_nodes_with_shortest_path,
-                                      poly_wkt=border_poly.wkt, border_kind=border_kind, data_dir=data_dir),
+                                      poly_wkt=border_poly.wkt, current_date=current_date,
+                                      border_kind=border_kind, data_dir=data_dir),
                               odm_df[["id",
                                       "lon_from", "lat_from",
                                       "lon_to", "lat_to",
@@ -96,10 +102,10 @@ def convert(od_matrix_path, csv_separator, frequency, fcd_sampling_period, borde
 
     df[["start_index", "start_distance_offset",
         "frequency", "fcd_sampling_period",
-        "border_id", "border_kind", "border"]] = (
+        "border_id", "border_kind", "border", "download_date"]] = (
         0, 0.0,
         frequency, fcd_sampling_period,
-        f"{b_def.md5()}_{border_kind}", border_kind, border_poly.wkt)
+        f"{b_def.md5()}_{border_kind}", border_kind, border_poly.wkt, current_date)
 
     df[["time_offset", "frequency", "fcd_sampling_period"]] = \
         df[["time_offset", "frequency", "fcd_sampling_period"]].applymap(lambda seconds: timedelta(seconds=seconds))

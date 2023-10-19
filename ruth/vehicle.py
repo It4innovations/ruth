@@ -36,6 +36,7 @@ class Vehicle:
     border_id: str = set_numpy_type("string")
     border: str = set_numpy_type("string")  # polygon definition
     border_kind: str = set_numpy_type("string")
+    download_date: str = set_numpy_type("string")
     osm_route: List[int] = set_numpy_type("object")
     active: bool = set_numpy_type("bool")
     """A period in which the raw FCD data are sampled"""
@@ -49,7 +50,7 @@ class Vehicle:
         # NOTE: the routing map is not among attributes of dataclass
         # => does not affect the conversion to pandas.Series
         if routing_map is None:
-            self.routing_map = get_map(self.border, self.border_kind,
+            self.routing_map = get_map(self.border, self.border_kind, self.download_date,
                                        with_speeds=True, name=self.border_id)
         else:
             self.routing_map = routing_map

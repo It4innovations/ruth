@@ -10,6 +10,7 @@ from .metaclasses import Singleton
 
 def get_map(polygon: str,
             kind: BorderType,
+            download_date: str = None,
             name=None,
             on_disk=False,
             with_speeds=False,
@@ -19,9 +20,10 @@ def get_map(polygon: str,
     border_def = PolygonBorderDef(polygon, on_disk=on_disk)
     border_kind = BorderType.parse(kind)
     name_ = name if name is not None else f"custom_{border_def.md5()}_{border_kind.name.lower()}"
+    download_date = download_date if download_date is not None else datetime.now().strftime("%Y-%m-%d")
     border = Border(name_, border_def, border_kind, data_dir, load_from_cache)
 
-    return Map(border, with_speeds=with_speeds)
+    return Map(border, download_date=download_date, with_speeds=with_speeds)
 
 
 class SegmentIdParser:
