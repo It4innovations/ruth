@@ -83,7 +83,7 @@ class GlobalView:
             return None
         return sum(speeds) / len(speeds)
 
-    def get_segment_speed(self, node_from, node_to, routing_map: Map) -> SpeedKph:
+    def get_segment_speed(self, node_from, node_to) -> SpeedKph:
         speeds = {}
         by_segment = self.by_segment[get_osm_segment_id(node_from, node_to)]
         by_segment.sort(key=lambda x: x[0])
@@ -91,7 +91,7 @@ class GlobalView:
             speeds[vehicle_id] = speed
         speeds = list(speeds.values())
         if len(speeds) == 0:
-            return routing_map.get_segment_max_speed(node_from, node_to)
+            return SpeedKph(float('inf'))
         return SpeedKph(sum(speeds) / len(speeds))
 
     def to_dataframe(self):  # todo: maybe process in chunks

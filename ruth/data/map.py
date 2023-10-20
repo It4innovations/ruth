@@ -36,10 +36,6 @@ def segment_weight(n1, n2, data):
     return float(data['length']) + float(f"0.{n1}{n2}")
 
 
-def segment_weight_speed(n1, n2, data):
-    return float(data['current_travel_time'])
-
-
 def save(G, fname):
     nx.write_gml(G, fname)
 
@@ -51,7 +47,7 @@ def get_osm_segment_id(node_from: int, node_to: int):
 class Map(metaclass=Singleton):
     """Routing map."""
 
-    def __init__(self, border, download_date,  data_dir="./data", with_speeds=True, save_hdf=True):
+    def __init__(self, border, download_date, data_dir="./data", with_speeds=True, save_hdf=True):
         """Initialize a map via the border.
 
         If `data_dir` provided, the map is loaded from locally stored maps preferably.
@@ -65,8 +61,9 @@ class Map(metaclass=Singleton):
         if with_speeds:
             self.network = ox.add_edge_speeds(self.network)
 
-        self.simple_network = ox.get_digraph(self.network)
-        self.segment_lengths = nx.get_edge_attributes(self.simple_network, name='length')
+        self.original_network = ox.get_digraph(self.network)
+        self.current_network = self.original_network.copy()
+        self.segment_lengths = nx.get_edge_attributes(self.current_network, name='length')
 
         if with_speeds:
             self.init_current_speeds()
@@ -81,7 +78,7 @@ class Map(metaclass=Singleton):
     def save_hdf(self) -> str:
         temp_path = str((Path(self.data_dir) / "map-temp.hdf5").absolute())
 
-        self.osm_to_hdf_map_ids = save_graph_to_hdf5(self.simple_network, temp_path)
+        self.osm_to_hdf_map_ids = save_graph_to_hdf5(self.current_network, temp_path)
         self.hdf_to_osm_map_ids = {v: k for (k, v) in self.osm_to_hdf_map_ids.items()}
 
         assert len(self.osm_to_hdf_map_ids) == len(self.hdf_to_osm_map_ids)
@@ -110,27 +107,37 @@ class Map(metaclass=Singleton):
         return float('inf') if speed_kph == 0 else float(
             self.segment_lengths[(node_from, node_to)]) * 3.6 / float(speed_kph)
 
+    def get_current_travel_time(self, route: List[int]):
+        total_travel_time = 0
+        for node_from, node_to in zip(route[:-1], route[1:]):
+            total_travel_time += self.current_network[node_from][node_to]['current_travel_time']
+        return total_travel_time
+
+
     def init_current_speeds(self):
-        speeds = nx.get_edge_attributes(self.simple_network, name='speed_kph')
+        speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')
         travel_times = {}
         for (node_from, node_to), speed in speeds.items():
             travel_times[(node_from, node_to)] = self.get_travel_time(node_from, node_to, speed)
-        nx.set_edge_attributes(self.simple_network, values=speeds, name="current_speed")
-        nx.set_edge_attributes(self.simple_network, values=travel_times, name="current_travel_time")
+        nx.set_edge_attributes(self.current_network, values=speeds, name="current_speed")
+        nx.set_edge_attributes(self.current_network, values=travel_times, name="current_travel_time")
 
     def update_current_speeds(self, segment_ids, speeds: List[SpeedKph]):
         new_speeds = {}
         new_travel_times = {}
         for (node_from, node_to), speed in zip(segment_ids, speeds):
-            max_speed = self.get_segment_max_speed(node_from, node_to)
+            max_speed = self.get_current_max_speed(node_from, node_to)
             speed = speed if speed < max_speed else max_speed
             new_speeds[(node_from, node_to)] = speed
             new_travel_times[(node_from, node_to)] = self.get_travel_time(node_from, node_to, speed)
-        nx.set_edge_attributes(self.simple_network, values=new_speeds, name='current_speed')
-        nx.set_edge_attributes(self.simple_network, values=new_travel_times, name='current_travel_time')
+        nx.set_edge_attributes(self.current_network, values=new_speeds, name='current_speed')
+        nx.set_edge_attributes(self.current_network, values=new_travel_times, name='current_travel_time')
 
-    def get_segment_max_speed(self, node_from: int, node_to: int):
-        return self.simple_network[node_from][node_to]['speed_kph']
+    def get_current_max_speed(self, node_from: int, node_to: int):
+        return self.current_network[node_from][node_to]['speed_kph']
+
+    def get_original_max_speed(self, node_from: int, node_to: int):
+        return self.original_network[node_from][node_to]['speed_kph']
 
     def set_data_dir(self, path):
         if self.data_dir is not None:
@@ -138,7 +145,7 @@ class Map(metaclass=Singleton):
         self.data_dir = path
 
     def get_osm_segment(self, node_from: int, node_to: int):
-        data = self.simple_network.get_edge_data(node_from, node_to)
+        data = self.original_network.get_edge_data(node_from, node_to)
         return Segment(
             id=get_osm_segment_id(node_from, node_to),
             length=data["length"],
@@ -177,11 +184,11 @@ class Map(metaclass=Singleton):
 
     def shortest_path(self, origin, dest):
         """Compute shortest path between two OSM nodes."""
-        return ox.shortest_path(self.network, origin, dest)
+        return nx.shortest_path(self.original_network, origin, dest, weight="length")
 
     def k_shortest_paths(self, origin, dest, k):
         """Compute k-shortest paths between two OSM nodes."""
-        paths_gen = nx.shortest_simple_paths(G=self.simple_network, source=origin,
+        paths_gen = nx.shortest_simple_paths(G=self.current_network, source=origin,
                                              target=dest, weight=segment_weight)
         try:
             for path in itertools.islice(paths_gen, 0, k):
@@ -191,12 +198,12 @@ class Map(metaclass=Singleton):
 
     def fastest_path(self, origin, dest):
         """Compute fastest path between two OSM nodes."""
-        return nx.dijkstra_path(self.network, origin, dest, weight=segment_weight_speed)
+        return nx.dijkstra_path(self.current_network, origin, dest, weight='current_travel_time')
 
     def k_fastest_paths(self, origin, dest, k):
         """Compute k-fastest paths between two OSM nodes."""
-        paths_gen = nx.shortest_simple_paths(G=self.simple_network, source=origin,
-                                             target=dest, weight=segment_weight_speed)
+        paths_gen = nx.shortest_simple_paths(G=self.current_network, source=origin,
+                                             target=dest, weight="current_travel_time")
         try:
             for path in itertools.islice(paths_gen, 0, k):
                 yield path
@@ -261,8 +268,10 @@ class Map(metaclass=Singleton):
                 timestamp_from = datetime.strptime(row[3], timestamp_format)
                 timestamp_to = datetime.strptime(row[4], timestamp_format)
 
-                self.temporary_speeds.append(TemporarySpeed(node_from, node_to, speed,
-                                                            self.get_segment_max_speed(node_from, node_to),
+                self.temporary_speeds.append(TemporarySpeed(node_from,
+                                                            node_to,
+                                                            SpeedKph(speed),
+                                                            self.get_original_max_speed(node_from, node_to),
                                                             timestamp_from, timestamp_to, False))
 
         self.temporary_speeds.sort(key=lambda x: x.timestamp_from)
@@ -270,15 +279,31 @@ class Map(metaclass=Singleton):
     def update_temporary_max_speeds(self, timestamp: datetime):
         """Update max speeds according to the temporary speeds."""
         new_max_speeds = {}
+        check_segments = []
         for ts in self.temporary_speeds:
             if timestamp > ts.timestamp_to:
                 new_max_speeds[(ts.node_from, ts.node_to)] = ts.original_max_speed
                 self.temporary_speeds.remove(ts)
+                check_segments.append((ts.node_from, ts.node_to))
             elif ts.timestamp_from <= timestamp <= ts.timestamp_to and not ts.active:
                 new_max_speeds[(ts.node_from, ts.node_to)] = ts.temporary_speed
                 ts.active = True
+                check_segments.append((ts.node_from, ts.node_to))
 
-        nx.set_edge_attributes(self.simple_network, values=new_max_speeds, name='speed_kph')
+        nx.set_edge_attributes(self.current_network, values=new_max_speeds, name='speed_kph')
+
+        new_current_speeds = {}
+        new_travel_times = {}
+        for (node_from, node_to) in check_segments:
+            data = self.current_network.get_edge_data(node_from, node_to)
+            max_speed = data['speed_kph']
+            current_speed = data['current_speed']
+            current_speed = current_speed if current_speed < max_speed else max_speed
+            new_current_speeds[(node_from, node_to)] = current_speed
+            new_travel_times[(node_from, node_to)] = self.get_travel_time(node_from, node_to, current_speed)
+
+        nx.set_edge_attributes(self.current_network, values=new_current_speeds, name='current_speed')
+        nx.set_edge_attributes(self.current_network, values=new_travel_times, name='current_travel_time')
 
 
 def admin_level_to_road_filter(admin_level):  # TODO: where to put it?
