@@ -26,20 +26,12 @@ class Record:
                 f"{self.segment_length};{self.max_speed};{self.current_speed}")
 
 
-def get_temporary_speed(dt, node_from, node_to, temporary_speeds):
-    for ts in temporary_speeds:
-        if ts.node_from == node_from and ts.node_to == node_to and ts.timestamp_from <= dt <= ts.timestamp_to:
-            return ts.temporary_speed
-    return None
-
-
-def timed_segment_to_record(dt, node_from, node_to, length, max_speed, aggregated_gv, temporary_speeds):
+def timed_segment_to_record(dt, node_from, node_to, length, max_speed, aggregated_gv):
     seg_id = f"OSM{node_from}T{node_to}"
     seg = Segment(seg_id, length, max_speed)
     current_speed = aggregated_gv.speed_in_time_at_segment(dt, seg)
     if current_speed is None:
-        temporary_speed = get_temporary_speed(dt, node_from, node_to, temporary_speeds)
-        current_speed = temporary_speed if temporary_speed is not None else max_speed
+        current_speed = max_speed
     return Record(seg_id, dt, round(length, 2), round(max_speed, 2), round(current_speed, 2))
 
 
@@ -47,12 +39,9 @@ def aggregate(sim_path, round_freq_s, out=None):
     sim = Simulation.load(sim_path)
     round_freq = timedelta(seconds=round_freq_s)
 
-    temporary_max_speeds = sim.routing_map.temporary_speeds
-
     m = sim.routing_map
     segment_data = dict()
     for u, v, data in m.network.edges(data=True):
-        # osm_id = f"OSM{u}T{v}"
         if "length" in data:
             segment_data[(u, v)] = (data["length"], data['speed_kph'])
         else:
@@ -71,8 +60,7 @@ def aggregate(sim_path, round_freq_s, out=None):
     records = []
     for (node_from, node_to), (seg_length, seg_speed) in tqdm(segment_data.items(), unit=' segment'):
         for time in pd.date_range(start=sim_start, end=sim_end, freq=round_freq):
-            record = timed_segment_to_record(time, node_from, node_to, seg_length, seg_speed,
-                                             aggregated_gv, temporary_max_speeds)
+            record = timed_segment_to_record(time, node_from, node_to, seg_length, seg_speed, aggregated_gv)
             records.append(record)
 
     with open(out, "w") as csv:
