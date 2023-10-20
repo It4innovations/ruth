@@ -104,7 +104,7 @@ class Map(metaclass=Singleton):
     @property
     def name(self):
         """Name of the map."""
-        return self.border.name + "_" + self.download_date
+        return self.border.name + "_" + self.download_date.replace(":", "-")
 
     def get_travel_time(self, node_from: int, node_to: int, speed_kph: SpeedKph):
         return float('inf') if speed_kph == 0 else float(
