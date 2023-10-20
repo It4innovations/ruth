@@ -28,6 +28,22 @@ class AlternativesProvider:
         """
         raise NotImplementedError
 
+    def remove_infinity_alternatives(self, alternatives: List[AlternativeRoutes], routing_map: Map) -> List[
+        AlternativeRoutes]:
+        """
+        Removes alternatives that contain infinity.
+        """
+        filtered_alternatives = []
+        for alternatives_for_vehicle in alternatives:
+            for_vehicle = []
+            for alternative in alternatives_for_vehicle:
+                # calculate travel time for alternative
+                travel_time = routing_map.get_current_travel_time(alternative)
+                if travel_time != float("inf"):
+                    for_vehicle.append(alternative)
+            filtered_alternatives.append(for_vehicle)
+        return filtered_alternatives
+
 
 class FastestPathsAlternatives(AlternativesProvider):
     def compute_alternatives(self, map: Map, vehicles: List[Vehicle], k: int) -> List[
@@ -145,6 +161,7 @@ class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
     Sends routes to a distributed node that calculates a Monte Carlo simulation and returns
     the shortest route for each car.
     """
+
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
         messages = [Message(kind="monte-carlo", data={
             "routes": routes,

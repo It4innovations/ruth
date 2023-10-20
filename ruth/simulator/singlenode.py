@@ -59,7 +59,7 @@ class Simulator:
             length=100,
             max_speed=100,
             profiles=profiles
-        ) for node_id in list(self.sim.routing_map.network.nodes())]
+        ) for node_id in list(self.sim.routing_map.original_network.nodes())]
         route_selection_provider.update_segment_profiles(profiles)
 
         step = self.sim.number_of_steps
@@ -75,9 +75,7 @@ class Simulator:
             with timer_set.get("update_map_speeds"):
                 self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
                 if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
-                    new_speeds = [self.sim.global_view.get_segment_speed(node_from,
-                                                                         node_to,
-                                                                         self.sim.routing_map)
+                    new_speeds = [self.sim.global_view.get_segment_speed(node_from, node_to)
                                   for node_from, node_to in segments_changed_speed]
                     self.sim.routing_map.update_current_speeds(segments_changed_speed, new_speeds)
                     alternatives_provider.load_map(self.sim.routing_map)
@@ -97,6 +95,7 @@ class Simulator:
                     need_new_route,
                     k=self.sim.setting.k_alternatives
                 )
+                alts = alternatives_provider.remove_infinity_alternatives(alts, self.sim.routing_map)
                 assert len(alts) == len(need_new_route)
 
             # Find which vehicles should have their routes recomputed

@@ -41,7 +41,7 @@ def aggregate(sim_path, round_freq_s, out=None):
 
     m = sim.routing_map
     segment_data = dict()
-    for u, v, data in m.network.edges(data=True):
+    for u, v, data in m.original_network.edges(data=True):
         if "length" in data:
             segment_data[(u, v)] = (data["length"], data['speed_kph'])
         else:
