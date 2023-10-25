@@ -161,5 +161,5 @@ class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
         if is_root_debug_logging():
             logging.debug(f"Response from worker: {shortest_routes}")
 
-        return [routes[shortest_routes] for ((vehicle, routes), shortest_route) in
+        return [(vehicle, routes[shortest_route]) for ((vehicle, routes), shortest_route) in
                 zip(route_possibilities, shortest_routes)]
