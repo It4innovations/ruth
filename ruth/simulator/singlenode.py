@@ -52,11 +52,13 @@ class Simulator:
         alternatives_provider.load_map(self.sim.routing_map)
 
         # TODO: load PTDR profiles somehow
+        profiles = [LosAtTimeOfWeek(values=[0.1, 0.3, 0.5, 1.0], cumprobs=[0, 0.2, 0.5, 0.8]) for _
+                    in range(672)]
         profiles = [SegmentPTDRData(
             id=node_id,
             length=100,
             max_speed=100,
-            profiles=[LosAtTimeOfWeek(values=[0.1, 0.3, 0.5, 1.0], cumprobs=[0, 0.2, 0.5, 0.8]) for _ in range(672)]
+            profiles=profiles
         ) for node_id in list(self.sim.routing_map.network.nodes())]
         route_selection_provider.update_segment_profiles(profiles)
 
@@ -77,7 +79,8 @@ class Simulator:
                                         if self.sim.is_vehicle_within_offset(v, offset)]
 
             with timer_set.get("alternatives"):
-                need_new_route = [vehicle for vehicle in vehicles_to_be_moved if vehicle.is_at_the_end_of_segment()]
+                need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
+                                  vehicle.is_at_the_end_of_segment()]
                 alts = alternatives_provider.compute_alternatives(
                     self.sim.routing_map,
                     need_new_route,
@@ -155,5 +158,6 @@ class Simulator:
         for vehicle in vehicles:
             assert vehicle.is_active(current_offset, self.sim.setting.round_freq)
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
-                                            GlobalViewDb(self.sim.global_view), self.sim.queues_manager,
+                                            GlobalViewDb(self.sim.global_view),
+                                            self.sim.queues_manager,
                                             self.sim.setting.count_vehicles_tolerance)
