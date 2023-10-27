@@ -103,6 +103,9 @@ class Map(metaclass=Singleton):
         """Name of the map."""
         return self.border.name + "_" + self.download_date.replace(":", "-")
 
+    def edges(self):
+        return self.current_network.edges()
+
     def get_travel_time(self, node_from: int, node_to: int, speed_kph: SpeedKph):
         return float('inf') if speed_kph == 0 else float(
             self.segment_lengths[(node_from, node_to)]) * 3.6 / float(speed_kph)
@@ -115,14 +118,17 @@ class Map(metaclass=Singleton):
         nx.set_edge_attributes(self.current_network, values=speeds, name="current_speed")
         nx.set_edge_attributes(self.current_network, values=travel_times, name="current_travel_time")
 
-    def update_current_speeds(self, segment_ids, speeds: List[SpeedKph]):
+    def update_current_speeds(self, gv_speeds: List[SpeedKph]):
+        max_speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')
+
         new_speeds = {}
         new_travel_times = {}
-        for (node_from, node_to), speed in zip(segment_ids, speeds):
-            max_speed = self.get_current_max_speed(node_from, node_to)
-            speed = speed if speed < max_speed else max_speed
-            new_speeds[(node_from, node_to)] = speed
-            new_travel_times[(node_from, node_to)] = self.get_travel_time(node_from, node_to, speed)
+        for (node_ids, max_speed), gv_speed in zip(max_speeds.items(), gv_speeds):
+            node_from, node_to = node_ids
+            gv_speed = gv_speed if gv_speed < max_speed else max_speed
+            new_speeds[(node_from, node_to)] = gv_speed
+            new_travel_times[(node_from, node_to)] = self.get_travel_time(node_from, node_to, gv_speed)
+
         nx.set_edge_attributes(self.current_network, values=new_speeds, name='current_speed')
         nx.set_edge_attributes(self.current_network, values=new_travel_times, name='current_travel_time')
 
