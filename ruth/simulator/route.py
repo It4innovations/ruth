@@ -114,6 +114,7 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
         if vehicle.next_node == vehicle.dest_node:
             # stop the processing in case the vehicle reached the end
             vehicle.active = False
+            queues_manager.remove_inactive_vehicle(vehicle)
 
         elif segment_pos_old != vehicle.segment_position:
             # if the vehicle is at the end of the segment and was not there before, add it to the queue
@@ -205,8 +206,6 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
         current_vehicle_list = vehicles_to_be_moved if len(vehicles_to_be_moved) > 0 else vehicles_undecided
         vehicle = current_vehicle_list[0]
         queue = queues_manager.queues[(vehicle.current_node, vehicle.next_node)]
-        while len(queue) != 0 and queue[0].is_active:
-            queues_manager.remove_vehicle(queue[0], vehicle.current_node, vehicle.next_node)
 
         if vehicle not in queue:
             current_vehicle_list.remove(vehicle)
