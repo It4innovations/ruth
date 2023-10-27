@@ -28,12 +28,14 @@ def move_on_segment(
     current_segment = driving_route[segment_position.index]
     assert segment_position.position <= current_segment.length
 
-    if vehicle.segment_position.index < len(driving_route):
-        if start_position == current_segment.length:
-            # if the car is at the end of a segment, we want to work with the next segment
-            start_position = LengthMeters(0.0)
-            segment_position = SegmentPosition(segment_position.index + 1, start_position)
-            current_segment = driving_route[segment_position.index]
+    if vehicle.segment_position.index < len(driving_route) and start_position == current_segment.length:
+        # if the vehicle is at the end of a segment and there are more segments in the route
+        if vehicle.has_next_segment_closed():
+            return current_time + vehicle.frequency, vehicle.segment_position, SpeedMps(0.0)
+        # if the vehicle can move to the next segment, work with the next segment
+        start_position = LengthMeters(0.0)
+        segment_position = SegmentPosition(segment_position.index + 1, start_position)
+        current_segment = driving_route[segment_position.index]
 
         level_of_service = gv_db.gv.level_of_service_in_front_of_vehicle(current_time, current_segment, vehicle.id,
                                                                          start_position, count_vehicles_tolerance)

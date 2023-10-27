@@ -107,13 +107,6 @@ class Map(metaclass=Singleton):
         return float('inf') if speed_kph == 0 else float(
             self.segment_lengths[(node_from, node_to)]) * 3.6 / float(speed_kph)
 
-    def get_current_travel_time(self, route: List[int]):
-        total_travel_time = 0
-        for node_from, node_to in zip(route[:-1], route[1:]):
-            total_travel_time += self.current_network[node_from][node_to]['current_travel_time']
-        return total_travel_time
-
-
     def init_current_speeds(self):
         speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')
         travel_times = {}
@@ -138,6 +131,12 @@ class Map(metaclass=Singleton):
 
     def get_original_max_speed(self, node_from: int, node_to: int):
         return self.original_network[node_from][node_to]['speed_kph']
+
+    def is_route_closed(self, route: List[int]):
+        for node_from, node_to in zip(route[:-1], route[1:]):
+            if self.get_current_max_speed(node_from, node_to) == 0:
+                return True
+        return False
 
     def set_data_dir(self, path):
         if self.data_dir is not None:
