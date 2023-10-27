@@ -54,7 +54,8 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimul
                         count_vehicles_tolerance_s, seed, speeds_path=speeds_path)
         vehicles = load_vehicles(vehicles_path)
         simulation = Simulation(vehicles, ss)
-        vehicles[0].routing_map.init_temporary_max_speeds(speeds_path)
+        if speeds_path is not None:
+            vehicles[0].routing_map.init_temporary_max_speeds(speeds_path)
     else:
         simulation = sim_state
 
