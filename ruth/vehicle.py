@@ -73,6 +73,9 @@ class Vehicle:
         self.__dict__.update(state)
         self.__post_init__(None)
 
+    def __eq__(self, other):
+        return self.id == other.id
+
     @property
     def next_routing_od_nodes(self) -> Tuple[int, int]:
         return self.next_routing_start.node, self.dest_node

@@ -64,7 +64,6 @@ class Simulator:
 
         step = self.sim.number_of_steps
         last_map_update = self.current_offset
-        segments_changed_speed = set()
 
         while self.current_offset is not None:
             step_start_dt = datetime.now()
@@ -76,11 +75,10 @@ class Simulator:
                 self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
                 if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
                     new_speeds = [self.sim.global_view.get_segment_speed(node_from, node_to)
-                                  for node_from, node_to in segments_changed_speed]
-                    self.sim.routing_map.update_current_speeds(segments_changed_speed, new_speeds)
+                                  for node_from, node_to in self.sim.routing_map.edges()]
+                    self.sim.routing_map.update_current_speeds(new_speeds)
                     alternatives_provider.load_map(self.sim.routing_map)
 
-                    segments_changed_speed = set()
                     last_map_update = self.current_offset
 
             with timer_set.get("allowed_vehicles"):
@@ -112,14 +110,7 @@ class Simulator:
                     vehicle.update_followup_route(route)
 
             with timer_set.get("advance_vehicle"):
-                for vehicle in vehicles_to_be_moved:
-                    segments_changed_speed.add((vehicle.current_node, vehicle.next_node))
-
                 fcds = self.advance_vehicles(vehicles_to_be_moved.copy(), offset)
-
-                for vehicle in vehicles_to_be_moved:
-                    if vehicle.active:
-                        segments_changed_speed.add((vehicle.current_node, vehicle.next_node))
 
             with timer_set.get("update"):
                 self.sim.update(fcds)
