@@ -138,6 +138,11 @@ class Vehicle:
             print(f"vehicle: {self.id}: {ex}", file=sys.stderr)
             return None
 
+    def has_next_segment_closed(self) -> bool:
+        next_segment_from, next_segment_to = self.osm_route[self.start_index + 1], self.osm_route[self.start_index + 2]
+        max_speed_on_next_segment = self.routing_map.get_current_max_speed(next_segment_from, next_segment_to)
+        return max_speed_on_next_segment == 0.0
+
     def update_followup_route(self, osm_route: Route):
         """
         Updates the route from the current node to the destination node.

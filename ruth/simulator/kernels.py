@@ -38,8 +38,7 @@ class AlternativesProvider:
             for_vehicle = []
             for alternative in alternatives_for_vehicle:
                 # calculate travel time for alternative
-                travel_time = routing_map.get_current_travel_time(alternative)
-                if travel_time != float("inf"):
+                if not routing_map.is_route_closed(alternative):
                     for_vehicle.append(alternative)
             filtered_alternatives.append(for_vehicle)
         return filtered_alternatives
