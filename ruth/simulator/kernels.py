@@ -2,8 +2,8 @@ import logging
 import random
 from typing import List, Optional, Tuple
 
-from .ptdr import SegmentPTDRData
-from ..data.map import Map
+from .ptdr import SegmentPTDRData, PTDRInfo
+from ..data.map import Map, osm_routes_to_segment_ids
 from ..data.segment import Route
 from ..utils import is_root_debug_logging
 from ..vehicle import Vehicle
@@ -49,6 +49,7 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
     from ..zeromq.src.client import Client
 
     def __init__(self, client: Client):
+        super().__init__()
         self.client = client
 
     def load_map(self, routing_map: Map):
@@ -93,11 +94,6 @@ class RouteSelectionProvider:
     For a given list of alternatives (k per vehicle), select the best route for each vehicle.
     """
 
-    # FIXME: it's a hack to have this method here, not all route selection implementations care
-    # about profiles
-    def update_segment_profiles(self, segments: List[SegmentPTDRData]):
-        pass
-
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
         raise NotImplementedError
 
@@ -133,8 +129,10 @@ class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
 
     def __init__(self, client: Client):
         self.client = client
+        self.ptdr_info = None
 
-    def update_segment_profiles(self, segments: List[SegmentPTDRData]):
+    def update_segment_profiles(self, segments: List[SegmentPTDRData], ptdr_info: PTDRInfo):
+        self.ptdr_info = ptdr_info
         self.client.broadcast(Message(kind="load-profiles", data=[{
             "id": segment.id,
             "length": segment.length,
@@ -152,10 +150,9 @@ class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
 
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
         messages = [Message(kind="monte-carlo", data={
-            "routes": routes,
+            "routes": osm_routes_to_segment_ids(routes),
             "frequency": vehicle.frequency.total_seconds(),
-            # TODO: calculate the correct time offset within the week for Monte Carlo
-            "departure_time": 0
+            "departure_time": self.ptdr_info.get_timeslot_index(vehicle.time_offset),
         }) for (vehicle, routes) in route_possibilities]
 
         if is_root_debug_logging():

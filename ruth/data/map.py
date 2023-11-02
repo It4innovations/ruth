@@ -45,6 +45,16 @@ def get_osm_segment_id(node_from: int, node_to: int):
     return f"OSM{node_from}T{node_to}"
 
 
+def osm_route_to_segment_ids(route: Route) -> List[str]:
+    """Turn routes made of osm node_ids to osm numerical segment ids."""
+    return [get_osm_segment_id(node_from, node_to) for node_from, node_to in zip(route[:-1], route[1:])]
+
+
+def osm_routes_to_segment_ids(routes: List[Route]) -> List[List[str]]:
+    """Turn routes made of osm node_ids to osm numerical segment ids."""
+    return [osm_route_to_segment_ids(route) for route in routes]
+
+
 class BBox:
     def __init__(self, north, west, south, east):
         self.north = north
