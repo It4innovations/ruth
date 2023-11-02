@@ -11,6 +11,7 @@ from typing import List, Optional
 import click
 from probduration import HistoryHandler
 
+from ..simulator.ptdr import PTDRInfo, load_ptdr
 from ..zeromq.src.client import Client
 from ..losdb import FreeFlowDb, ProbProfileDb
 from ..simulator import RouteRankingAlgorithms, SimSetting, Simulation, SingleNodeSimulator, \
@@ -29,6 +30,7 @@ class CommonArgs:
     map_update_freq: timedelta
     los_vehicles_tolerance: timedelta
     speeds_path: Optional[str] = None
+    ptdr_path: Optional[str] = None
     out: str = "simulation-record.pickle"
     seed: Optional[int] = None
     walltime: Optional[timedelta] = None
@@ -146,7 +148,9 @@ def start_zeromq_cluster(
                    "are considered for the calculation of LoS in a segment.")
 @click.option("--speeds-path", type=click.Path(exists=True),
               help="Path to csv file with temporary max speeds.")
-@click.option("--out", type=str, default="simulation_record.pickle")
+@click.option("--ptdr-path", type=click.Path(exists=True),
+              help="Path to msqpack file with probability profiles")
+@click.option("--out", type=str, default="out.pickle")
 @click.option("--seed", type=int, help="Fixed seed for random number generator.")
 @click.option("--walltime-s", type=int, help="Time limit in which the state of simulation is saved")
 @click.option("--saving-interval-s", type=int,
@@ -163,6 +167,7 @@ def single_node_simulator(ctx,
                           map_update_freq_s,
                           los_vehicles_tolerance_s,
                           speeds_path,
+                          ptdr_path,
                           out,
                           seed,
                           walltime_s,
@@ -185,6 +190,7 @@ def single_node_simulator(ctx,
                                     map_update_freq=timedelta(seconds=map_update_freq_s),
                                     los_vehicles_tolerance=timedelta(seconds=los_vehicles_tolerance_s),
                                     speeds_path=speeds_path,
+                                    ptdr_path=ptdr_path,
                                     out=out,
                                     seed=seed,
                                     walltime=walltime,
@@ -360,6 +366,7 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path, alternatives: Altern
     out = common_args.out
     walltime = common_args.walltime
     saving_interval = common_args.saving_interval
+    ptdr_path = common_args.ptdr_path
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
     simulator = prepare_simulator(common_args, vehicles_path)
@@ -373,7 +380,16 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path, alternatives: Altern
 
     zmq_ctx = ZeroMqContext()
     alternatives_provider = create_alternatives_provider(alternatives, zmq_ctx=zmq_ctx)
-    route_selection_provider = create_route_selection_provider(route_selection, zeromq_ctx=zmq_ctx, seed=common_args.seed)
+    route_selection_provider = create_route_selection_provider(route_selection, zeromq_ctx=zmq_ctx,
+                                                               seed=common_args.seed)
+
+    if isinstance(route_selection_provider, ZeroMQDistributedPTDRRouteSelection):
+        ptdr_info = PTDRInfo(common_args.departure_time)
+        profiles = load_ptdr(ptdr_path)
+        map_segments_len = simulator.state.routing_map.original_network.number_of_edges()
+        logging.info(f"Loaded profiles for {len(profiles)} segments from {map_segments_len} segments in map.")
+        route_selection_provider.update_segment_profiles(profiles, ptdr_info)
+
     simulator.simulate(
         alternatives_provider=alternatives_provider,
         route_selection_provider=route_selection_provider,
