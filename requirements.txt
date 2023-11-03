@@ -17,5 +17,5 @@ geopandas
 setuptools
 pyzmq==25.0.1
 cluster @ git+https://code.it4i.cz/def/cluster.git#e47b756e1bcb91c0244e1cede58c868d4ade8e6f
-h5py==3.9.0
+h5py>=3.1.0
 pyserde==0.12.2
