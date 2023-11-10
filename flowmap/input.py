@@ -1,5 +1,5 @@
+from datetime import timedelta
 import numpy as np
-
 from dataclasses import dataclass, InitVar, field
 from collections import defaultdict
 from pandas import to_datetime
@@ -12,11 +12,19 @@ NodeId = NewType('NodeId', int)
 
 
 class PreprocessedData:
-    def __init__(self, segments, timed_segments, number_of_vehicles, number_of_finished_vehicles_in_time):
+    def __init__(self,
+                 segments: set,
+                 timed_segments: set,
+                 number_of_vehicles: int,
+                 number_of_finished_vehicles_in_time: defaultdict,
+                 total_simulation_time_in_time_s: defaultdict = defaultdict(lambda: timedelta(0)),
+                 total_meters_driven_in_time: defaultdict = defaultdict(int)):
         self.segments = segments
         self.timed_segments = timed_segments
         self.number_of_vehicles = number_of_vehicles
         self.number_of_finished_vehicles_in_time = number_of_finished_vehicles_in_time
+        self.total_simulation_time_in_time_s = total_simulation_time_in_time_s
+        self.total_meters_driven_in_time = total_meters_driven_in_time
 
 
 @dataclass
@@ -54,7 +62,7 @@ class SegmentInTime(metaclass=Singleton):
     def __hash__(self):
         return hash((self.node_from.id, self.node_to.id, self.timestamp))
 
-    def add_vehicle(self, start_offset_m, speed_mps):
+    def add_vehicle(self, start_offset_m: float, speed_mps: float):
         self.offsets.append(start_offset_m)
         step = self.length / self.divide
         division = int(start_offset_m // step)
@@ -96,6 +104,7 @@ class SegmentInTime(metaclass=Singleton):
 @dataclass
 class Record:
     timestamp: int
+    timestamp_datetime: int
     vehicle_id: int
     segment_id: str
     segment_length: float
@@ -124,7 +133,7 @@ class Record:
             self.length = data['length']
 
 
-def add_vehicle(record, divide: int, timestamp=None, start_offset_m=None, speed_mps=None):
+def add_vehicle(record: Record, divide: int, timestamp: int = None, start_offset_m: float = None, speed_mps: float = None):
     """Add vehicle to **singleton** segment in time element."""
     if timestamp is None:
         timestamp = record.timestamp
@@ -141,15 +150,42 @@ def add_vehicle(record, divide: int, timestamp=None, start_offset_m=None, speed_
     return timed_seg
 
 
+def choose_one_row_per_vehicle_timestamp(df):
+    # the goal is to filter the DataFrame to keep only one row per vehicle per timestamp
+    # for the first timestamp of each vehicle, we want to keep the first row
+    # for every other timestamp of each vehicle, we want to keep the last row
+    # so that we don't change the origin and destination position and timestamp of each vehicle
+
+    # sort the DataFrame by timestamp within each vehicle group
+    df = df.sort_values(['vehicle_id', 'timestamp'])
+
+    # identify the first occurrence of each vehicle in the sorted DataFrame
+    first_occurrence_mask = ~df.duplicated(subset=['vehicle_id'])
+
+    # identify the last occurrence of each vehicle and timestamp in the sorted DataFrame
+    last_occurrence_mask = ~df.duplicated(subset=['vehicle_id', 'timestamp'], keep='last')
+
+    # filter the DataFrame based on the two masks
+    df = df[first_occurrence_mask | last_occurrence_mask]
+
+    # this might still keep two rows for the first timestamp of each vehicle
+    # so we need to remove duplicates and keep the first row from the group
+    df = df.drop_duplicates(subset=['vehicle_id', 'timestamp'], keep='first')
+    return df
+
+
+def prepare_dataframe(df, interval):
+    df['timestamp_datetime'] = df['timestamp']
+    # change timestamp to the number of frame in the animation
+    df['timestamp'] = to_datetime(df['timestamp']).astype(np.int64) // 10 ** 6  # resolution in milliseconds
+    df['timestamp'] = df['timestamp'].div(1000 * interval).round().astype(np.int64)
+    df = choose_one_row_per_vehicle_timestamp(df)
+    return df
+
+
 def dataframe_to_sorted_records(df, graph, speed, fps):
     interval = speed / fps
-
-    # change datetime to int
-    df['timestamp'] = to_datetime(df['timestamp']).astype(np.int64) // 10 ** 6  # resolution in milliseconds
-
-    df['timestamp'] = df['timestamp'].div(1000 * interval).round().astype(np.int64)
-    df = df.groupby(['timestamp', 'vehicle_id']).last().reset_index()
-
+    df = prepare_dataframe(df, interval)
     records = [Record(**kwargs, graph=graph) for kwargs in df.to_dict(orient='records')]
     records = sorted(records, key=lambda x: (x.vehicle_id, x.timestamp))
 
@@ -158,6 +194,10 @@ def dataframe_to_sorted_records(df, graph, speed, fps):
 
 def get_number_of_vehicles(df):
     return df['vehicle_id'].nunique()
+
+
+def is_last_record_for_vehicle(processing_record, next_record):
+    return next_record is None or processing_record.vehicle_id != next_record.vehicle_id
 
 
 def preprocess_data(df, graph, speed=1, fps=25, divide: int = 2):
@@ -169,23 +209,23 @@ def preprocess_data(df, graph, speed=1, fps=25, divide: int = 2):
     segments = set()
     number_of_vehicles = get_number_of_vehicles(df)
     number_of_finished_vehicles_in_time = defaultdict(int)
+    total_simulation_time_in_time_s = defaultdict(lambda: timedelta(0))
+    total_meters_driven_in_time = defaultdict(int)
     records = dataframe_to_sorted_records(df, graph, speed, fps)
 
     for i, (processing_record, next_record) in enumerate(
             zip(records[:], records[1:] + [None])
     ):
         segments.add((processing_record.node_from, processing_record.node_to))
-        if (
-                next_record is None
-                or processing_record.vehicle_id != next_record.vehicle_id
-        ):
+        if is_last_record_for_vehicle(processing_record, next_record):
             timed_segments.add(add_vehicle(processing_record, divide))
             if processing_record.active is False:
                 number_of_finished_vehicles_in_time[processing_record.timestamp] += 1
 
         else:  # fill missing records
             new_timestamps = [*range(processing_record.timestamp, next_record.timestamp)]
-
+            total_simulation_time_in_time_s[next_record.timestamp] += \
+                next_record.timestamp_datetime - processing_record.timestamp_datetime
             new_speeds = np.linspace(
                 processing_record.speed_mps,
                 next_record.speed_mps,
@@ -201,7 +241,12 @@ def preprocess_data(df, graph, speed=1, fps=25, divide: int = 2):
                     endpoint=False
                 )
                 processing_segments = [processing_record] * len(new_offsets)
+                total_meters_driven_in_time[next_record.timestamp] += \
+                    next_record.start_offset_m - processing_record.start_offset_m
             else:
+                total_meters_driven_in_time[processing_record.timestamp] += \
+                    processing_record.length - processing_record.start_offset_m
+                total_meters_driven_in_time[processing_record.timestamp] += next_record.start_offset_m
                 # 1. fill missing offset between two consecutive records
                 new_offsets = np.linspace(
                     processing_record.start_offset_m,
@@ -226,4 +271,16 @@ def preprocess_data(df, graph, speed=1, fps=25, divide: int = 2):
             for record, (timestamp, start_offset_m, speed_mps) in zip(processing_segments, new_params):
                 timed_segments.add(add_vehicle(record, divide, timestamp, start_offset_m, speed_mps))
 
-    return PreprocessedData(segments, timed_segments, number_of_vehicles, number_of_finished_vehicles_in_time)
+    min_timestamp = min(timed_segments, key=lambda x: x.timestamp).timestamp
+    max_timestamp = max(timed_segments, key=lambda x: x.timestamp).timestamp
+    for timestamp in range(min_timestamp + 1, max_timestamp + 1):
+        total_meters_driven_in_time[timestamp] += total_meters_driven_in_time[timestamp - 1]
+        total_simulation_time_in_time_s[timestamp] += total_simulation_time_in_time_s[timestamp - 1]
+        number_of_finished_vehicles_in_time[timestamp] += number_of_finished_vehicles_in_time[timestamp - 1]
+
+    return PreprocessedData(segments,
+                            timed_segments,
+                            number_of_vehicles,
+                            number_of_finished_vehicles_in_time,
+                            total_simulation_time_in_time_s,
+                            total_meters_driven_in_time)

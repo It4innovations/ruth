@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import time
 from os import path
 from abc import ABC, abstractmethod
@@ -24,9 +24,15 @@ from flowmap.zoom import get_zoom
 from flowmap.input import preprocess_data
 
 
-def _load_file_content(path):
+def load_file_content(path):
     with open(path, 'r') as f:
         return f.read()
+
+
+def round_timedelta(td):
+    seconds = td.total_seconds()
+    rounded_seconds = round(seconds)
+    return timedelta(seconds=rounded_seconds)
 
 
 class SimulationAnimator(ABC):
@@ -39,7 +45,7 @@ class SimulationAnimator(ABC):
         self.frames_len = frames_len
         self.width_modif = width_modif
         self.title = title
-        self.description = _load_file_content(description_path) if description_path else None
+        self.description = load_file_content(description_path) if description_path else None
         self.speed = speed
         self.divide = divide
         self.max_width_count = max_width_count
@@ -88,6 +94,8 @@ class SimulationAnimator(ABC):
         self.segments = preprocessed_data.segments
         self.number_of_vehicles = preprocessed_data.number_of_vehicles
         self.number_of_finished_vehicles_in_time = preprocessed_data.number_of_finished_vehicles_in_time
+        self.total_meters_driven_in_time = preprocessed_data.total_meters_driven_in_time
+        self.total_simulation_time_in_time_s = preprocessed_data.total_simulation_time_in_time_s
         timestamps = [seg.timestamp for seg in preprocessed_data.timed_segments]
         min_timestamp = min(timestamps)
         max_timestamp = max(timestamps)
@@ -107,6 +115,15 @@ class SimulationAnimator(ABC):
             print('Use the zoom button to choose an area that will be zoomed in in the animation.')
             print('Close the window when satisfied with the selection.')
             self.ax_map_settings = get_zoom(self.g, self.segments)
+
+    def _get_stats_text(self, timestamp: int):
+        simulation_time_formatted = round_timedelta(self.total_simulation_time_in_time_s[timestamp])
+        total_km_driven = round(self.total_meters_driven_in_time[timestamp] / 1000, 2)
+        return f"total simulation time: {simulation_time_formatted}\n" \
+               f"total meters driven: {total_km_driven} km\n"
+
+    def _get_finished_vehicles_text(self, timestamp: int):
+        return f'Finished vehicles: {self.number_of_finished_vehicles_in_time[timestamp]} / {self.number_of_vehicles}'
 
     def _prepare_base_map(self):
         mpl.use('Agg')
@@ -129,26 +146,30 @@ class SimulationAnimator(ABC):
             0.09,
             datetime.utcfromtimestamp(self.timestamp_from * 1000 * self.interval // 10 ** 3),
             ha='right',
-            fontsize=20
-        )
+            fontsize=20)
+
         self.finished_vehicles_text = plt.figtext(
             0.7,
             0.09,
-            f'Finished vehicles: {self.number_of_finished_vehicles_in_time[self.timestamp_from]} / {self.number_of_vehicles}',
+            self._get_finished_vehicles_text(self.timestamp_from),
             ha='left',
-            fontsize=20
-        )
+            fontsize=20)
+
         if self.description:
             txt = plt.figtext(
-                0.5,
+                0.15,
                 0.08,
                 self.description,
-                ha='center',
+                ha='left',
                 va='top',
                 fontsize=10,
-                wrap=True
-            )
-            txt._get_wrap_line_width = lambda: 1400
+                wrap=True)
+            txt._get_wrap_line_width = lambda: 1000
+
+        self.stats_text = plt.figtext(
+            0.7,
+            0.05,
+            self._get_stats_text(self.timestamp_from))
 
         self.ax_traffic = self.ax_map.twinx()
         self.ax_map_settings = AxSettings(self.ax_map)
@@ -168,10 +189,9 @@ class SimulationAnimator(ABC):
     def _animate(self):
         car_coordinates = []
         progress_bar = None
-        current_number_of_finished_vehicles = 0
 
         def step(i):
-            nonlocal car_coordinates, progress_bar, current_number_of_finished_vehicles
+            nonlocal car_coordinates, progress_bar
             if progress_bar is None:
                 progress_bar = tqdm(total=self.num_of_frames, desc='Creating animation', unit='frame', leave=True)
             self.ax_traffic.clear()
@@ -182,9 +202,8 @@ class SimulationAnimator(ABC):
             if i % 5 * 60 == 0:
                 self.time_text.set_text(datetime.utcfromtimestamp(timestamp * 1000 * self.interval // 10 ** 3))
 
-            current_number_of_finished_vehicles += self.number_of_finished_vehicles_in_time[timestamp]
-            self.finished_vehicles_text.set_text(
-                f'Finished vehicles: {current_number_of_finished_vehicles} / {self.number_of_vehicles}')
+            self.finished_vehicles_text.set_text(self._get_finished_vehicles_text(timestamp))
+            self.stats_text.set_text(self._get_stats_text(timestamp))
 
             segments = self._plot_routes(timestamp)
 
