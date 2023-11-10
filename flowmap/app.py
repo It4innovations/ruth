@@ -1,5 +1,6 @@
 import click
 import pathlib
+import platform
 from ruth.simulator import Simulation
 from flowmap.flowmapframe.plot import WidthStyle
 
