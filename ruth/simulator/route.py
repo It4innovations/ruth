@@ -17,7 +17,7 @@ def move_on_segment(
         driving_route: List[Segment],
         current_time: datetime,
         gv_db: GlobalViewDb,
-        count_vehicles_tolerance: timedelta = timedelta(seconds=0)
+        los_vehicles_tolerance: timedelta = timedelta(seconds=0)
 ) -> Tuple[datetime, SegmentPosition, SpeedMps]:
     """
     Moves the car on its current segment.
@@ -38,7 +38,7 @@ def move_on_segment(
         current_segment = driving_route[segment_position.index]
 
         level_of_service = gv_db.gv.level_of_service_in_front_of_vehicle(current_time, current_segment, vehicle.id,
-                                                                         start_position, count_vehicles_tolerance)
+                                                                         start_position, los_vehicles_tolerance)
     else:
         # the end of the driving route
         level_of_service = 1.0
@@ -77,7 +77,7 @@ def move_on_segment(
 
 def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
                     gv_db: GlobalViewDb, queues_manager: QueuesManager,
-                    count_vehicles_tolerance: timedelta = timedelta(seconds=0)) -> List[FCDRecord]:
+                    los_vehicles_tolerance: timedelta = timedelta(seconds=0)) -> List[FCDRecord]:
     """Advance a vehicle on a route."""
 
     current_time = departure_time + vehicle.time_offset
@@ -87,7 +87,7 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
     driving_route = vehicle.routing_map.osm_route_to_py_segments(osm_route)
 
     vehicle_end_time, segment_pos, assigned_speed_mps = move_on_segment(
-        vehicle, driving_route, current_time, gv_db, count_vehicles_tolerance
+        vehicle, driving_route, current_time, gv_db, los_vehicles_tolerance
     )
 
     segment_pos_old = vehicle.segment_position
@@ -198,7 +198,7 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
 
 def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_time: datetime,
                                  gv_db: GlobalViewDb, queues_manager: QueuesManager,
-                                 count_vehicles_tolerance) -> List[FCDRecord]:
+                                 los_vehicles_tolerance) -> List[FCDRecord]:
     fcds = []
     vehicles_undecided = []
     vehicles_stopped = []
@@ -211,12 +211,12 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
 
         if vehicle not in queue:
             current_vehicle_list.remove(vehicle)
-            new_fcds = advance_vehicle(vehicle, departure_time, gv_db, queues_manager, count_vehicles_tolerance)
+            new_fcds = advance_vehicle(vehicle, departure_time, gv_db, queues_manager, los_vehicles_tolerance)
             fcds.extend(new_fcds)
         elif vehicle == queue[0]:
             # vehicle is the first one in the queue
             current_vehicle_list.remove(vehicle)
-            new_fcds = advance_vehicle(vehicle, departure_time, gv_db, queues_manager, count_vehicles_tolerance)
+            new_fcds = advance_vehicle(vehicle, departure_time, gv_db, queues_manager, los_vehicles_tolerance)
             fcds.extend(new_fcds)
             was_moved = len(queue) == 0 or (vehicle != queue[0])
             if not was_moved:

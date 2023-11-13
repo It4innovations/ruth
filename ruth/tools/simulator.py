@@ -27,7 +27,7 @@ class CommonArgs:
     round_frequency: timedelta
     k_alternatives: int
     map_update_freq: timedelta
-    count_vehicles_tolerance: timedelta
+    los_vehicles_tolerance: timedelta
     speeds_path: Optional[str] = None
     out: str = "simulation-record.pickle"
     seed: Optional[int] = None
@@ -41,7 +41,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimul
     round_frequency = common_args.round_frequency
     k_alternatives = common_args.k_alternatives
     map_update_freq = common_args.map_update_freq
-    count_vehicles_tolerance_s = common_args.count_vehicles_tolerance
+    los_vehicles_tolerance = common_args.los_vehicles_tolerance
     seed = common_args.seed
     speeds_path = common_args.speeds_path
     sim_state = common_args.continue_from
@@ -51,7 +51,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimul
         if vehicles_path is None:
             raise ValueError("Either vehicles_path or continue_from must be specified.")
         ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
-                        count_vehicles_tolerance_s, seed, speeds_path=speeds_path)
+                        los_vehicles_tolerance, seed, speeds_path=speeds_path)
         vehicles = load_vehicles(vehicles_path)
         simulation = Simulation(vehicles, ss)
         if speeds_path is not None:
@@ -132,20 +132,21 @@ def start_zeromq_cluster(
 @click.group()
 @click.option('--debug/--no-debug', default=False)  # TODO: maybe move to top-level group
 @click.option("--task-id", type=str,
-              help="A string to differentiate results if there is running more simulations"
-                   " simultaneously.")
+              help="A string to differentiate result outputs when two or more simulations are simultaneously running.")
 @click.option("--departure-time", type=click.DateTime(),
               default=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 @click.option("--round-frequency-s", type=int, default=5,
-              help="Rounding time frequency in seconds.")
+              help="Interval (in seconds, of simulation time) for car selection to be moved in one simulation step. ")
 @click.option("--k-alternatives", type=int, default=1,
               help="Number of alternative routes.")
 @click.option("--map-update-freq-s", type=int, default=1,
-              help="Frequency in simulation time of changing the map with current speeds.")
-@click.option("--count-vehicles-tolerance-s", type=int, default=1,
-              help="Time tolerance in seconds for counting cars on a segment for LoS.")
-@click.option("--speeds-path", type=click.Path(exists=True))
-@click.option("--out", type=str, default="out.pickle")
+              help="Frequency of updating map with current speeds (in seconds, in simulation time).")
+@click.option("--los-vehicles-tolerance-s", type=int, default=1,
+              help="Time tolerance (in seconds, of simulation time) to count which cars (i.e., their timestamps)"
+                   "are considered for the calculation of LoS in a segment.")
+@click.option("--speeds-path", type=click.Path(exists=True),
+              help="Path to csv file with temporary max speeds.")
+@click.option("--out", type=str, default="simulation_record.pickle")
 @click.option("--seed", type=int, help="Fixed seed for random number generator.")
 @click.option("--walltime-s", type=int, help="Time limit in which the state of simulation is saved")
 @click.option("--saving-interval-s", type=int,
@@ -160,7 +161,7 @@ def single_node_simulator(ctx,
                           round_frequency_s,
                           k_alternatives,
                           map_update_freq_s,
-                          count_vehicles_tolerance_s,
+                          los_vehicles_tolerance_s,
                           speeds_path,
                           out,
                           seed,
@@ -182,7 +183,7 @@ def single_node_simulator(ctx,
                                     round_frequency=timedelta(seconds=round_frequency_s),
                                     k_alternatives=k_alternatives,
                                     map_update_freq=timedelta(seconds=map_update_freq_s),
-                                    count_vehicles_tolerance=timedelta(seconds=count_vehicles_tolerance_s),
+                                    los_vehicles_tolerance=timedelta(seconds=los_vehicles_tolerance_s),
                                     speeds_path=speeds_path,
                                     out=out,
                                     seed=seed,
@@ -325,11 +326,12 @@ class RouteSelectionImpl(str, enum.Enum):
 
 
 def create_route_selection_provider(route_selection: RouteSelectionImpl,
-                                    zeromq_ctx: ZeroMqContext) -> RouteSelectionProvider:
+                                    zeromq_ctx: ZeroMqContext,
+                                    seed: Optional[int] = None) -> RouteSelectionProvider:
     if route_selection == RouteSelectionImpl.FIRST:
         return FirstRouteSelection()
     elif route_selection == RouteSelectionImpl.RANDOM:
-        return RandomRouteSelection()
+        return RandomRouteSelection(seed)
     elif route_selection == RouteSelectionImpl.DISTRIBUTED:
         return ZeroMQDistributedPTDRRouteSelection(client=zeromq_ctx.get_or_create_client(5555))
     else:
@@ -339,9 +341,11 @@ def create_route_selection_provider(route_selection: RouteSelectionImpl,
 @single_node_simulator.command()
 @click.argument("vehicles_path", type=click.Path(exists=True))
 @click.option("--alternatives", type=click.Choice(AlternativesImpl),
-              default=AlternativesImpl.FASTEST_PATHS)
+              default=AlternativesImpl.FASTEST_PATHS,
+              help="Choose an implementation of alternatives [fastest-paths, shortest-paths, distributed]")
 @click.option("--route-selection", type=click.Choice(RouteSelectionImpl),
-              default=RouteSelectionImpl.FIRST)
+              default=RouteSelectionImpl.FIRST,
+              help="Choose an implementation of route selection [first, random, distributed]")
 @click.pass_context
 def run(ctx,
         vehicles_path: Path,
@@ -369,7 +373,7 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path, alternatives: Altern
 
     zmq_ctx = ZeroMqContext()
     alternatives_provider = create_alternatives_provider(alternatives, zmq_ctx=zmq_ctx)
-    route_selection_provider = create_route_selection_provider(route_selection, zeromq_ctx=zmq_ctx)
+    route_selection_provider = create_route_selection_provider(route_selection, zeromq_ctx=zmq_ctx, seed=common_args.seed)
     simulator.simulate(
         alternatives_provider=alternatives_provider,
         route_selection_provider=route_selection_provider,
