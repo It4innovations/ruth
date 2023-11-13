@@ -29,11 +29,13 @@ class CommonArgs:
                                        serializer=lambda x: x.total_seconds(),
                                        deserializer=lambda x: timedelta(seconds=x),
                                        default=timedelta(seconds=1))
-    count_vehicles_tolerance: timedelta = field(rename="count-vehicles-tolerance-s",
-                                                serializer=lambda x: x.total_seconds(),
-                                                deserializer=lambda x: timedelta(seconds=x),
-                                                default=timedelta(seconds=5))
-    speeds_path: Optional[str] = None
+    los_vehicles_tolerance: timedelta = field(rename="los-vehicles-tolerance-s",
+                                              serializer=lambda x: x.total_seconds(),
+                                              deserializer=lambda x: timedelta(seconds=x),
+                                              default=timedelta(seconds=5))
+    speeds_path: Optional[str] = field(serializer=lambda x: '' if x is None else x,
+                                       deserializer=lambda x: None if x == '' else x,
+                                       default=None)
     out: str = "simulation-record.pickle"
     seed: Optional[int] = None
     walltime: Optional[timedelta] = field(rename="walltime-s",
@@ -45,7 +47,7 @@ class CommonArgs:
                                                  deserializer=lambda x: timedelta(seconds=x),
                                                  default=None)
     continue_from: Optional[Simulation] = field(serializer=lambda x: x.store("continue-from.pickle"),
-                                                deserializer=lambda x: Simulation.load(x),
+                                                deserializer=lambda x: None if x == "" else Simulation.load(x),
                                                 default=None)
 
 

@@ -123,9 +123,8 @@ class FirstRouteSelection(RouteSelectionProvider):
 
 class RandomRouteSelection(RouteSelectionProvider):
 
-    def __init__(self):
-        # TODO: add seed from config
-        self.generator = random.Random(1)
+    def __init__(self, seed: int = None):
+        self.generator = random.Random(seed)
 
     """
     Selects random route for each car.

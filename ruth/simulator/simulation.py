@@ -59,7 +59,7 @@ class SimSetting:
     round_freq: timedelta
     k_alternatives: int = 1
     map_update_freq_s: timedelta = timedelta(seconds=1)
-    count_vehicles_tolerance: timedelta = timedelta(seconds=0)
+    los_vehicles_tolerance: timedelta = timedelta(seconds=0)
     seed: InitVar = None
     speeds_path: str = None
 
