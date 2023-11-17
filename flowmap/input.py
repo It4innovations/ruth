@@ -113,6 +113,7 @@ class Record:
     status: str
     node_from: NodeId
     node_to: NodeId
+    meters_driven: float
     active: bool = None
     length: InitVar[float] = None
     graph: InitVar[Graph] = None
@@ -156,9 +157,6 @@ def choose_one_row_per_vehicle_timestamp(df):
     # for every other timestamp of each vehicle, we want to keep the last row
     # so that we don't change the origin and destination position and timestamp of each vehicle
 
-    # sort the DataFrame by timestamp within each vehicle group
-    df = df.sort_values(['vehicle_id', 'timestamp'])
-
     # identify the first occurrence of each vehicle in the sorted DataFrame
     first_occurrence_mask = ~df.duplicated(subset=['vehicle_id'])
 
@@ -166,11 +164,42 @@ def choose_one_row_per_vehicle_timestamp(df):
     last_occurrence_mask = ~df.duplicated(subset=['vehicle_id', 'timestamp'], keep='last')
 
     # filter the DataFrame based on the two masks
-    df = df[first_occurrence_mask | last_occurrence_mask]
+    df_filtered = df[first_occurrence_mask | last_occurrence_mask]
 
     # this might still keep two rows for the first timestamp of each vehicle
     # so we need to remove duplicates and keep the first row from the group
-    df = df.drop_duplicates(subset=['vehicle_id', 'timestamp'], keep='first')
+    df_filtered = df_filtered.drop_duplicates(subset=['vehicle_id', 'timestamp'], keep='first')
+
+    # sum the meters driven
+    df_filtered['meters_driven'] = df.groupby(['vehicle_id', 'timestamp'])['meters_driven'].transform('sum')
+
+    return df_filtered
+
+
+def add_meters_driven_column(df):
+    # add a column with the number of meters driven by each vehicle for simulation statistics
+    # this has to be calculated before filtering the DataFrame since it might filter out some segments completely
+
+    # sort the DataFrame by timestamp within each vehicle group
+    df = df.sort_values(['vehicle_id', 'timestamp'])
+
+    # calculate the number of meters driven from the previous timestamp
+    df['previous_segment_ig'] = df['segment_id'].shift(1)
+    df['previous_vehicle_id'] = df['vehicle_id'].shift(1)
+    df['previous_start_offset_m'] = df['start_offset_m'].shift(1)
+    df['previous_segment_length'] = df['segment_length'].shift(1)
+    df['meters_driven'] = df['start_offset_m'] - df['previous_start_offset_m']
+    df.loc[df['previous_segment_ig'] != df['segment_id'], 'meters_driven'] += df['previous_segment_length']
+
+    # clear the meters driven for the first timestamp of each vehicle
+    df.loc[df['previous_vehicle_id'] != df['vehicle_id'], 'meters_driven'] = 0
+
+    # drop the columns that are not needed anymore
+    df.drop(columns=['previous_segment_ig',
+                     'previous_vehicle_id',
+                     'previous_start_offset_m',
+                     'previous_segment_length'],
+            inplace=True)
     return df
 
 
@@ -179,6 +208,7 @@ def prepare_dataframe(df, interval):
     # change timestamp to the number of frame in the animation
     df['timestamp'] = to_datetime(df['timestamp']).astype(np.int64) // 10 ** 6  # resolution in milliseconds
     df['timestamp'] = df['timestamp'].div(1000 * interval).round().astype(np.int64)
+    df = add_meters_driven_column(df)
     df = choose_one_row_per_vehicle_timestamp(df)
     return df
 
@@ -217,6 +247,7 @@ def preprocess_data(df, graph, speed=1, fps=25, divide: int = 2):
             zip(records[:], records[1:] + [None])
     ):
         segments.add((processing_record.node_from, processing_record.node_to))
+        total_meters_driven_in_time[processing_record.timestamp] += processing_record.meters_driven
         if is_last_record_for_vehicle(processing_record, next_record):
             timed_segments.add(add_vehicle(processing_record, divide))
             if processing_record.active is False:
@@ -241,12 +272,7 @@ def preprocess_data(df, graph, speed=1, fps=25, divide: int = 2):
                     endpoint=False
                 )
                 processing_segments = [processing_record] * len(new_offsets)
-                total_meters_driven_in_time[next_record.timestamp] += \
-                    next_record.start_offset_m - processing_record.start_offset_m
             else:
-                total_meters_driven_in_time[processing_record.timestamp] += \
-                    processing_record.length - processing_record.start_offset_m
-                total_meters_driven_in_time[processing_record.timestamp] += next_record.start_offset_m
                 # 1. fill missing offset between two consecutive records
                 new_offsets = np.linspace(
                     processing_record.start_offset_m,
