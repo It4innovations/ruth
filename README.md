@@ -42,7 +42,7 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
     ``` sh
     ruth-simulator-conf --config-file="config.json" run 
     ```
-* congifuration file with all options:
+* configuration file with all options:
   ``` json
   {
     "ruth-simulator":
