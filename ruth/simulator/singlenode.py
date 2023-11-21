@@ -149,4 +149,4 @@ class Simulator:
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             GlobalViewDb(self.sim.global_view),
                                             self.sim.queues_manager,
-                                            self.sim.setting.count_vehicles_tolerance)
+                                            self.sim.setting.los_vehicles_tolerance)
