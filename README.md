@@ -57,6 +57,7 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
       "walltime-s" : 2000,
       "saving-interval-s" : 100,
       "speeds-path" : "",
+      "ptdr-path" : "",
       "continue-from": ""
     },
     "run" :
@@ -87,3 +88,30 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
     node_from;node_to;speed;timestamp_from;timestamp_to
     8400868548;10703818;0;2021-08-3 00:10:00;2021-08-3 00:25:00
     ```
+#### PTDR path
+- path to msqpack file with probability speed profiles
+- to generate PTDR file use first the `aggregate-globalview` or `aggregate-globalview-set` command generating
+csv file with aggregated information about speeds during simulation
+  ``` csv
+  segment_osm_id;fcd_time_calc;segment_length;max_speed;current_speed
+  OSM172512T300107261;2023-11-13 00:00;74.59;46.7;46.7
+  OSM172512T300107261;2023-11-20 00:00;74.59;46.7;12.97
+  ``` 
+- the use [this code](https://code.it4i.cz/mic0427/ptdr/) to calculate probability profiles
+  (json representation of msqpack file below)
+  ``` json
+  [
+    { "id": "OSM172512T300107261",
+      "length": 74.59,
+      "max_speed": 46.7,
+      "profiles": [{
+          "time_id": 0,
+          "values": [0, 0, 27, 100],
+          "cumprobs": [0.0, 0.0, 0.5, 1.0]
+         },
+         ...
+      ]
+    },
+    ...
+  ]
+  ```

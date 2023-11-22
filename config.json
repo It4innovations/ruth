@@ -11,6 +11,7 @@
     "walltime-s" : 2000,
     "saving-interval-s" : 100,
     "speeds-path" : "",
+    "ptdr-path": "",
     "continue-from": ""
   },
   "run" :
