@@ -2,7 +2,7 @@ import logging
 import random
 from typing import List, Optional, Tuple
 
-from .ptdr import SegmentPTDRData, PTDRInfo
+from .ptdr import PTDRInfo
 from ..data.map import Map, osm_routes_to_segment_ids
 from ..data.segment import Route
 from ..utils import is_root_debug_logging
@@ -28,7 +28,8 @@ class AlternativesProvider:
         """
         raise NotImplementedError
 
-    def remove_infinity_alternatives(self, alternatives: List[AlternativeRoutes], routing_map: Map) -> List[
+    def remove_infinity_alternatives(self, alternatives: List[AlternativeRoutes],
+                                     routing_map: Map) -> List[
         AlternativeRoutes]:
         """
         Removes alternatives that contain infinity.
@@ -140,17 +141,9 @@ class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
         self.client = client
         self.ptdr_info = None
 
-    def update_segment_profiles(self, segments: List[SegmentPTDRData], ptdr_info: PTDRInfo):
+    def update_segment_profiles(self, ptdr_info: PTDRInfo):
         self.ptdr_info = ptdr_info
-        self.client.broadcast(Message(kind="load-profiles", data=[{
-            "id": segment.id,
-            "length": segment.length,
-            "speed": segment.max_speed,
-            "profiles": [{
-                "values": profile.values,
-                "cumprobs": profile.cumprobs
-            } for profile in segment.profiles],
-        } for segment in segments]))
+        # self.client.broadcast(Message(kind="load-profiles", data=str(path)))
 
     """
     Sends routes to a distributed node that calculates a Monte Carlo simulation and returns
@@ -161,7 +154,7 @@ class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
         messages = [Message(kind="monte-carlo", data={
             "routes": osm_routes_to_segment_ids(routes),
             "frequency": vehicle.frequency.total_seconds(),
-            "departure_time": self.ptdr_info.get_timeslot_index(vehicle.time_offset),
+            "departure_time": self.ptdr_info.get_time_from_start_of_interval(vehicle.time_offset),
         }) for (vehicle, routes) in route_possibilities]
 
         if is_root_debug_logging():
