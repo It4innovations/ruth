@@ -6,7 +6,7 @@ from .ptdr import PTDRInfo
 from ..data.map import Map, osm_routes_to_segment_ids
 from ..data.segment import Route, SegmentId, SpeedMps
 from ..utils import is_root_debug_logging
-from ..vehicle import Vehicle
+from ..vehicle import Vehicle, VehicleBehavior
 from ..zeromq.src.client import Message
 
 AlternativeRoutes = List[Route]
@@ -17,6 +17,7 @@ class AlternativesProvider:
 
     def __init__(self):
         self.routing_map = None
+        self.vehicle_behaviour = VehicleBehavior.DEFAULT
 
     def load_map(self, routing_map: Map):
         """
@@ -40,12 +41,20 @@ class AlternativesProvider:
 
 
 class FastestPathsAlternatives(AlternativesProvider):
+
+    def __init__(self):
+        self.vehicle_behaviour = VehicleBehavior.FASTEST_PATHS
+
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
         return [vehicle.k_fastest_paths(k, self.routing_map) for vehicle in vehicles]
 
 
 class ShortestPathsAlternatives(AlternativesProvider):
+
+    def __init__(self):
+        self.vehicle_behaviour = VehicleBehavior.SHORTEST_PATHS
+
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
         return [vehicle.k_shortest_paths(k, self.routing_map) for vehicle in vehicles]
@@ -56,6 +65,7 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
 
     def __init__(self, client: Client):
         super().__init__()
+        self.vehicle_behaviour = VehicleBehavior.DISTRIBUTED
         self.client = client
 
     def load_map(self, routing_map: Map):

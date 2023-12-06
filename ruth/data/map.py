@@ -12,13 +12,11 @@ from typing import Dict, List, Optional
 import networkx as nx
 import osmnx as ox
 import osmnx.settings
-from osmnx import graph_from_place, load_graphml, save_graphml
 from osmnx import load_graphml, save_graphml, graph_from_bbox
 from networkx.exception import NetworkXNoPath
 
 from .hdf5_writer import get_osmid_from_data, save_graph_to_hdf5
 from ..log import console_logger as cl
-from ..metaclasses import Singleton
 from ..data.segment import Route, Segment, SegmentId, SpeedKph
 
 
