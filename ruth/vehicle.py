@@ -2,8 +2,11 @@ import sys
 from collections import namedtuple
 from dataclasses import InitVar, asdict, dataclass, field
 from datetime import timedelta
+from enum import IntFlag, auto
+from math import isclose
 from typing import Any, List, Optional, Tuple
 
+import random
 import pandas as pd
 from networkx.exception import NodeNotFound
 
@@ -21,6 +24,31 @@ def set_numpy_type(name, fld=None):
 
 IndexedNode = namedtuple("IndexedNode", ["node", "index"])
 
+
+class VehicleBehavior(IntFlag):
+    DEFAULT = 0
+    FASTEST_PATHS = auto()
+    SHORTEST_PATHS = auto()
+    DISTRIBUTED = auto()
+
+
+def set_vehicle_behavior(vehicles: List['Vehicle'], ratio: List[float], behavior: List[VehicleBehavior]):
+    """Set the behaviour of a given percentage of vehicles."""
+
+    assert isclose(sum(ratio), 1, abs_tol=1e-8)
+
+    n_vehicles = len(vehicles)
+    vehicles_shuffled = random.sample(vehicles, n_vehicles)
+    n_vehicles_to_change = [int(r * n_vehicles) for r in ratio]
+
+    index_from = 0
+    for i, n in enumerate(n_vehicles_to_change):
+        index_to = index_from + n
+        for id, v in enumerate(vehicles_shuffled[index_from:index_to]):
+            v.behavior = v.behavior | behavior[i]
+        index_from = index_from + n
+
+    return
 
 @dataclass
 class Vehicle:
@@ -42,6 +70,7 @@ class Vehicle:
     """A period in which the raw FCD data are sampled"""
     fcd_sampling_period: timedelta = set_numpy_type("object")
     status: str = set_numpy_type("string")
+    behavior: VehicleBehavior = VehicleBehavior.DEFAULT
     # Kept for backwards compatibility with old input files
     leap_history: Any = None
     routing_map: InitVar[Map] = None
@@ -152,7 +181,9 @@ class Vehicle:
         """
         assert osm_route[-1] == self.dest_node
         node_index = self.next_routing_start.index
-        self.osm_route = self.osm_route[:node_index] + osm_route
+        first_part = self.osm_route[:node_index]
+        assert first_part[-1] != osm_route[0]
+        self.osm_route = first_part + osm_route
 
     @property
     def segment_position(self) -> SegmentPosition:

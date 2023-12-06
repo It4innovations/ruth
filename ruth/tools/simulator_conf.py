@@ -58,8 +58,16 @@ class CommonArgs:
 @dataclass
 class RunArgs:
     vehicles_path: Optional[str] = None
-    alternatives: Optional[str] = None
     route_selection: Optional[str] = None
+
+
+@serde(rename_all="kebabcase")
+@dataclass
+class AlternativesRatio:
+    default: float = 0.0
+    fastest_paths: float = 0.0
+    shortest_paths: float = 0.0
+    distributed: float = 0.0
 
 
 @serde(rename_all="kebabcase")
@@ -67,6 +75,7 @@ class RunArgs:
 class Args:
     common: CommonArgs = field(rename="ruth-simulator")
     run: RunArgs = field(rename="run")
+    alternatives_ratio: AlternativesRatio = field(rename="alternatives")
 
 
 @click.group()
@@ -90,6 +99,7 @@ def single_node_simulator_conf(ctx,
     ctx.obj['DEBUG'] = debug
     ctx.obj['common-args'] = args.common
     ctx.obj['run-args'] = args.run
+    ctx.obj['alternatives-ratio'] = args.alternatives_ratio
 
 
 @single_node_simulator_conf.command()
@@ -97,8 +107,9 @@ def single_node_simulator_conf(ctx,
 def run(ctx):
     common_args = ctx.obj["common-args"]
     run_args = ctx.obj["run-args"]
+    alternatives_ratio = ctx.obj["alternatives-ratio"]
     p = Path(run_args.vehicles_path) if run_args.vehicles_path is not None else None
-    run_inner(common_args, p, run_args.alternatives, run_args.route_selection)
+    run_inner(common_args, p, run_args.route_selection, alternatives_ratio)
 
 
 def main():

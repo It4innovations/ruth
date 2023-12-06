@@ -7,7 +7,7 @@ from .route import advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
 from ..losdb import GlobalViewDb
 from ..utils import TimerSet
-from ..vehicle import Vehicle
+from ..vehicle import Vehicle, VehicleBehavior
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class Simulator:
 
     def simulate(
             self,
-            alternatives_provider: AlternativesProvider,
+            alternatives_providers: List[AlternativesProvider],
             route_selection_provider: RouteSelectionProvider,
             end_step_fns: [Optional[Callable[[Simulation], None]]] = None,
     ):
@@ -39,7 +39,7 @@ class Simulator:
 
         Parameters:
         -----------
-            :param alternatives_provider: Implementation of alternatives.
+            :param alternatives_providers: Implementation of alternatives.
             :param route_selection_provider: Implementation of route selection.
             :param end_step_fns: An arbitrary functions that are called at the end of each step with
             the current state of simulation. It can be used for storing the state, for example.
@@ -48,7 +48,8 @@ class Simulator:
         for v in self.sim.vehicles:
             v.frequency = timedelta(seconds=5)
 
-        alternatives_provider.load_map(self.sim.routing_map)
+        for alternatives_provider in alternatives_providers:
+            alternatives_provider.load_map(self.sim.routing_map)
 
         step = self.sim.number_of_steps
         last_map_update = self.current_offset
@@ -65,7 +66,8 @@ class Simulator:
                     new_speeds = [self.sim.global_view.get_segment_speed(node_from, node_to)
                                   for node_from, node_to in self.sim.routing_map.edges()]
                     self.sim.routing_map.update_current_speeds(new_speeds)
-                    alternatives_provider.load_map(self.sim.routing_map)
+                    for alternatives_provider in alternatives_providers:
+                        alternatives_provider.load_map(self.sim.routing_map)
 
                     last_map_update = self.current_offset
 
@@ -75,19 +77,16 @@ class Simulator:
 
             with timer_set.get("alternatives"):
                 need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
-                                  vehicle.is_at_the_end_of_segment()]
-                alts = alternatives_provider.compute_alternatives(
-                    self.sim.routing_map,
-                    need_new_route,
-                    k=self.sim.setting.k_alternatives
-                )
-                alts = alternatives_provider.remove_infinity_alternatives(alts, self.sim.routing_map)
-                assert len(alts) == len(need_new_route)
+                                  vehicle.is_at_the_end_of_segment()
+                                  and vehicle.behavior != VehicleBehavior.DEFAULT]
+
+                computed_vehicles, alts = self.compute_alternatives(alternatives_providers, need_new_route)
+                assert len(computed_vehicles) == len(alts) == len(need_new_route)
 
             # Find which vehicles should have their routes recomputed
             with timer_set.get("collect"):
                 new_vehicle_routes = []
-                for v, alt in zip(need_new_route, alts):
+                for v, alt in zip(computed_vehicles, alts):
                     if alt is not None and alt != []:
                         new_vehicle_routes.append((v, alt))
 
@@ -128,6 +127,25 @@ class Simulator:
 
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
+
+    def compute_alternatives(self, alternatives_providers: List[AlternativesProvider], vehicles: List[Vehicle]):
+        if not vehicles:
+            return [], []
+
+        combined_alts = []
+        combined_vehicles = []
+        for provider in alternatives_providers:
+            selected_vehicles = [v for v in vehicles if v.behavior == provider.vehicle_behaviour]
+            alts = provider.compute_alternatives(
+                self.sim.routing_map,
+                selected_vehicles,
+                k=self.sim.setting.k_alternatives
+            )
+            combined_vehicles.extend(selected_vehicles)
+            combined_alts.extend(alts)
+
+        combined_alts = AlternativesProvider.remove_infinity_alternatives(combined_alts, self.sim.routing_map)
+        return combined_vehicles, combined_alts
 
     def advance_vehicles(self, vehicles: List[Vehicle], current_offset) -> List[FCDRecord]:
         """Move the vehicles on its route and generate FCD records"""

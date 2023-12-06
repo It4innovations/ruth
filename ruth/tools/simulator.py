@@ -11,6 +11,7 @@ from typing import List, Optional
 import click
 from probduration import HistoryHandler
 
+from ..vehicle import set_vehicle_behavior, VehicleBehavior
 from ..losdb import FreeFlowDb, ProbProfileDb
 from ..simulator import RouteRankingAlgorithms, SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
@@ -38,7 +39,16 @@ class CommonArgs:
     continue_from: Optional[Simulation] = None
 
 
-def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimulator:
+@dataclass
+class AlternativesRatio:
+    default: float
+    fastest_paths: float
+    shortest_paths: float
+    distributed: float
+
+
+def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio: AlternativesRatio)\
+        -> SingleNodeSimulator:
     departure_time = common_args.departure_time
     round_frequency = common_args.round_frequency
     k_alternatives = common_args.k_alternatives
@@ -55,6 +65,19 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimul
         ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
                         los_vehicles_tolerance, seed, speeds_path=speeds_path)
         vehicles = load_vehicles(vehicles_path)
+
+        ratios = [alternatives_ratio.default,
+                  alternatives_ratio.fastest_paths,
+                  alternatives_ratio.shortest_paths,
+                  alternatives_ratio.distributed]
+        behaviors = [
+            VehicleBehavior.DEFAULT,
+            VehicleBehavior.FASTEST_PATHS,
+            VehicleBehavior.SHORTEST_PATHS,
+            VehicleBehavior.DISTRIBUTED
+        ]
+        set_vehicle_behavior(vehicles, ratios, behaviors)
+
         simulation = Simulation(vehicles, ss)
         if speeds_path is not None:
             vehicles[0].routing_map.init_temporary_max_speeds(speeds_path)
@@ -198,7 +221,6 @@ def single_node_simulator(ctx,
         continue_from=sim_state
     )
 
-
 @single_node_simulator.command()
 @click.argument("vehicles_path", type=click.Path(exists=True))
 @click.pass_context
@@ -324,6 +346,19 @@ def create_alternatives_provider(alternatives: AlternativesImpl,
         raise NotImplementedError
 
 
+def create_alternatives_providers(alternatives_ratio: AlternativesRatio,
+                                  zmq_ctx: ZeroMqContext) -> List[AlternativesProvider]:
+    providers = []
+    if alternatives_ratio.fastest_paths > 0:
+        providers.append(FastestPathsAlternatives())
+    if alternatives_ratio.shortest_paths > 0:
+        providers.append(ShortestPathsAlternatives())
+    if alternatives_ratio.distributed > 0:
+        providers.append(ZeroMQDistributedAlternatives(client=zmq_ctx.get_or_create_client(5555)))
+
+    return providers
+
+
 @enum.unique
 class RouteSelectionImpl(str, enum.Enum):
     FIRST = "first"
@@ -358,17 +393,28 @@ def run(ctx,
         alternatives: AlternativesImpl,
         route_selection: RouteSelectionImpl):
     common_args = ctx.obj["common-args"]
-    run_inner(common_args, vehicles_path, alternatives, route_selection)
+
+    if alternatives == AlternativesImpl.FASTEST_PATHS:
+        alternatives_ratio = AlternativesRatio(0, 1, 0, 0)
+    elif alternatives == AlternativesImpl.SHORTEST_PATHS:
+        alternatives_ratio = AlternativesRatio(0, 0, 1, 0)
+    elif alternatives == AlternativesImpl.DISTRIBUTED:
+        alternatives_ratio = AlternativesRatio(0, 0, 0, 1)
+    else:
+        alternatives_ratio = AlternativesRatio(1, 0, 0, 0)
+
+    run_inner(common_args, vehicles_path, route_selection, alternatives_ratio)
 
 
-def run_inner(common_args: CommonArgs, vehicles_path: Path, alternatives: AlternativesImpl,
-              route_selection: RouteSelectionImpl):
+def run_inner(common_args: CommonArgs, vehicles_path: Path,
+              route_selection: RouteSelectionImpl,
+              alternatives_ratio):
     out = common_args.out
     walltime = common_args.walltime
     saving_interval = common_args.saving_interval
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
-    simulator = prepare_simulator(common_args, vehicles_path)
+    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio)
     end_step_fns = []
 
     if walltime is not None:
@@ -378,7 +424,7 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path, alternatives: Altern
         end_step_fns.append(store_simulation_at_interval(saving_interval, f"run{task_id}"))
 
     zmq_ctx = ZeroMqContext()
-    alternatives_provider = create_alternatives_provider(alternatives, zmq_ctx=zmq_ctx)
+    alternatives_providers = create_alternatives_providers(alternatives_ratio, zmq_ctx=zmq_ctx)
     route_selection_provider = create_route_selection_provider(route_selection, zeromq_ctx=zmq_ctx,
                                                                seed=common_args.seed)
 
@@ -387,7 +433,7 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path, alternatives: Altern
         route_selection_provider.update_segment_profiles(ptdr_info)
 
     simulator.simulate(
-        alternatives_provider=alternatives_provider,
+        alternatives_providers=alternatives_providers,
         route_selection_provider=route_selection_provider,
         end_step_fns=end_step_fns,
     )
