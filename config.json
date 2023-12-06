@@ -17,7 +17,12 @@
   "run" :
   {
     "vehicles-path": "benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet",
-    "alternatives": "fastest-paths",
     "route-selection": "first"
+  },
+  "alternatives" : {
+    "default": 0.0,
+    "fastest-paths": 0.5,
+    "shortest-paths": 0.5,
+    "distributed": 0.0
   }
 }
