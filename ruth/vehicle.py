@@ -25,27 +25,51 @@ def set_numpy_type(name, fld=None):
 IndexedNode = namedtuple("IndexedNode", ["node", "index"])
 
 
-class VehicleBehavior(IntFlag):
+class VehicleAlternatives(IntFlag):
     DEFAULT = 0
     DIJKSTRA_FASTEST = auto()
     DIJKSTRA_SHORTEST = auto()
     PLATEAU_FASTEST = auto()
 
 
-def set_vehicle_behavior(vehicles: List['Vehicle'], ratio: List[float], behavior: List[VehicleBehavior]):
+class VehicleRouteSelection(IntFlag):
+    NO_ALTERNATIVE = 0
+    FIRST = auto()
+    RANDOM = auto()
+    PTDR = auto()
+
+
+def set_vehicle_behavior(vehicles: List['Vehicle'],
+                         alternatives_ratio: List[float],
+                         route_selection_ratio: List[float]):
     """Set the behaviour of a given percentage of vehicles."""
 
-    assert isclose(sum(ratio), 1, abs_tol=1e-8)
+    assert isclose(sum(alternatives_ratio), 1, abs_tol=1e-8)
+    assert isclose(sum(route_selection_ratio), 1, abs_tol=1e-8)
+    assert alternatives_ratio[0] == route_selection_ratio[0]
 
     n_vehicles = len(vehicles)
     vehicles_shuffled = random.sample(vehicles, n_vehicles)
-    n_vehicles_to_change = [int(r * n_vehicles) for r in ratio]
+    n_vehicles_to_change = [int(r * n_vehicles) for r in alternatives_ratio]
 
     index_from = 0
-    for i, n in enumerate(n_vehicles_to_change):
+    for i, (n, alternative) in enumerate(zip(n_vehicles_to_change, VehicleAlternatives)):
         index_to = index_from + n
         for id, v in enumerate(vehicles_shuffled[index_from:index_to]):
-            v.behavior = v.behavior | behavior[i]
+            v.alternatives = v.alternatives | alternative
+        index_from = index_from + n
+
+    index_from = n_vehicles_to_change[0]
+    vehicles_with_alternatives = vehicles_shuffled[index_from:]
+    vehicles_shuffled = (vehicles_shuffled[:index_from]
+                         + random.sample(vehicles_with_alternatives, len(vehicles_with_alternatives)))
+    n_vehicles_to_change = [int(r * n_vehicles) for r in route_selection_ratio]
+
+    index_from = 0
+    for i, (n, route_selection) in enumerate(zip(n_vehicles_to_change, VehicleRouteSelection)):
+        index_to = index_from + n
+        for id, v in enumerate(vehicles_shuffled[index_from:index_to]):
+            v.route_selection = v.route_selection | route_selection
         index_from = index_from + n
 
     return
@@ -67,7 +91,8 @@ class Vehicle:
     """A period in which the raw FCD data are sampled"""
     fcd_sampling_period: timedelta = set_numpy_type("object")
     status: str = set_numpy_type("string")
-    behavior: VehicleBehavior = VehicleBehavior.DEFAULT
+    alternatives: VehicleAlternatives = VehicleAlternatives.DEFAULT
+    route_selection: VehicleRouteSelection = VehicleRouteSelection.NO_ALTERNATIVE
     # Kept for backwards compatibility with old input files
     leap_history: Any = None
 
