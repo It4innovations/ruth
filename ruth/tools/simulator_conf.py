@@ -10,12 +10,13 @@ from serde import serde, field, Strict
 from serde.json import from_json
 
 from ..simulator import Simulation
-from ..tools.simulator import run_inner
+from .. tools.simulator import (run_inner, AlternativesRatio as AlternativesRatioInner, CommonArgs as CommonArgsInner,
+                                RouteSelectionRatio as RouteSelectionRatioInner)
 
 
 @serde(rename_all="kebabcase", type_check=Strict)
 @dataclass
-class CommonArgs:
+class CommonArgs(CommonArgsInner):
     task_id: Optional[str] = None
     departure_time: datetime = field(serializer=lambda x: x.strftime("%Y-%m-%d %H:%M:%S"),
                                      deserializer=lambda x: datetime.strptime(x, "%Y-%m-%d %H:%M:%S"),
@@ -58,21 +59,24 @@ class CommonArgs:
 @dataclass
 class RunArgs:
     vehicles_path: Optional[str] = None
-    route_selection: Optional[str] = None
 
 
 @serde(rename_all="kebabcase")
 @dataclass
-class AlternativesRatio:
+class AlternativesRatio(AlternativesRatioInner):
     default: float = 0.0
     dijkstra_fastest: float = 0.0
     dijkstra_shortest: float = 0.0
     plateau_fastest: float = 0.0
 
-    def __post_init__(self):
-        self.default = 1 - self.dijkstra_fastest - self.dijkstra_shortest - self.plateau_fastest
-        if self.default < 0:
-            raise ValueError("Sum of alternatives ratios must be equal to 1.")
+
+@serde(rename_all="kebabcase")
+@dataclass
+class RouteSelectionRatio(RouteSelectionRatioInner):
+    no_alternative: float = 0.0
+    first: float = 0.0
+    random: float = 0.0
+    ptdr: float = 0.0
 
 
 @serde(rename_all="kebabcase")
@@ -81,6 +85,7 @@ class Args:
     common: CommonArgs = field(rename="ruth-simulator")
     run: RunArgs = field(rename="run")
     alternatives_ratio: AlternativesRatio = field(rename="alternatives")
+    route_selection_ratio: RouteSelectionRatio = field(rename="route-selection")
 
 
 @click.group()
@@ -99,12 +104,13 @@ def single_node_simulator_conf(ctx,
             config_data = f.read()
             args = from_json(Args, config_data)
     else:
-        args = Args(CommonArgs(), RunArgs())
+        args = Args(CommonArgs(), RunArgs(), AlternativesRatio(), RouteSelectionRatio())
 
     ctx.obj['DEBUG'] = debug
     ctx.obj['common-args'] = args.common
     ctx.obj['run-args'] = args.run
     ctx.obj['alternatives-ratio'] = args.alternatives_ratio
+    ctx.obj['route-selection-ratio'] = args.route_selection_ratio
 
 
 @single_node_simulator_conf.command()
@@ -113,8 +119,9 @@ def run(ctx):
     common_args = ctx.obj["common-args"]
     run_args = ctx.obj["run-args"]
     alternatives_ratio = ctx.obj["alternatives-ratio"]
+    route_selection_ratio = ctx.obj["route-selection-ratio"]
     p = Path(run_args.vehicles_path) if run_args.vehicles_path is not None else None
-    run_inner(common_args, p, run_args.route_selection, alternatives_ratio)
+    run_inner(common_args, p, alternatives_ratio, route_selection_ratio)
 
 
 def main():
