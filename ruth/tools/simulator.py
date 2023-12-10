@@ -11,7 +11,7 @@ from typing import List, Optional
 import click
 from probduration import HistoryHandler
 
-from ..vehicle import set_vehicle_behavior, VehicleBehavior
+from ..vehicle import set_vehicle_behavior
 from ..losdb import FreeFlowDb, ProbProfileDb
 from ..simulator import RouteRankingAlgorithms, SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
@@ -48,11 +48,33 @@ class AlternativesRatio:
 
     def __post_init__(self):
         self.default = 1 - self.dijkstra_fastest - self.dijkstra_shortest - self.plateau_fastest
+        self.default = round(self.default, 2)
         if self.default < 0:
             raise ValueError("Sum of alternatives ratios must be equal to 1.")
 
+    def to_list(self):
+        return [self.default, self.dijkstra_fastest, self.dijkstra_shortest, self.plateau_fastest]
 
-def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio: AlternativesRatio)\
+
+@dataclass
+class RouteSelectionRatio:
+    no_alternative: float
+    first: float
+    random: float
+    ptdr: float
+
+    def __post_init__(self):
+        self.no_alternative = 1 - self.first - self.random - self.ptdr
+        self.no_alternative = round(self.no_alternative, 2)
+        if self.no_alternative < 0:
+            raise ValueError("Sum of route selection ratios must be equal to 1.")
+
+    def to_list(self):
+        return [self.no_alternative, self.first, self.random, self.ptdr]
+
+
+def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio: AlternativesRatio,
+                      route_selection_ratio: RouteSelectionRatio) \
         -> SingleNodeSimulator:
     departure_time = common_args.departure_time
     round_frequency = common_args.round_frequency
@@ -71,17 +93,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                         los_vehicles_tolerance, seed, speeds_path=speeds_path)
         vehicles = load_vehicles(vehicles_path)
 
-        ratios = [alternatives_ratio.default,
-                  alternatives_ratio.dijkstra_fastest,
-                  alternatives_ratio.dijkstra_shortest,
-                  alternatives_ratio.plateau_fastest]
-        behaviors = [
-            VehicleBehavior.DEFAULT,
-            VehicleBehavior.DIJKSTRA_FASTEST,
-            VehicleBehavior.DIJKSTRA_SHORTEST,
-            VehicleBehavior.PLATEAU_FASTEST,
-        ]
-        set_vehicle_behavior(vehicles, ratios, behaviors)
+        set_vehicle_behavior(vehicles, alternatives_ratio.to_list(), route_selection_ratio.to_list())
 
         simulation = Simulation(vehicles, ss)
         if speeds_path is not None:
@@ -226,6 +238,7 @@ def single_node_simulator(ctx,
         continue_from=sim_state
     )
 
+
 @single_node_simulator.command()
 @click.argument("vehicles_path", type=click.Path(exists=True))
 @click.pass_context
@@ -345,24 +358,18 @@ def create_alternatives_providers(alternatives_ratio: AlternativesRatio,
     return providers
 
 
-@enum.unique
-class RouteSelectionImpl(str, enum.Enum):
-    FIRST = "first"
-    RANDOM = "random"
-    DISTRIBUTED = "distributed"
+def create_route_selection_providers(route_selection_ratio: RouteSelectionRatio,
+                                     zeromq_ctx: ZeroMqContext,
+                                     seed: Optional[int] = None) -> List[RouteSelectionProvider]:
+    providers = []
+    if route_selection_ratio.first > 0:
+        providers.append(FirstRouteSelection())
+    if route_selection_ratio.random > 0:
+        providers.append(RandomRouteSelection(seed))
+    if route_selection_ratio.ptdr > 0:
+        providers.append(ZeroMQDistributedPTDRRouteSelection(client=zeromq_ctx.get_or_create_client(5555)))
 
-
-def create_route_selection_provider(route_selection: RouteSelectionImpl,
-                                    zeromq_ctx: ZeroMqContext,
-                                    seed: Optional[int] = None) -> RouteSelectionProvider:
-    if route_selection == RouteSelectionImpl.FIRST:
-        return FirstRouteSelection()
-    elif route_selection == RouteSelectionImpl.RANDOM:
-        return RandomRouteSelection(seed)
-    elif route_selection == RouteSelectionImpl.DISTRIBUTED:
-        return ZeroMQDistributedPTDRRouteSelection(client=zeromq_ctx.get_or_create_client(5555))
-    else:
-        raise NotImplementedError
+    return providers
 
 
 @single_node_simulator.command()
@@ -370,16 +377,18 @@ def create_route_selection_provider(route_selection: RouteSelectionImpl,
 @click.option("--alt-dijkstra-fastest", type=float, default=0.0)
 @click.option("--alt-dijkstra-shortest", type=float, default=0.0)
 @click.option("--alt-plateau-fastest", type=float, default=0.0)
-@click.option("--route-selection", type=click.Choice(RouteSelectionImpl),
-              default=RouteSelectionImpl.FIRST,
-              help="Choose an implementation of route selection [first, random, distributed]")
+@click.option("--selection-first", type=float, default=0.0)
+@click.option("--selection-random", type=float, default=0.0)
+@click.option("--selection-ptdr", type=float, default=0.0)
 @click.pass_context
 def run(ctx,
         vehicles_path: Path,
         alt_dijkstra_fastest: float,
         alt_dijkstra_shortest: float,
         alt_plateau_fastest: float,
-        route_selection: RouteSelectionImpl):
+        selection_first: float,
+        selection_random: float,
+        selection_ptdr: float):
     common_args = ctx.obj["common-args"]
 
     alternatives_ratio = AlternativesRatio(
@@ -389,18 +398,24 @@ def run(ctx,
         plateau_fastest=alt_plateau_fastest
     )
 
-    run_inner(common_args, vehicles_path, route_selection, alternatives_ratio)
+    route_selection_ratio = RouteSelectionRatio(
+        no_alternative=0.0,
+        first=selection_first,
+        random=selection_random,
+        ptdr=selection_ptdr
+    )
+
+    run_inner(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
 
 
 def run_inner(common_args: CommonArgs, vehicles_path: Path,
-              route_selection: RouteSelectionImpl,
-              alternatives_ratio):
+              alternatives_ratio, route_selection_ratio):
     out = common_args.out
     walltime = common_args.walltime
     saving_interval = common_args.saving_interval
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
-    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio)
+    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
     end_step_fns = []
 
     if walltime is not None:
@@ -411,16 +426,18 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
 
     zmq_ctx = ZeroMqContext()
     alternatives_providers = create_alternatives_providers(alternatives_ratio, zmq_ctx=zmq_ctx)
-    route_selection_provider = create_route_selection_provider(route_selection, zeromq_ctx=zmq_ctx,
-                                                               seed=common_args.seed)
+    route_selection_providers = create_route_selection_providers(route_selection_ratio, zeromq_ctx=zmq_ctx,
+                                                                 seed=common_args.seed)
 
-    if isinstance(route_selection_provider, ZeroMQDistributedPTDRRouteSelection):
-        ptdr_info = PTDRInfo(common_args.departure_time)
-        route_selection_provider.update_segment_profiles(ptdr_info)
+    for route_selection_provider in route_selection_providers:
+        if isinstance(route_selection_provider, ZeroMQDistributedPTDRRouteSelection):
+            ptdr_info = PTDRInfo(common_args.departure_time)
+            route_selection_provider.update_segment_profiles(ptdr_info)
+            break
 
     simulator.simulate(
         alternatives_providers=alternatives_providers,
-        route_selection_provider=route_selection_provider,
+        route_selection_providers=route_selection_providers,
         end_step_fns=end_step_fns,
     )
     simulator.state.store(out)

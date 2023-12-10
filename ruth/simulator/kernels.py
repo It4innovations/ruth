@@ -6,7 +6,7 @@ from .ptdr import PTDRInfo
 from ..data.map import Map, osm_routes_to_segment_ids
 from ..data.segment import Route
 from ..utils import is_root_debug_logging
-from ..vehicle import Vehicle, VehicleBehavior
+from ..vehicle import Vehicle, VehicleAlternatives, VehicleRouteSelection
 from ..zeromq.src.client import Message
 
 AlternativeRoutes = List[Route]
@@ -16,7 +16,7 @@ AlternativeRoutes = List[Route]
 class AlternativesProvider:
 
     def __init__(self):
-        self.vehicle_behaviour = VehicleBehavior.DEFAULT
+        self.vehicle_behaviour = None
 
     def load_map(self, map: Map):
         """
@@ -53,7 +53,7 @@ class AlternativesProvider:
 class FastestPathsAlternatives(AlternativesProvider):
 
     def __init__(self):
-        self.vehicle_behaviour = VehicleBehavior.DIJKSTRA_FASTEST
+        self.vehicle_behaviour = VehicleAlternatives.DIJKSTRA_FASTEST
 
     def compute_alternatives(self, map: Map, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
@@ -63,7 +63,7 @@ class FastestPathsAlternatives(AlternativesProvider):
 class ShortestPathsAlternatives(AlternativesProvider):
 
     def __init__(self):
-        self.vehicle_behaviour = VehicleBehavior.DIJKSTRA_SHORTEST
+        self.vehicle_behaviour = VehicleAlternatives.DIJKSTRA_SHORTEST
 
     def compute_alternatives(self, map: Map, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
@@ -74,7 +74,7 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
     from ..zeromq.src.client import Client
 
     def __init__(self, client: Client):
-        self.vehicle_behaviour = VehicleBehavior.PLATEAU_FASTEST
+        self.vehicle_behaviour = VehicleAlternatives.PLATEAU_FASTEST
         self.client = client
 
     def load_map(self, map: Map):
@@ -118,6 +118,9 @@ class RouteSelectionProvider:
     For a given list of alternatives (k per vehicle), select the best route for each vehicle.
     """
 
+    def __init__(self):
+        self.vehicle_behaviour = None
+
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
         raise NotImplementedError
 
@@ -126,6 +129,8 @@ class FirstRouteSelection(RouteSelectionProvider):
     """
     Selects the first route for each car.
     """
+    def __init__(self):
+        self.vehicle_behaviour = VehicleRouteSelection.FIRST
 
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
         return [(vehicle, routes[0]) for (vehicle, routes) in route_possibilities]
@@ -134,6 +139,7 @@ class FirstRouteSelection(RouteSelectionProvider):
 class RandomRouteSelection(RouteSelectionProvider):
 
     def __init__(self, seed: int = None):
+        self.vehicle_behaviour = VehicleRouteSelection.RANDOM
         self.generator = random.Random(seed)
 
     """
@@ -152,6 +158,7 @@ class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
     from ..zeromq.src.client import Client
 
     def __init__(self, client: Client):
+        self.vehicle_behaviour = VehicleRouteSelection.PTDR
         self.client = client
         self.ptdr_info = None
 

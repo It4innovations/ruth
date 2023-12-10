@@ -2,12 +2,12 @@ import logging
 from datetime import datetime, timedelta
 from typing import Callable, List, Optional
 
-from .kernels import AlternativesProvider, RouteSelectionProvider
+from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithPlans
 from .route import advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
 from ..losdb import GlobalViewDb
 from ..utils import TimerSet
-from ..vehicle import Vehicle, VehicleBehavior
+from ..vehicle import Vehicle, VehicleAlternatives
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class Simulator:
     def simulate(
             self,
             alternatives_providers: List[AlternativesProvider],
-            route_selection_provider: RouteSelectionProvider,
+            route_selection_providers: List[RouteSelectionProvider],
             end_step_fns: [Optional[Callable[[Simulation], None]]] = None,
     ):
         """Perform the simulation.
@@ -40,7 +40,7 @@ class Simulator:
         Parameters:
         -----------
             :param alternatives_providers: Implementation of alternatives.
-            :param route_selection_provider: Implementation of route selection.
+            :param route_selection_providers: Implementation of route selection.
             :param end_step_fns: An arbitrary functions that are called at the end of each step with
             the current state of simulation. It can be used for storing the state, for example.
         """
@@ -78,7 +78,7 @@ class Simulator:
             with timer_set.get("alternatives"):
                 need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
                                   vehicle.is_at_the_end_of_segment()
-                                  and vehicle.behavior != VehicleBehavior.DEFAULT]
+                                  and vehicle.alternatives != VehicleAlternatives.DEFAULT]
 
                 computed_vehicles, alts = self.compute_alternatives(alternatives_providers, need_new_route)
                 assert len(computed_vehicles) == len(alts) == len(need_new_route)
@@ -91,7 +91,8 @@ class Simulator:
                         new_vehicle_routes.append((v, alt))
 
             with timer_set.get("selected_routes"):
-                selected_plans = route_selection_provider.select_routes(new_vehicle_routes)
+                selected_plans = self.select_routes(route_selection_providers, new_vehicle_routes)
+                # route_selection_provider.select_routes(new_vehicle_routes)
                 assert len(selected_plans) == len(new_vehicle_routes)
                 for (vehicle, route) in selected_plans:
                     vehicle.update_followup_route(route)
@@ -135,7 +136,7 @@ class Simulator:
         combined_alts = []
         combined_vehicles = []
         for provider in alternatives_providers:
-            selected_vehicles = [v for v in vehicles if v.behavior == provider.vehicle_behaviour]
+            selected_vehicles = [v for v in vehicles if v.alternatives == provider.vehicle_behaviour]
             alts = provider.compute_alternatives(
                 self.sim.routing_map,
                 selected_vehicles,
@@ -146,6 +147,19 @@ class Simulator:
 
         combined_alts = AlternativesProvider.remove_infinity_alternatives(combined_alts, self.sim.routing_map)
         return combined_vehicles, combined_alts
+
+    def select_routes(self, route_selection_providers: List[RouteSelectionProvider], vehicles: List[VehicleWithPlans]):
+        if not vehicles:
+            return []
+
+        combined_routes = []
+        for provider in route_selection_providers:
+            selected_vehicles = [(v, alt) for (v, alt) in vehicles if v.route_selection == provider.vehicle_behaviour]
+            vehicles_with_route = provider.select_routes(selected_vehicles)
+            combined_routes.extend(vehicles_with_route)
+
+        assert len(combined_routes) == len(vehicles)
+        return combined_routes
 
     def advance_vehicles(self, vehicles: List[Vehicle], current_offset) -> List[FCDRecord]:
         """Move the vehicles on its route and generate FCD records"""
