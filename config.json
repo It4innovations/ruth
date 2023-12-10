@@ -20,9 +20,8 @@
     "route-selection": "first"
   },
   "alternatives" : {
-    "default": 0.0,
-    "fastest-paths": 0.5,
-    "shortest-paths": 0.5,
-    "distributed": 0.0
+    "dijkstra-fastest": 0.5,
+    "dijkstra-shortest": 0.5,
+    "plateau-fastest": 0.0
   }
 }

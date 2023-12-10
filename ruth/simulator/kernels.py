@@ -53,7 +53,7 @@ class AlternativesProvider:
 class FastestPathsAlternatives(AlternativesProvider):
 
     def __init__(self):
-        self.vehicle_behaviour = VehicleBehavior.FASTEST_PATHS
+        self.vehicle_behaviour = VehicleBehavior.DIJKSTRA_FASTEST
 
     def compute_alternatives(self, map: Map, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
@@ -63,7 +63,7 @@ class FastestPathsAlternatives(AlternativesProvider):
 class ShortestPathsAlternatives(AlternativesProvider):
 
     def __init__(self):
-        self.vehicle_behaviour = VehicleBehavior.SHORTEST_PATHS
+        self.vehicle_behaviour = VehicleBehavior.DIJKSTRA_SHORTEST
 
     def compute_alternatives(self, map: Map, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
@@ -74,7 +74,7 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
     from ..zeromq.src.client import Client
 
     def __init__(self, client: Client):
-        self.vehicle_behaviour = VehicleBehavior.DISTRIBUTED
+        self.vehicle_behaviour = VehicleBehavior.PLATEAU_FASTEST
         self.client = client
 
     def load_map(self, map: Map):
