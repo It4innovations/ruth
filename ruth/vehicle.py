@@ -27,9 +27,9 @@ IndexedNode = namedtuple("IndexedNode", ["node", "index"])
 
 class VehicleBehavior(IntFlag):
     DEFAULT = 0
-    FASTEST_PATHS = auto()
-    SHORTEST_PATHS = auto()
-    DISTRIBUTED = auto()
+    DIJKSTRA_FASTEST = auto()
+    DIJKSTRA_SHORTEST = auto()
+    PLATEAU_FASTEST = auto()
 
 
 def set_vehicle_behavior(vehicles: List['Vehicle'], ratio: List[float], behavior: List[VehicleBehavior]):

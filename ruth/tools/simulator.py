@@ -42,9 +42,14 @@ class CommonArgs:
 @dataclass
 class AlternativesRatio:
     default: float
-    fastest_paths: float
-    shortest_paths: float
-    distributed: float
+    dijkstra_fastest: float
+    dijkstra_shortest: float
+    plateau_fastest: float
+
+    def __post_init__(self):
+        self.default = 1 - self.dijkstra_fastest - self.dijkstra_shortest - self.plateau_fastest
+        if self.default < 0:
+            raise ValueError("Sum of alternatives ratios must be equal to 1.")
 
 
 def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio: AlternativesRatio)\
@@ -67,14 +72,14 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
         vehicles, bbox, download_date = load_vehicles(vehicles_path)
 
         ratios = [alternatives_ratio.default,
-                  alternatives_ratio.fastest_paths,
-                  alternatives_ratio.shortest_paths,
-                  alternatives_ratio.distributed]
+                  alternatives_ratio.dijkstra_fastest,
+                  alternatives_ratio.dijkstra_shortest,
+                  alternatives_ratio.plateau_fastest]
         behaviors = [
             VehicleBehavior.DEFAULT,
-            VehicleBehavior.FASTEST_PATHS,
-            VehicleBehavior.SHORTEST_PATHS,
-            VehicleBehavior.DISTRIBUTED
+            VehicleBehavior.DIJKSTRA_FASTEST,
+            VehicleBehavior.DIJKSTRA_SHORTEST,
+            VehicleBehavior.PLATEAU_FASTEST,
         ]
         set_vehicle_behavior(vehicles, ratios, behaviors)
 
@@ -327,33 +332,14 @@ class ZeroMqContext:
         return self.clients[port]
 
 
-@enum.unique
-class AlternativesImpl(str, enum.Enum):
-    FASTEST_PATHS = "fastest-paths"
-    SHORTEST_PATHS = "shortest-paths"
-    DISTRIBUTED = "distributed"
-
-
-def create_alternatives_provider(alternatives: AlternativesImpl,
-                                 zmq_ctx: ZeroMqContext) -> AlternativesProvider:
-    if alternatives == AlternativesImpl.FASTEST_PATHS:
-        return FastestPathsAlternatives()
-    elif alternatives == AlternativesImpl.SHORTEST_PATHS:
-        return ShortestPathsAlternatives()
-    elif alternatives == AlternativesImpl.DISTRIBUTED:
-        return ZeroMQDistributedAlternatives(client=zmq_ctx.get_or_create_client(5555))
-    else:
-        raise NotImplementedError
-
-
 def create_alternatives_providers(alternatives_ratio: AlternativesRatio,
                                   zmq_ctx: ZeroMqContext) -> List[AlternativesProvider]:
     providers = []
-    if alternatives_ratio.fastest_paths > 0:
+    if alternatives_ratio.dijkstra_fastest > 0:
         providers.append(FastestPathsAlternatives())
-    if alternatives_ratio.shortest_paths > 0:
+    if alternatives_ratio.dijkstra_shortest > 0:
         providers.append(ShortestPathsAlternatives())
-    if alternatives_ratio.distributed > 0:
+    if alternatives_ratio.plateau_fastest > 0:
         providers.append(ZeroMQDistributedAlternatives(client=zmq_ctx.get_or_create_client(5555)))
 
     return providers
@@ -381,27 +367,27 @@ def create_route_selection_provider(route_selection: RouteSelectionImpl,
 
 @single_node_simulator.command()
 @click.argument("vehicles_path", type=click.Path(exists=True))
-@click.option("--alternatives", type=click.Choice(AlternativesImpl),
-              default=AlternativesImpl.FASTEST_PATHS,
-              help="Choose an implementation of alternatives [fastest-paths, shortest-paths, distributed]")
+@click.option("--alt-dijkstra-fastest", type=float, default=0.0)
+@click.option("--alt-dijkstra-shortest", type=float, default=0.0)
+@click.option("--alt-plateau-fastest", type=float, default=0.0)
 @click.option("--route-selection", type=click.Choice(RouteSelectionImpl),
               default=RouteSelectionImpl.FIRST,
               help="Choose an implementation of route selection [first, random, distributed]")
 @click.pass_context
 def run(ctx,
         vehicles_path: Path,
-        alternatives: AlternativesImpl,
+        alt_dijkstra_fastest: float,
+        alt_dijkstra_shortest: float,
+        alt_plateau_fastest: float,
         route_selection: RouteSelectionImpl):
     common_args = ctx.obj["common-args"]
 
-    if alternatives == AlternativesImpl.FASTEST_PATHS:
-        alternatives_ratio = AlternativesRatio(0, 1, 0, 0)
-    elif alternatives == AlternativesImpl.SHORTEST_PATHS:
-        alternatives_ratio = AlternativesRatio(0, 0, 1, 0)
-    elif alternatives == AlternativesImpl.DISTRIBUTED:
-        alternatives_ratio = AlternativesRatio(0, 0, 0, 1)
-    else:
-        alternatives_ratio = AlternativesRatio(1, 0, 0, 0)
+    alternatives_ratio = AlternativesRatio(
+        default=0.0,
+        dijkstra_fastest=alt_dijkstra_fastest,
+        dijkstra_shortest=alt_dijkstra_shortest,
+        plateau_fastest=alt_plateau_fastest
+    )
 
     run_inner(common_args, vehicles_path, route_selection, alternatives_ratio)
 

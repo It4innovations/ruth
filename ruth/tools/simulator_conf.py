@@ -65,9 +65,14 @@ class RunArgs:
 @dataclass
 class AlternativesRatio:
     default: float = 0.0
-    fastest_paths: float = 0.0
-    shortest_paths: float = 0.0
-    distributed: float = 0.0
+    dijkstra_fastest: float = 0.0
+    dijkstra_shortest: float = 0.0
+    plateau_fastest: float = 0.0
+
+    def __post_init__(self):
+        self.default = 1 - self.dijkstra_fastest - self.dijkstra_shortest - self.plateau_fastest
+        if self.default < 0:
+            raise ValueError("Sum of alternatives ratios must be equal to 1.")
 
 
 @serde(rename_all="kebabcase")
