@@ -1,5 +1,6 @@
 """Prepare the input file from Origin/Destination matrix."""
 import os.path
+from pathlib import Path
 
 import click
 import networkx
@@ -135,6 +136,12 @@ def convert(od_matrix_path, download_date, increase_lat, increase_lon, csv_separ
         df[["time_offset", "frequency", "fcd_sampling_period"]].applymap(lambda seconds: timedelta(seconds=seconds))
 
     df["active"], df["status"] = zip(*df.apply(get_active_and_state, axis=1))
+
+    # count number of active vehicles
+    active_vehicles = df[df["active"] == True].count()["id"]
+    print(f"Number of active vehicles: {active_vehicles}")
+
+    out = out.replace(".parquet", f"-{active_vehicles}.parquet")
 
     df.to_parquet(out, engine="fastparquet")
 
