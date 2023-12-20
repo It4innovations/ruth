@@ -14,13 +14,17 @@ AlternativeRoutes = List[Route]
 
 # Alternatives
 class AlternativesProvider:
-    def load_map(self, map: Map):
+
+    def __init__(self):
+        self.routing_map = None
+
+    def load_map(self, routing_map: Map):
         """
         Loads updated information from the passed map.
         """
-        pass
+        self.routing_map = routing_map
 
-    def compute_alternatives(self, map: Map, vehicles: List[Vehicle], k: int) -> List[
+    def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
         """
         Provides implementation of computing alternatives.
@@ -45,15 +49,15 @@ class AlternativesProvider:
 
 
 class FastestPathsAlternatives(AlternativesProvider):
-    def compute_alternatives(self, map: Map, vehicles: List[Vehicle], k: int) -> List[
+    def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
-        return [vehicle.k_fastest_paths(k) for vehicle in vehicles]
+        return [vehicle.k_fastest_paths(k, self.routing_map) for vehicle in vehicles]
 
 
 class ShortestPathsAlternatives(AlternativesProvider):
-    def compute_alternatives(self, map: Map, vehicles: List[Vehicle], k: int) -> List[
+    def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
-        return [vehicle.k_shortest_paths(k) for vehicle in vehicles]
+        return [vehicle.k_shortest_paths(k, self.routing_map) for vehicle in vehicles]
 
 
 class ZeroMQDistributedAlternatives(AlternativesProvider):
@@ -62,18 +66,19 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
     def __init__(self, client: Client):
         self.client = client
 
-    def load_map(self, map: Map):
+    def load_map(self, routing_map: Map):
         """
         Loads updated information from the passed map.
         """
-        map_path = map.save_hdf()
+        map_path = routing_map.save_hdf()
         self.client.broadcast(Message(kind="load-map", data=map_path))
+        self.routing_map = routing_map
 
-    def compute_alternatives(self, map: Map, vehicles: List[Vehicle], k: int) -> List[
+    def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
         messages = [Message(kind="alternatives", data={
-            "start": map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
-            "destination": map.osm_to_hdf5_id(v.next_routing_od_nodes[1]),
+            "start": self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
+            "destination": self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[1]),
             "max_routes": k
         }) for v in vehicles]
 
@@ -86,7 +91,7 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         if is_root_debug_logging():
             logging.debug(f"Response from worker: {results}")
         remapped_routes = [
-            [[map.hdf5_to_osm_id(node_id) for node_id in route] for route in result["routes"]]
+            [[self.routing_map.hdf5_to_osm_id(node_id) for node_id in route] for route in result["routes"]]
             for result in results
         ]
         return remapped_routes

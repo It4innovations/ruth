@@ -52,8 +52,8 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path) -> SingleNodeSimul
             raise ValueError("Either vehicles_path or continue_from must be specified.")
         ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
                         los_vehicles_tolerance, seed, speeds_path=speeds_path)
-        vehicles = load_vehicles(vehicles_path)
-        simulation = Simulation(vehicles, ss)
+        vehicles, bbox, download_date = load_vehicles(vehicles_path)
+        simulation = Simulation(vehicles, ss, bbox, download_date)
         if speeds_path is not None:
             vehicles[0].routing_map.init_temporary_max_speeds(speeds_path)
     else:

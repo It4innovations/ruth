@@ -87,9 +87,8 @@ class Simulator:
 
             with timer_set.get("alternatives"):
                 need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
-                                  vehicle.is_at_the_end_of_segment()]
+                                  vehicle.is_at_the_end_of_segment(self.sim.routing_map)]
                 alts = alternatives_provider.compute_alternatives(
-                    self.sim.routing_map,
                     need_new_route,
                     k=self.sim.setting.k_alternatives
                 )
@@ -148,5 +147,6 @@ class Simulator:
             assert vehicle.is_active(current_offset, self.sim.setting.round_freq)
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             GlobalViewDb(self.sim.global_view),
+                                            self.sim.routing_map,
                                             self.sim.queues_manager,
                                             self.sim.setting.los_vehicles_tolerance)

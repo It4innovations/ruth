@@ -45,7 +45,7 @@ def get_osm_segment_id(node_from: int, node_to: int):
     return f"OSM{node_from}T{node_to}"
 
 
-class BBox(metaclass=Singleton):
+class BBox:
     def __init__(self, north, west, south, east):
         self.north = north
         self.west = west
@@ -60,7 +60,7 @@ class BBox(metaclass=Singleton):
         return f"{self.north}-{self.west}-{self.south}-{self.east}".replace('.', "_")
 
 
-class Map(metaclass=Singleton):
+class Map:
     """Routing map."""
 
     def __init__(self, bbox, download_date, data_dir="./data", with_speeds=True, save_hdf=True):

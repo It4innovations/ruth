@@ -7,6 +7,7 @@ from typing import Dict, List
 import pandas as pd
 
 from .queues import QueuesManager
+from ..data.map import BBox, Map
 from ..data.segment import SpeedMps, LengthMeters
 from ..globalview import GlobalView
 from ..losdb import GlobalViewDb
@@ -72,7 +73,7 @@ class SimSetting:
 class Simulation:
     """A simulation state."""
 
-    def __init__(self, vehicles: List[Vehicle], setting: SimSetting):
+    def __init__(self, vehicles: List[Vehicle], setting: SimSetting, bbox: BBox, map_download_date: str):
         """
         Construct a new simulation.
 
@@ -90,21 +91,18 @@ class Simulation:
         self.steps_info = []
         self.duration = timedelta(seconds=0)
         self.queues_manager = QueuesManager()
+        self.bbox = bbox
+        self.map_download_date = map_download_date
+        self.routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
 
     def __getstate__(self):
-        routing_map = self.routing_map
-        state = self.__dict__.copy()
-        vehicles = state.pop('vehicles')
-        vehicles = list(map(lambda v: asdict(v), vehicles))
+        d = self.__dict__.copy()
+        d['routing_map'] = None
+        return d
 
-        return state, vehicles, routing_map
-
-    def __setstate__(self, state_with_routing_map):
-        state, vehicles, routing_map = state_with_routing_map
-        vehicles = list(map(lambda vd: Vehicle(**vd, routing_map=routing_map), vehicles))
-        state['vehicles'] = vehicles
-
-        self.__dict__.update(state)
+    def __setstate__(self, d):
+        self.__dict__.update(d)
+        self.routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
 
     @property
     def random(self):
@@ -113,10 +111,6 @@ class Simulation:
     @property
     def global_view_db(self):
         return GlobalViewDb(self.global_view)
-
-    @property
-    def routing_map(self):
-        return self.vehicles[0].routing_map
 
     def is_vehicle_within_offset(self, vehicle: Vehicle, offset):
         return vehicle.active and offset == self.round_time_offset(vehicle.time_offset)
