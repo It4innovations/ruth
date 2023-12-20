@@ -66,6 +66,10 @@ def plot_origin_destination(df, g):
               help="A fraction of the area increase in latitude. (0.1 means 10% increase)")
 @click.option("--increase-lon", type=float, default=0.0,
               help="A fraction of the area increase in longitude. (0.1 means 10% increase)")
+@click.option("--lat-min", type=float, default=90, help="Set to increase map size.")
+@click.option("--lat-max", type=float, default=-90, help="Set to increase map size.")
+@click.option("--lon-min", type=float, default=180, help="Set to increase map size.")
+@click.option("--lon-max", type=float, default=-180, help="Set to increase map size.")
 @click.option("--csv-separator", type=str, default=";", help="Default: [';'].")
 @click.option("--frequency", type=int, default="20",
               help="Default: 20s. A period in which a vehicle asks for rerouting in seconds.")
@@ -75,7 +79,9 @@ def plot_origin_destination(df, g):
 @click.option("--data-dir", type=click.Path(), default="./data", help="Default './data'.")
 @click.option("--out", type=click.Path(), default="out.parquet", help="Default 'out.parquet'.")
 @click.option("--show-only", is_flag=True, help="Show map with cars without computing output.")
-def convert(od_matrix_path, download_date, increase_lat, increase_lon, csv_separator, frequency, fcd_sampling_period, nproc,
+def convert(od_matrix_path, download_date, increase_lat, increase_lon,
+            lat_min, lat_max, lon_min, lon_max,
+            csv_separator, frequency, fcd_sampling_period, nproc,
             data_dir, out, show_only):
     global routing_map
 
@@ -84,16 +90,18 @@ def convert(od_matrix_path, download_date, increase_lat, increase_lon, csv_separ
 
     odm_df = pd.read_csv(od_matrix_path, sep=csv_separator)
 
-    lat_min = min(odm_df["lat_from"].min(), odm_df["lat_to"].min())
-    lat_max = max(odm_df["lat_from"].max(), odm_df["lat_to"].max())
-    lon_min = min(odm_df["lon_from"].min(), odm_df["lon_to"].min())
-    lon_max = max(odm_df["lon_from"].max(), odm_df["lon_to"].max())
+    lat_min = min(odm_df["lat_from"].min(), odm_df["lat_to"].min(), lat_min)
+    lat_max = max(odm_df["lat_from"].max(), odm_df["lat_to"].max(), lat_max)
+    lon_min = min(odm_df["lon_from"].min(), odm_df["lon_to"].min(), lon_min)
+    lon_max = max(odm_df["lon_from"].max(), odm_df["lon_to"].max(), lon_max)
 
     # Increase the area by the given percentage
-    lat_min -= (lat_max - lat_min) * increase_lat
-    lat_max += (lat_max - lat_min) * increase_lat
-    lon_min -= (lon_max - lon_min) * increase_lon
-    lon_max += (lon_max - lon_min) * increase_lon
+    lat_diff = lat_max - lat_min
+    lon_diff = lon_max - lon_min
+    lat_min -= lat_diff * increase_lat
+    lat_max += lat_diff * increase_lat
+    lon_min -= lon_diff * increase_lon
+    lon_max += lon_diff * increase_lon
 
     lat_min = max(lat_min, -90)
     lat_max = min(lat_max, 90)
