@@ -9,7 +9,7 @@ from networkx.exception import NodeNotFound
 
 from .data.map import Map
 from .data.segment import Route, SegmentPosition
-from .utils import round_timedelta, get_map_from_bbox
+from .utils import round_timedelta
 
 
 def set_numpy_type(name, fld=None):
@@ -33,27 +33,13 @@ class Vehicle:
     start_distance_offset: float = set_numpy_type("float64")
     origin_node: int = set_numpy_type("int64")
     dest_node: int = set_numpy_type("int64")
-    download_date: str = set_numpy_type("string")
     osm_route: List[int] = set_numpy_type("object")
     active: bool = set_numpy_type("bool")
     """A period in which the raw FCD data are sampled"""
     fcd_sampling_period: timedelta = set_numpy_type("object")
     status: str = set_numpy_type("string")
-    bbox_lat_max: float = set_numpy_type("float64")
-    bbox_lon_min: float = set_numpy_type("float64")
-    bbox_lat_min: float = set_numpy_type("float64")
-    bbox_lon_max: float = set_numpy_type("float64")
-    routing_map: InitVar[Map] = None
 
-    def __post_init__(self, routing_map):
-        # NOTE: the routing map is not among attributes of dataclass
-        # => does not affect the conversion to pandas.Series
-        if routing_map is None:
-            self.routing_map = get_map_from_bbox(self.bbox_lat_max, self.bbox_lon_min, self.bbox_lat_min,
-                                                 self.bbox_lon_max, self.download_date)
-        else:
-            self.routing_map = routing_map
-
+    def __post_init__(self):
         # We want to normalize these values to datetime.timedelta, because performing operations
         # between pandas.TimeDelta and datetime.timedelta is very slow (10x slower).
         # The check is here because the values are pandas when initially loaded from disk,
@@ -70,7 +56,7 @@ class Vehicle:
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self.__post_init__(None)
+        self.__post_init__()
 
     def __eq__(self, other):
         return self.id == other.id
@@ -104,13 +90,13 @@ class Vehicle:
         """Return the end node of segment in processing."""
         return self.osm_route[self.start_index + 1]
 
-    def shortest_path(self):
+    def shortest_path(self, routing_map: Map) -> Optional[List[int]]:
         """Compute the shortest path from the current position to the end."""
         current_starting_node = self.next_routing_start.node
 
-        return self.routing_map.shortest_path(current_starting_node, self.dest_node)
+        return routing_map.shortest_path(current_starting_node, self.dest_node)
 
-    def k_shortest_paths(self, k: int) -> Optional[List[List[int]]]:
+    def k_shortest_paths(self, k: int, routing_map: Map) -> Optional[List[List[int]]]:
         """Compute k-shortest path from the current position to the end."""
         current_starting_node = self.next_routing_start.node
 
@@ -119,13 +105,13 @@ class Vehicle:
             return None
 
         try:
-            osm_routes = self.routing_map.k_shortest_paths(current_starting_node, self.dest_node, k)
+            osm_routes = routing_map.k_shortest_paths(current_starting_node, self.dest_node, k)
             return list(osm_routes)
         except NodeNotFound as ex:
             print(f"vehicle: {self.id}: {ex}", file=sys.stderr)
             return None
 
-    def k_fastest_paths(self, k: int) -> Optional[List[List[int]]]:
+    def k_fastest_paths(self, k: int, routing_map: Map) -> Optional[List[List[int]]]:
         """Compute k-fastest path from the current position to the end."""
         current_starting_node = self.next_routing_start.node
 
@@ -134,15 +120,15 @@ class Vehicle:
             return None
 
         try:
-            osm_routes = self.routing_map.k_fastest_paths(current_starting_node, self.dest_node, k)
+            osm_routes = routing_map.k_fastest_paths(current_starting_node, self.dest_node, k)
             return list(osm_routes)
         except NodeNotFound as ex:
             print(f"vehicle: {self.id}: {ex}", file=sys.stderr)
             return None
 
-    def has_next_segment_closed(self) -> bool:
+    def has_next_segment_closed(self, routing_map: Map) -> bool:
         next_segment_from, next_segment_to = self.osm_route[self.start_index + 1], self.osm_route[self.start_index + 2]
-        max_speed_on_next_segment = self.routing_map.get_current_max_speed(next_segment_from, next_segment_to)
+        max_speed_on_next_segment = routing_map.get_current_max_speed(next_segment_from, next_segment_to)
         return max_speed_on_next_segment == 0.0
 
     def update_followup_route(self, osm_route: Route):
@@ -164,9 +150,9 @@ class Vehicle:
     def is_active(self, within_offset, freq):
         return self.active and within_offset == round_timedelta(self.time_offset, freq)
 
-    def is_at_the_end_of_segment(self):
+    def is_at_the_end_of_segment(self, routing_map: Map):
         node_from, node_to = self.osm_route[self.start_index], self.osm_route[self.start_index + 1]
-        osm_segment = self.routing_map.get_osm_segment(node_from, node_to)
+        osm_segment = routing_map.get_osm_segment(node_from, node_to)
         return self.start_distance_offset == osm_segment.length
 
     def __repr__(self):

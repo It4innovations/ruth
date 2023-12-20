@@ -26,16 +26,6 @@ def get_map(polygon: str,
     return Map(border, download_date=download_date, with_speeds=with_speeds)
 
 
-def get_map_from_bbox(lat_max: float,
-                      lon_min: float,
-                      lat_min: float,
-                      lon_max: float,
-                      download_date: str):
-    """Get map based on bbox."""
-    bbox = BBox(lat_max, lon_min, lat_min, lon_max)
-    return Map(bbox, download_date=download_date, with_speeds=True)
-
-
 class SegmentIdParser:
 
     def __init__(self, metaclass=Singleton):
