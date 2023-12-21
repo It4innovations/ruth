@@ -119,7 +119,7 @@ class SimulationAnimator(ABC):
     def _get_stats_text(self, timestamp: int):
         simulation_time_formatted = round_timedelta(self.total_simulation_time_in_time_s[timestamp])
         total_km_driven = round(self.total_meters_driven_in_time[timestamp] / 1000, 2)
-        return f"Total simulation time (sum of all cars): {simulation_time_formatted}\n" \
+        return f"Total driving time (sum of all cars): {simulation_time_formatted}\n" \
                f"Total KMs driven: {total_km_driven} km\n"
 
     def _get_finished_vehicles_text(self, timestamp: int):
