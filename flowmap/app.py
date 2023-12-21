@@ -3,7 +3,7 @@ import pathlib
 import platform
 from ruth.simulator import Simulation
 from flowmap.flowmapframe.plot import WidthStyle
-
+from flowmap.analysis import create_simulations_comparison
 from flowmap.time_unit import TimeUnit
 from flowmap.animation import SimulationVolumeAnimator, SimulationSpeedsAnimator
 from flowmap.info import SimulationInfo, get_real_time
@@ -126,6 +126,20 @@ def get_info(simulation_path, time_unit, speed, minute, status_at_point):
         if simulation_info is None:
             simulation_info = SimulationInfo(sim)
         simulation_info.print_status_at_point(status_at_point)
+
+
+@cli.command()
+@click.argument('simulation-path', type=click.Path(exists=True))
+@click.option('--output-dir', '-o', default='', help="Path to the folder for the output files.")
+@click.option(
+    '--interval',
+    type=int,
+    default=5,
+    help="Time interval in minutes",
+    show_default=True
+)
+def get_comparison_csv(simulation_path, output_dir, interval):
+    create_simulations_comparison([simulation_path], output_dir, interval)
 
 
 def main():
