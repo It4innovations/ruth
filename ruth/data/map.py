@@ -199,7 +199,10 @@ class Map(metaclass=Singleton):
 
     def shortest_path(self, origin, dest):
         """Compute shortest path between two OSM nodes."""
-        return nx.shortest_path(self.original_network, origin, dest, weight="length")
+        try:
+            return nx.shortest_path(self.original_network, origin, dest, weight="length")
+        except NetworkXNoPath:
+            return None
 
     def k_shortest_paths(self, origin, dest, k):
         """Compute k-shortest paths between two OSM nodes."""
@@ -213,7 +216,10 @@ class Map(metaclass=Singleton):
 
     def fastest_path(self, origin, dest):
         """Compute fastest path between two OSM nodes."""
-        return nx.dijkstra_path(self.current_network, origin, dest, weight='current_travel_time')
+        try:
+            return nx.dijkstra_path(self.current_network, origin, dest, weight='current_travel_time')
+        except NetworkXNoPath:
+            return None
 
     def k_fastest_paths(self, origin, dest, k):
         """Compute k-fastest paths between two OSM nodes."""
