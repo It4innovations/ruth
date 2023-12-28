@@ -16,6 +16,9 @@ from .plot import reshape, get_node_coordinates, WidthStyle
 from .zoom import get_zoom_level, ZoomLevel
 
 
+segment_speed_thresholds = [0, 20 / 3.6, 40 / 3.6, 60 / 3.6]
+
+
 def plot_routes(g: nx.MultiDiGraph,
                 ax: Axes,
                 nodes_from: list[int],
@@ -59,11 +62,11 @@ def plot_routes(g: nx.MultiDiGraph,
         speeds = densities
 
     if speeds_thresholds is None:
-        speeds_thresholds = [0, 20 / 3.6, 40 / 3.6, 60 / 3.6]
+        speeds_thresholds = segment_speed_thresholds
 
     if len(speeds_thresholds) != 4:
         logging.error("Please provide 4 speed thresholds")
-        speeds_thresholds = [0, 20 / 3.6, 40 / 3.6, 60 / 3.6]
+        speeds_thresholds = segment_speed_thresholds
 
     lines = []
     color_scalars = []
