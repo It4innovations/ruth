@@ -2,10 +2,11 @@ import logging
 from datetime import datetime, timedelta
 from typing import Callable, List, Optional
 
-from .kernels import AlternativesProvider, RouteSelectionProvider
+from .kernels import AlternativeRoutes, AlternativesProvider, RouteSelectionProvider
 from .ptdr import LosAtTimeOfWeek, SegmentPTDRData
 from .route import advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
+from ..data.map import Map
 from ..losdb import GlobalViewDb
 from ..utils import TimerSet
 from ..vehicle import Vehicle
@@ -92,7 +93,7 @@ class Simulator:
                     need_new_route,
                     k=self.sim.setting.k_alternatives
                 )
-                alts = alternatives_provider.remove_infinity_alternatives(alts, self.sim.routing_map)
+                alts = remove_infinity_alternatives(alts, self.sim.routing_map)
                 assert len(alts) == len(need_new_route)
 
             # Find which vehicles should have their routes recomputed
@@ -150,3 +151,19 @@ class Simulator:
                                             self.sim.routing_map,
                                             self.sim.queues_manager,
                                             self.sim.setting.los_vehicles_tolerance)
+
+
+def remove_infinity_alternatives(alternatives: List[AlternativeRoutes], routing_map: Map) -> List[
+    AlternativeRoutes]:
+    """
+    Removes alternatives that contain infinity.
+    """
+    filtered_alternatives = []
+    for alternatives_for_vehicle in alternatives:
+        for_vehicle = []
+        for alternative in alternatives_for_vehicle:
+            # calculate travel time for alternative
+            if not routing_map.is_route_closed(alternative):
+                for_vehicle.append(alternative)
+        filtered_alternatives.append(for_vehicle)
+    return filtered_alternatives
