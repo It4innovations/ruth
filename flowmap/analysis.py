@@ -1,4 +1,5 @@
 import os
+from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
@@ -12,15 +13,19 @@ def sort_df_by_timestamp(df):
     return df.sort_values(by=['timestamp'])
 
 
-def create_summary_df(df):
-    # sort df by vehicle and timestamp
-    pass
+def add_is_first_column(df):
+    df = df.sort_values(['vehicle_id', 'timestamp'])
+    df['previous_vehicle_id'] = df['vehicle_id'].shift(1).fillna(-1)
+    df['is_first'] = df['vehicle_id'] != df['previous_vehicle_id']
+    df.drop(columns=['previous_vehicle_id'], inplace=True)
+    return df
 
 
 class SimulationLog:
     def __init__(self, simulation: Simulation):
         self.simulation = simulation
         self.df = prepare_dataframe(simulation.history.to_dataframe(), 1)
+        self.df = add_is_first_column(self.df)
         self.df = sort_df_by_timestamp(self.df)
         self.vehicle_alternatives = {}
         self.vehicle_route_selection = {}
@@ -62,8 +67,8 @@ class SimulationLog:
             'number of vehicles that finished journey in total',
             'meters driven in time interval',
             'meters driven in total',
-            'driving time in time interval',
-            'driving time in total',
+            'driving time in time interval (minutes)',
+            'driving time in total (minutes)',
             'number of segments visited in time interval',
             'number of segments visited in total',
             'average speed in time interval',
@@ -108,14 +113,18 @@ class SimulationLog:
 
                 # number of vehicles with alternative selection
                 active_vehicles = current_df['vehicle_id'].unique()
+                current_alternatives = defaultdict(int)
+                current_route_selection = defaultdict(int)
+                for vehicle_id in active_vehicles:
+                    current_alternatives[self.vehicle_alternatives[vehicle_id]] += 1
+                    current_route_selection[self.vehicle_route_selection[vehicle_id]] += 1
+
                 for alternative in VehicleAlternatives:
-                    values.append(len([vehicle for vehicle in active_vehicles if
-                                       self.vehicle_alternatives[vehicle] == alternative]))
+                    values.append(current_alternatives[alternative])
 
                 # number of vehicles with route selection
                 for selection in VehicleRouteSelection:
-                    values.append(len([vehicle for vehicle in active_vehicles if
-                                       self.vehicle_route_selection[vehicle] == selection]))
+                    values.append(current_route_selection[selection])
 
                 # number of vehicles that finished journey in time interval
                 values.append(current_df.loc[current_df['active'] == False, 'vehicle_id'].nunique())
@@ -124,12 +133,13 @@ class SimulationLog:
                 values.append(total_df.loc[total_df['active'] == False, 'vehicle_id'].nunique())
 
                 # meters driven in time interval
-                values.append(current_df['meters_driven'].sum())
+                values.append(round(current_df['meters_driven'].sum()))
 
                 # meters driven in total
-                values.append(total_df['meters_driven'].sum())
+                values.append(round(total_df['meters_driven'].sum()))
 
                 # driving time in time interval
+                previous_timestamp = self.current_timestamp - time_interval_minutes * 60
                 current_df = current_df.sort_values(['vehicle_id', 'timestamp'])
                 current_df['timestamp_next'] = current_df['timestamp'].shift(-1)
                 current_df.loc[current_df['vehicle_id'] != current_df['vehicle_id'].shift(-1), 'timestamp_next'] = \
@@ -138,8 +148,13 @@ class SimulationLog:
                                (current_df['active'] == False),
                                'timestamp_next'] = current_df['timestamp']
                 current_df['driving_time'] = current_df['timestamp_next'] - current_df['timestamp']
+                current_df['previous_vehicle_id'] = current_df['vehicle_id'].shift(1)
+                current_df.loc[(current_df['vehicle_id'] != current_df['previous_vehicle_id']) &
+                               (current_df['is_first'] == False), 'driving_time'] += \
+                    current_df['timestamp'] - previous_timestamp
+                current_df.drop(columns=['timestamp_next', 'previous_vehicle_id'], inplace=True)
 
-                values.append(current_df['driving_time'].sum())
+                values.append(int(round(current_df['driving_time'].sum() / 60)))
                 # set driving time to 1 for vehicles with zero driving time
                 # this is done in order to calculate average speed correctly
                 current_df.loc[current_df['driving_time'] == 0, 'driving_time'] = 1
@@ -154,8 +169,13 @@ class SimulationLog:
                                     (total_df_temp['active'] == False),
                                     'timestamp_next'] = total_df_temp['timestamp']
                 total_df_temp['driving_time'] = total_df_temp['timestamp_next'] - total_df_temp['timestamp']
+                total_df_temp['previous_vehicle_id'] = total_df_temp['vehicle_id'].shift(1)
+                total_df_temp.loc[(total_df_temp['vehicle_id'] != total_df_temp['previous_vehicle_id']) &
+                                    (total_df_temp['is_first'] == False), 'driving_time'] += \
+                    total_df_temp['timestamp'] - previous_timestamp
+                total_df_temp.drop(columns=['timestamp_next', 'previous_vehicle_id'], inplace=True)
 
-                values.append(total_df_temp['driving_time'].sum())
+                values.append(int(round(total_df_temp['driving_time'].sum() / 60)))
                 total_df_temp.loc[total_df_temp['driving_time'] == 0, 'driving_time'] = 1
 
                 # number of segments visited in time interval
@@ -167,12 +187,14 @@ class SimulationLog:
                 # average speed in time interval
                 current_df['weighted_speed'] = current_df['speed_mps'] * current_df['driving_time']
                 current_df = current_df.loc[current_df['driving_time'] > 0]
-                values.append(current_df['weighted_speed'].sum() / current_df['driving_time'].sum())
+                current_avg_speed = current_df['weighted_speed'].sum() / current_df['driving_time'].sum()
+                values.append(str(round(current_avg_speed, 2)).replace('.', ','))
 
                 # average speed in total
                 total_df_temp['weighted_speed'] = total_df_temp['speed_mps'] * total_df_temp['driving_time']
                 total_df_temp = total_df_temp.loc[total_df_temp['driving_time'] > 0]
-                values.append(total_df_temp['weighted_speed'].sum() / total_df_temp['driving_time'].sum())
+                total_avg_speed = total_df_temp['weighted_speed'].sum() / total_df_temp['driving_time'].sum()
+                values.append(str(round(total_avg_speed, 2)).replace('.', ','))
 
                 # number of segments with average speed in range in time interval
                 df_segment_speeds = current_df.groupby('segment_id').agg({'weighted_speed': 'sum',
