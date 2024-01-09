@@ -1,23 +1,19 @@
 from collections import defaultdict
 from datetime import timedelta
-from typing import List, TYPE_CHECKING
+from typing import Dict, List, TYPE_CHECKING
 
-from .data.segment import SpeedKph
+from .data.segment import SegmentId, SpeedKph
 
 if TYPE_CHECKING:
     from .simulator.simulation import FCDRecord
 
 
 class GlobalView:
-
-    def __init__(self, data=None):
-        self.fcd_data: List["FCDRecord"] = [] if data is None else data
-        self.by_segment = self.construct_by_segments_()
+    def __init__(self):
+        self.fcd_by_segment: Dict[SegmentId, List[FCDRecord]] = defaultdict(list)
 
     def add(self, fcd: "FCDRecord"):
-        self.fcd_data.append(fcd)
-        self.by_segment[fcd.segment.id].append(
-            (fcd.datetime, fcd.vehicle_id, fcd.start_offset, fcd.speed))
+        self.fcd_by_segment[fcd.segment.id].append(fcd)
 
     def number_of_vehicles_ahead(self, datetime, segment_id, tolerance=None, vehicle_id=-1,
                                  vehicle_offset_m=0):
@@ -26,10 +22,10 @@ class GlobalView:
 
         tolerance = tolerance if tolerance is not None else timedelta(seconds=0)
         vehicles = set()
-        for (dt, current_vehicle_id, offset, _) in self.by_segment.get(segment_id, []):
-            if datetime - tolerance <= dt <= datetime + tolerance:
-                if current_vehicle_id != vehicle_id and offset > vehicle_offset_m:
-                    vehicles.add(current_vehicle_id)
+        for fcd in self.fcd_by_segment.get(segment_id, []):
+            if datetime - tolerance <= fcd.datetime <= datetime + tolerance:
+                if fcd.vehicle_id != vehicle_id and fcd.start_offset > vehicle_offset_m:
+                    vehicles.add(fcd.vehicle_id)
         return len(vehicles)
 
     def level_of_service_in_front_of_vehicle(self, datetime, segment, vehicle_id=-1,
@@ -72,45 +68,29 @@ class GlobalView:
         return self.level_of_service_in_front_of_vehicle(datetime, segment, -1, 0, None)
 
     def speed_in_time_at_segment(self, datetime, segment):
-        speeds = [speed for dt, _, _, speed in self.by_segment.get(segment.id, []) if
-                  dt == datetime]
+        speeds = [fcd.speed for fcd in self.fcd_by_segment.get(segment.id, []) if
+                  fcd.datetime == datetime]
         if len(speeds) == 0:
             return None
         return sum(speeds) / len(speeds)
 
     def get_segment_speed(self, node_from: int, node_to: int) -> SpeedKph:
         speeds = {}
-        by_segment = self.by_segment[(node_from, node_to)]
-        by_segment.sort(key=lambda x: x[0])
-        for _, vehicle_id, _, speed in by_segment:
-            speeds[vehicle_id] = speed
+        by_segment = list(self.fcd_by_segment[SegmentId((node_from, node_to))])
+        by_segment.sort(key=lambda fcd: fcd.datetime)
+        for fcd in by_segment:
+            speeds[fcd.vehicle_id] = fcd.speed
         speeds = list(speeds.values())
         if len(speeds) == 0:
             return SpeedKph(float('inf'))
         return SpeedKph(sum(speeds) / len(speeds))
 
-    def construct_by_segments_(self):
-        by_segment = defaultdict(list)
-        for fcd in self.fcd_data:
-            by_segment[fcd.segment.id].append(
-                (fcd.datetime, fcd.vehicle_id, fcd.start_offset, fcd.speed))
-
-        return by_segment
-
     def __getstate__(self):
-        self.fcd_data.sort(key=lambda fcd: (fcd.datetime, fcd.segment.id))
-        return self.fcd_data
+        return self.fcd_by_segment
 
     def __setstate__(self, state):
-        self.fcd_data = state
-        self.by_segment = self.construct_by_segments_()
+        self.fcd_by_segment = state
 
     def drop_old(self, dt_threshold):
-        self.fcd_data.sort(key=lambda fcd: fcd.datetime)
-
-        for i, row in enumerate(self.fcd_data):
-            if row.datetime >= dt_threshold:
-                self.fcd_data = self.fcd_data[i:]
-                break
-
-        self.by_segment = self.construct_by_segments_()
+        for key in tuple(self.fcd_by_segment.keys()):
+            self.fcd_by_segment[key] = [fcd for fcd in self.fcd_by_segment[key] if fcd.datetime >= dt_threshold]
