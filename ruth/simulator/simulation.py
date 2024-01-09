@@ -97,7 +97,8 @@ class Simulation:
 
     def __getstate__(self):
         d = self.__dict__.copy()
-        d['routing_map'] = None
+        d.pop("routing_map")
+        d.pop("global_view")
         return d
 
     def __setstate__(self, d):
