@@ -48,7 +48,7 @@ def aggregate(sim_path, round_freq_s, out=None):
             assert False, "Segment without assigned length!"
 
     rounded_history = []
-    for dt, *vals in sim.history.data:
+    for dt, *vals in sim.history.fcd_data:
         dt_rounded = round_datetime(dt, round_freq)
         rounded_history.append((dt_rounded, *vals))
     print("History rounded")

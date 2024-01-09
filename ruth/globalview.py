@@ -1,6 +1,5 @@
 import pickle
-import operator
-from typing import TYPE_CHECKING
+from typing import List, TYPE_CHECKING
 
 import pandas as pd
 from datetime import timedelta
@@ -17,15 +16,11 @@ if TYPE_CHECKING:
 class GlobalView:
 
     def __init__(self, data=None):
-        self.data = [] if data is None else data
+        self.fcd_data: List["FCDRecord"] = [] if data is None else data
         self.by_segment = self.construct_by_segments_()
 
     def add(self, fcd: "FCDRecord"):
-        self.data.append((
-            fcd.datetime, fcd.segment_id, fcd.vehicle_id, fcd.start_offset, fcd.speed,
-            fcd.segment_length, fcd.status, fcd.active
-        ))
-
+        self.fcd_data.append(fcd)
         self.by_segment[fcd.segment_id].append((fcd.datetime, fcd.vehicle_id, fcd.start_offset, fcd.speed))
 
     def number_of_vehicles_ahead(self, datetime, segment_id, tolerance=None, vehicle_id=-1, vehicle_offset_m=0):
@@ -95,35 +90,35 @@ class GlobalView:
         return SpeedKph(sum(speeds) / len(speeds))
 
     def to_dataframe(self):  # todo: maybe process in chunks
-        columns = [
-            "timestamp",
-            "segment_id",
-            "vehicle_id",
-            "start_offset_m",
-            "speed_mps",
-            "segment_length",
-            "status",
-            "active"
-        ]
+        data = defaultdict(list)
+        for fcd in self.fcd_data:
+            data["timestamp"].append(fcd.datetime)
+            data["segment_id"].append(fcd.segment_id)
+            (node_from, node_to) = parse_segment_id(fcd.segment_id)
+            data["node_from"] = node_from
+            data["node_to"] = node_to
+            data["vehicle_id"].append(fcd.vehicle_id)
+            data["start_offset_m"].append(fcd.start_offset)
+            data["speed_mps"].append(fcd.speed)
+            data["segment_length"].append(fcd.segment_length)
+            data["status"].append(fcd.status)
+            data["active"].append(fcd.active)
 
-        df = pd.DataFrame(self.data, columns=columns)
-        df[["node_from", "node_to"]] = df["segment_id"].apply(parse_segment_id).to_list()
-
-        return df
+        return pd.DataFrame(data)
 
     def construct_by_segments_(self):
         by_segment = defaultdict(list)
-        for dt, seg_id, vehicle_id, offset, speed, *_ in self.data:
-            by_segment[seg_id].append((dt, vehicle_id, offset, speed))
+        for fcd in self.fcd_data:
+            by_segment[fcd.segment_id].append((fcd.datetime, fcd.vehicle_id, fcd.start_offset, fcd.speed))
 
         return by_segment
 
     def __getstate__(self):
-        self.data.sort(key=operator.itemgetter(0, 1))
-        return self.data
+        self.fcd_data.sort(key=lambda fcd: (fcd.datetime, fcd.segment_id))
+        return self.fcd_data
 
     def __setstate__(self, state):
-        self.data = state
+        self.fcd_data = state
         self.by_segment = self.construct_by_segments_()
 
     def store(self, path):
@@ -136,14 +131,14 @@ class GlobalView:
             return pickle.load(f)
 
     def __len__(self):
-        return len(self.data)
+        return len(self.fcd_data)
 
     def drop_old(self, dt_threshold):
-        self.data.sort(key=lambda row: row[0])
+        self.fcd_data.sort(key=lambda fcd: fcd.datetime)
 
-        for i, row in enumerate(self.data):
-            if row[0] >= dt_threshold:
-                self.data = self.data[i:]
+        for i, row in enumerate(self.fcd_data):
+            if row.datetime >= dt_threshold:
+                self.fcd_data = self.fcd_data[i:]
                 break
 
         self.by_segment = self.construct_by_segments_()
