@@ -176,8 +176,7 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
         fcds.append(FCDRecord(
             datetime=current_time,
             vehicle_id=vehicle.id,
-            segment_id=current_segment.id,
-            segment_length=current_segment.length,
+            segment=current_segment,
             start_offset=current_position,
             speed=speed,
             status=vehicle.status,
@@ -188,8 +187,7 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
     fcds.append(FCDRecord(
         datetime=end_time,
         vehicle_id=vehicle.id,
-        segment_id=current_segment.id,
-        segment_length=current_segment.length,
+        segment=current_segment,
         start_offset=end_segment_position.position,
         speed=speed,
         status=vehicle.status,

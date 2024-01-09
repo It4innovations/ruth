@@ -1,11 +1,9 @@
 import logging
-import re
 import time
 from datetime import datetime, timedelta
 
 from .data.border import Border, BorderType, PolygonBorderDef
-from .data.map import Map, BBox
-from .metaclasses import Singleton
+from .data.map import Map
 
 
 def get_map(polygon: str,
@@ -24,25 +22,6 @@ def get_map(polygon: str,
     border = Border(name_, border_def, border_kind, data_dir, load_from_cache)
 
     return Map(border, download_date=download_date, with_speeds=with_speeds)
-
-
-class SegmentIdParser:
-
-    def __init__(self, metaclass=Singleton):
-        self.osm_id_regex = re.compile("OSM(?P<node_from>\d+)T(?P<node_to>\d+)")
-
-    def parse(self, segment_id):
-        res = self.osm_id_regex.match(segment_id)
-        assert res is not None, \
-            "Invalid format of segment ID. It is exected the format: 'OSM<node_from>T<node_to>'"
-        node_from, node_to = res.groups()
-        return (int(node_from), int(node_to))
-
-
-def parse_segment_id(segment_id):
-    p = SegmentIdParser()
-
-    return p.parse(segment_id)
 
 
 def round_timedelta(td: timedelta, freq: timedelta):

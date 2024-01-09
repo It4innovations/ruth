@@ -168,7 +168,8 @@ class Map:
     def get_osm_segment(self, node_from: int, node_to: int):
         data = self.original_network.get_edge_data(node_from, node_to)
         return Segment(
-            id=get_osm_segment_id(node_from, node_to),
+            node_from=node_from,
+            node_to=node_to,
             length=data["length"],
             max_allowed_speed_kph=data["speed_kph"],
         )
