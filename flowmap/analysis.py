@@ -76,6 +76,7 @@ class SimulationLog:
         ])
 
         inf_segment_speed_thresholds = segment_speed_thresholds.copy()
+        inf_segment_speed_thresholds = [round(t, 2) for t in inf_segment_speed_thresholds]
         inf_segment_speed_thresholds.append('inf')
         for i in range(len(inf_segment_speed_thresholds) - 1):
             columns.append(
