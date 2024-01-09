@@ -1,5 +1,5 @@
 import dataclasses
-from typing import List, NewType
+from typing import List, NewType, Tuple
 
 SpeedKph = NewType("SpeedKph", float)
 SpeedMps = NewType("SpeedMps", float)
@@ -16,12 +16,20 @@ class SegmentPosition:
     position: LengthMeters
 
 
+SegmentId = NewType("SegmentId", Tuple[int, int])
+
+
 @dataclasses.dataclass(frozen=True)
 class Segment:
-    id: str
+    node_from: int
+    node_to: int
     # Length of th segment (in meters)
     length: LengthMeters
     max_allowed_speed_kph: SpeedKph
+
+    @property
+    def id(self) -> SegmentId:
+        return SegmentId((self.node_from, self.node_to))
 
 
 def speed_mps_to_kph(speed_mps: SpeedMps) -> SpeedKph:

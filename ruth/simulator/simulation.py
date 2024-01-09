@@ -1,5 +1,5 @@
 import pickle
-from dataclasses import InitVar, asdict, dataclass
+from dataclasses import InitVar, dataclass
 from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
 from typing import Dict, List
@@ -8,7 +8,7 @@ import pandas as pd
 
 from .queues import QueuesManager
 from ..data.map import BBox, Map
-from ..data.segment import SpeedMps, LengthMeters
+from ..data.segment import LengthMeters, Segment, SpeedMps
 from ..globalview import GlobalView
 from ..losdb import GlobalViewDb
 from ..utils import round_timedelta
@@ -19,10 +19,9 @@ from ..vehicle import Vehicle
 class FCDRecord:
     datetime: datetime
     vehicle_id: int
-    segment_id: str
+    segment: Segment
     start_offset: LengthMeters
     speed: SpeedMps
-    segment_length: LengthMeters
     status: str
     active: bool
 

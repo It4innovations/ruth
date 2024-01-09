@@ -5,9 +5,7 @@ import pandas as pd
 from datetime import timedelta
 from collections import defaultdict
 
-from .data.map import Map, get_osm_segment_id
 from .data.segment import SpeedKph
-from .utils import parse_segment_id
 
 if TYPE_CHECKING:
     from .simulator.simulation import FCDRecord
@@ -21,7 +19,7 @@ class GlobalView:
 
     def add(self, fcd: "FCDRecord"):
         self.fcd_data.append(fcd)
-        self.by_segment[fcd.segment_id].append((fcd.datetime, fcd.vehicle_id, fcd.start_offset, fcd.speed))
+        self.by_segment[fcd.segment.id].append((fcd.datetime, fcd.vehicle_id, fcd.start_offset, fcd.speed))
 
     def number_of_vehicles_ahead(self, datetime, segment_id, tolerance=None, vehicle_id=-1, vehicle_offset_m=0):
         # counts all vehicles ahead of the vehicle with vehicle_id at the given segment_id at given time range
@@ -78,9 +76,9 @@ class GlobalView:
             return None
         return sum(speeds) / len(speeds)
 
-    def get_segment_speed(self, node_from, node_to) -> SpeedKph:
+    def get_segment_speed(self, node_from: int, node_to: int) -> SpeedKph:
         speeds = {}
-        by_segment = self.by_segment[get_osm_segment_id(node_from, node_to)]
+        by_segment = self.by_segment[(node_from, node_to)]
         by_segment.sort(key=lambda x: x[0])
         for _, vehicle_id, _, speed in by_segment:
             speeds[vehicle_id] = speed
@@ -93,14 +91,12 @@ class GlobalView:
         data = defaultdict(list)
         for fcd in self.fcd_data:
             data["timestamp"].append(fcd.datetime)
-            data["segment_id"].append(fcd.segment_id)
-            (node_from, node_to) = parse_segment_id(fcd.segment_id)
-            data["node_from"] = node_from
-            data["node_to"] = node_to
+            data["node_from"].append(fcd.segment.node_from)
+            data["node_to"].append(fcd.segment.node_to)
+            data["segment_length"].append(fcd.segment.length)
             data["vehicle_id"].append(fcd.vehicle_id)
             data["start_offset_m"].append(fcd.start_offset)
             data["speed_mps"].append(fcd.speed)
-            data["segment_length"].append(fcd.segment_length)
             data["status"].append(fcd.status)
             data["active"].append(fcd.active)
 
@@ -109,12 +105,12 @@ class GlobalView:
     def construct_by_segments_(self):
         by_segment = defaultdict(list)
         for fcd in self.fcd_data:
-            by_segment[fcd.segment_id].append((fcd.datetime, fcd.vehicle_id, fcd.start_offset, fcd.speed))
+            by_segment[fcd.segment.id].append((fcd.datetime, fcd.vehicle_id, fcd.start_offset, fcd.speed))
 
         return by_segment
 
     def __getstate__(self):
-        self.fcd_data.sort(key=lambda fcd: (fcd.datetime, fcd.segment_id))
+        self.fcd_data.sort(key=lambda fcd: (fcd.datetime, fcd.segment.id))
         return self.fcd_data
 
     def __setstate__(self, state):
