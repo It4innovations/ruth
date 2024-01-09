@@ -291,15 +291,18 @@ class Map:
         """Update max speeds according to the temporary speeds."""
         new_max_speeds = {}
         check_segments = []
+        ts_to_remove = []
         for ts in self.temporary_speeds:
             if timestamp > ts.timestamp_to:
                 new_max_speeds[(ts.node_from, ts.node_to)] = ts.original_max_speed
-                self.temporary_speeds.remove(ts)
+                ts_to_remove.append(ts)
                 check_segments.append((ts.node_from, ts.node_to))
             elif ts.timestamp_from <= timestamp <= ts.timestamp_to and not ts.active:
                 new_max_speeds[(ts.node_from, ts.node_to)] = ts.temporary_speed
                 ts.active = True
                 check_segments.append((ts.node_from, ts.node_to))
+        for ts in ts_to_remove:
+            self.temporary_speeds.remove(ts)
 
         nx.set_edge_attributes(self.current_network, values=new_max_speeds, name='speed_kph')
 
