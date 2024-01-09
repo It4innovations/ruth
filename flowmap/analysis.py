@@ -5,6 +5,8 @@ from pathlib import Path
 import pandas as pd
 from ruth.simulator import Simulation
 from ruth.vehicle import VehicleAlternatives, VehicleRouteSelection
+from tqdm import tqdm
+
 from flowmap.input import prepare_dataframe
 from flowmap.flowmapframe.speeds import segment_speed_thresholds
 
@@ -70,12 +72,12 @@ class SimulationLog:
             'driving time since start (minutes)',
             'number of segments visited in time interval',
             'number of segments visited since start',
-            'average speed in time interval',
-            'average speed since start',
+            'average speed in time interval (km/h)',
+            'average speed since start (km/h)',
         ])
 
         inf_segment_speed_thresholds = segment_speed_thresholds.copy()
-        inf_segment_speed_thresholds = [round(t, 2) for t in inf_segment_speed_thresholds]
+        inf_segment_speed_thresholds = [int(t * 3.6) for t in inf_segment_speed_thresholds]
         inf_segment_speed_thresholds.append('inf')
         for i in range(len(inf_segment_speed_thresholds) - 1):
             columns.append(
@@ -204,12 +206,12 @@ class SimulationLog:
                 # average speed in time interval
                 current_df['weighted_speed'] = current_df['speed_mps'] * current_df['driving_time']
                 current_avg_speed = current_df['weighted_speed'].sum() / current_df['driving_time'].sum()
-                values.append(str(round(current_avg_speed, 2)).replace('.', ','))
+                values.append(str(round(current_avg_speed * 3.6, 2)).replace('.', ','))
 
                 # average speed since start
                 total_df_temp['weighted_speed'] = total_df_temp['speed_mps'] * total_df_temp['driving_time']
                 total_avg_speed = total_df_temp['weighted_speed'].sum() / total_df_temp['driving_time'].sum()
-                values.append(str(round(total_avg_speed, 2)).replace('.', ','))
+                values.append(str(round(total_avg_speed * 3.6, 2)).replace('.', ','))
 
                 # number of segments with average speed in range in time interval
                 values = self.add_segment_speed_values(current_df, values)
@@ -236,7 +238,7 @@ def create_simulation_log(simulation: Simulation, output_path: str, time_interva
 
 
 def create_simulations_comparison(simulation_paths: list[str], output_dir: str, time_interval_minutes: int):
-    for path in simulation_paths:
+    for path in tqdm(simulation_paths):
         simulation = Simulation.load(path)
         output_csv_path = os.path.join(output_dir, Path(path).stem + ".csv")
         create_simulation_log(simulation, output_csv_path, time_interval_minutes)
