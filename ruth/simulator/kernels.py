@@ -1,10 +1,10 @@
 import logging
 import random
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .ptdr import PTDRInfo
 from ..data.map import Map, osm_routes_to_segment_ids
-from ..data.segment import Route
+from ..data.segment import Route, SegmentId, SpeedMps
 from ..utils import is_root_debug_logging
 from ..vehicle import Vehicle
 from ..zeromq.src.client import Message
@@ -23,6 +23,12 @@ class AlternativesProvider:
         Loads updated information from the passed map.
         """
         self.routing_map = routing_map
+
+    def update_map(self, map: Map, segments: Dict[SegmentId, Optional[SpeedMps]]):
+        """
+        Update speeds of the passed segments in a previously passed map.
+        """
+        pass
 
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
@@ -60,6 +66,16 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         self.client.broadcast(Message(kind="load-map", data=map_path))
         self.routing_map = routing_map
 
+    def update_map(self, map: Map, segments: Dict[SegmentId, Optional[SpeedMps]]):
+        """
+        Update speeds of the passed segments in a previously passed map.
+        """
+        self.client.broadcast(Message(kind="update-map", data=[{
+            "edge_id": map.get_hdf5_edge_id(segment_id),
+            "speed": speed if speed is not None else map.get_current_max_speed(segment_id[0],
+                                                                               segment_id[1])
+        } for (segment_id, speed) in segments.items()]))
+
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
         messages = [Message(kind="alternatives", data={
@@ -77,7 +93,8 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         if is_root_debug_logging():
             logging.debug(f"Response from worker: {results}")
         remapped_routes = [
-            [[self.routing_map.hdf5_to_osm_id(node_id) for node_id in route] for route in result["routes"]]
+            [[self.routing_map.hdf5_to_osm_id(node_id) for node_id in route] for route in
+             result["routes"]]
             for result in results
         ]
         return remapped_routes

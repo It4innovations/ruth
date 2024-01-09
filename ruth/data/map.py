@@ -16,7 +16,7 @@ from osmnx import graph_from_place, load_graphml, save_graphml
 from osmnx import load_graphml, save_graphml, graph_from_bbox
 from networkx.exception import NetworkXNoPath
 
-from .hdf5_writer import save_graph_to_hdf5
+from .hdf5_writer import get_osmid_from_data, save_graph_to_hdf5
 from ..log import console_logger as cl
 from ..metaclasses import Singleton
 from ..data.segment import Route, Segment, SegmentId, SpeedKph
@@ -329,6 +329,10 @@ class Map:
 
         nx.set_edge_attributes(self.current_network, values=new_current_speeds, name='current_speed')
         nx.set_edge_attributes(self.current_network, values=new_travel_times, name='current_travel_time')
+
+    def get_hdf5_edge_id(self, segment_id: SegmentId) -> int:
+        (node_from, node_to) = segment_id
+        return get_osmid_from_data(self.current_network[node_from][node_to])
 
 
 def admin_level_to_road_filter(admin_level):  # TODO: where to put it?
