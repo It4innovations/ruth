@@ -1,6 +1,6 @@
 from collections import defaultdict
 from datetime import timedelta
-from typing import Dict, List, Set, TYPE_CHECKING
+from typing import Dict, List, Optional, Set, TYPE_CHECKING
 
 from .data.segment import SegmentId, SpeedKph
 
@@ -91,7 +91,7 @@ class GlobalView:
             return None
         return sum(speeds) / len(speeds)
 
-    def take_segment_speeds(self) -> Dict[SegmentId, SpeedKph]:
+    def take_segment_speeds(self) -> Dict[SegmentId, Optional[SpeedKph]]:
         """
         Returns all segments that have been modified since the last call to this
         method, along with their current speeds.
@@ -102,7 +102,7 @@ class GlobalView:
         self.modified_segments.clear()
         return speeds
 
-    def get_segment_speed(self, segment_id: SegmentId) -> SpeedKph:
+    def get_segment_speed(self, segment_id: SegmentId) -> Optional[SpeedKph]:
         speeds = {}
         by_segment = list(self.fcd_by_segment[segment_id])
         by_segment.sort(key=lambda fcd: fcd.datetime)
@@ -110,7 +110,7 @@ class GlobalView:
             speeds[fcd.vehicle_id] = fcd.speed
         speeds = list(speeds.values())
         if len(speeds) == 0:
-            return SpeedKph(float('inf'))
+            return None
         return SpeedKph(sum(speeds) / len(speeds))
 
     def __getstate__(self):
