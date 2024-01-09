@@ -75,9 +75,8 @@ class Simulator:
             with timer_set.get("update_map_speeds"):
                 self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
                 if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
-                    new_speeds = [self.sim.global_view.get_segment_speed(node_from, node_to)
-                                  for node_from, node_to in self.sim.routing_map.edges()]
-                    self.sim.routing_map.update_current_speeds(new_speeds)
+                    updated_speeds = self.sim.global_view.take_segment_speeds()
+                    self.sim.routing_map.update_current_speeds(updated_speeds)
                     alternatives_provider.load_map(self.sim.routing_map)
 
                     last_map_update = self.current_offset
