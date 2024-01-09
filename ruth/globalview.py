@@ -86,10 +86,10 @@ class GlobalView:
         return SpeedKph(sum(speeds) / len(speeds))
 
     def __getstate__(self):
-        return self.fcd_by_segment
+        raise Exception("Global view is not deserializable")
 
     def __setstate__(self, state):
-        self.fcd_by_segment = state
+        raise Exception("Global view is not serializable")
 
     def drop_old(self, dt_threshold):
         for key in tuple(self.fcd_by_segment.keys()):
