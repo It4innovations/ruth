@@ -9,6 +9,7 @@ import pandas as pd
 from .queues import QueuesManager
 from ..data.map import BBox, Map
 from ..data.segment import LengthMeters, Segment, SpeedMps
+from ..fcd_history import FCDHistory
 from ..globalview import GlobalView
 from ..losdb import GlobalViewDb
 from ..utils import round_timedelta
@@ -83,7 +84,7 @@ class Simulation:
             setting: SimSetting
         """
 
-        self.history = GlobalView()  # history record
+        self.history = FCDHistory()
         self.global_view = GlobalView()  # active global view
         self.vehicles = vehicles
         self.setting = setting
