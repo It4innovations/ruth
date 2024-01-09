@@ -1,6 +1,6 @@
 from collections import defaultdict
 from datetime import timedelta
-from typing import Dict, List, TYPE_CHECKING
+from typing import Dict, List, Set, TYPE_CHECKING
 
 from .data.segment import SegmentId, SpeedKph
 
@@ -12,8 +12,25 @@ class GlobalView:
     def __init__(self):
         self.fcd_by_segment: Dict[SegmentId, List[FCDRecord]] = defaultdict(list)
 
+        """
+        These variables keep track of which segments have been modified since
+        the last call to "take_segment_speeds". We use this to only update segments
+        that were modified in the map.
+        """
+        # vehicle ID -> segment ID
+        self.car_to_segment: Dict[int, SegmentId] = {}
+        self.modified_segments: Set[SegmentId] = set()
+
     def add(self, fcd: "FCDRecord"):
         self.fcd_by_segment[fcd.segment.id].append(fcd)
+        self.modified_segments.add(fcd.segment.id)
+        old_segment = self.car_to_segment.get(fcd.vehicle_id, None)
+        if old_segment is not None:
+            if old_segment != fcd.segment.id:
+                self.modified_segments.add(old_segment)
+                self.car_to_segment[fcd.vehicle_id] = fcd.segment.id
+        else:
+            self.car_to_segment[fcd.vehicle_id] = fcd.segment.id
 
     def number_of_vehicles_ahead(self, datetime, segment_id, tolerance=None, vehicle_id=-1,
                                  vehicle_offset_m=0):
@@ -74,9 +91,20 @@ class GlobalView:
             return None
         return sum(speeds) / len(speeds)
 
-    def get_segment_speed(self, node_from: int, node_to: int) -> SpeedKph:
+    def take_segment_speeds(self) -> Dict[SegmentId, SpeedKph]:
+        """
+        Returns all segments that have been modified since the last call to this
+        method, along with their current speeds.
+        """
         speeds = {}
-        by_segment = list(self.fcd_by_segment[SegmentId((node_from, node_to))])
+        for segment_id in self.modified_segments:
+            speeds[segment_id] = self.get_segment_speed(segment_id)
+        self.modified_segments.clear()
+        return speeds
+
+    def get_segment_speed(self, segment_id: SegmentId) -> SpeedKph:
+        speeds = {}
+        by_segment = list(self.fcd_by_segment[segment_id])
         by_segment.sort(key=lambda fcd: fcd.datetime)
         for fcd in by_segment:
             speeds[fcd.vehicle_id] = fcd.speed
@@ -92,5 +120,9 @@ class GlobalView:
         raise Exception("Global view is not serializable")
 
     def drop_old(self, dt_threshold):
-        for key in tuple(self.fcd_by_segment.keys()):
-            self.fcd_by_segment[key] = [fcd for fcd in self.fcd_by_segment[key] if fcd.datetime >= dt_threshold]
+        for (segment_id, old_fcds) in self.fcd_by_segment.items():
+            new_fcds = [fcd for fcd in self.fcd_by_segment[segment_id] if fcd.datetime >= dt_threshold]
+            if len(new_fcds) != len(old_fcds):
+                self.fcd_by_segment[segment_id] = new_fcds
+                # If the FCDs for the segments have changed, we need to update modified_segments
+                self.modified_segments.add(segment_id)
