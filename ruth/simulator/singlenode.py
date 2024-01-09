@@ -65,7 +65,7 @@ class Simulator:
                 if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
                     updated_speeds = self.sim.global_view.take_segment_speeds()
                     self.sim.routing_map.update_current_speeds(updated_speeds)
-                    alternatives_provider.load_map(self.sim.routing_map)
+                    alternatives_provider.update_map(self.sim.routing_map, updated_speeds)
 
                     last_map_update = self.current_offset
 
