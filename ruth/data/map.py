@@ -7,7 +7,7 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import networkx as nx
 import osmnx as ox
@@ -144,7 +144,7 @@ class Map:
         nx.set_edge_attributes(self.current_network, values=speeds, name="current_speed")
         nx.set_edge_attributes(self.current_network, values=travel_times, name="current_travel_time")
 
-    def update_current_speeds(self, segments_to_update: Dict[SegmentId, SpeedKph]):
+    def update_current_speeds(self, segments_to_update: Dict[SegmentId, Optional[SpeedKph]]):
         """
         This methods updates the current speeds and travel times for segments
         passed in `segments_to_update`.
@@ -154,9 +154,10 @@ class Map:
         for ((node_from, node_to), speed) in segments_to_update.items():
             edge = self.current_network[node_from][node_to]
             max_speed = max_speeds[(node_from, node_to)]
-            gv_speed = min(speed, max_speed)
-            edge["current_speed"] = gv_speed
-            edge["current_travel_time"] = self.get_travel_time(node_from, node_to, gv_speed)
+            speed = max_speed if speed is None else speed
+            speed = min(speed, max_speed)
+            edge["current_speed"] = speed
+            edge["current_travel_time"] = self.get_travel_time(node_from, node_to, speed)
 
     def get_current_max_speed(self, node_from: int, node_to: int):
         return self.current_network[node_from][node_to]['speed_kph']
