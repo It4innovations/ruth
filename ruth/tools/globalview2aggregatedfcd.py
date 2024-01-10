@@ -1,4 +1,3 @@
-
 import os
 import click
 import pandas as pd
@@ -8,6 +7,7 @@ from tqdm import tqdm
 
 from probduration import Segment
 
+from ..simulator.simulation import FCDRecord
 from ..utils import round_datetime
 from ..globalview import GlobalView
 from ..simulator import Simulation
@@ -48,15 +48,19 @@ def aggregate(sim_path, round_freq_s, out=None):
         else:
             assert False, "Segment without assigned length!"
 
-    rounded_history = []
-    for dt, *vals in sim.history.fcd_data:
-        dt_rounded = round_datetime(dt, round_freq)
-        rounded_history.append((dt_rounded, *vals))
+    aggregated_gv = GlobalView()
+    for fcd_data in sim.history.fcd_history:
+        dt = round_datetime(fcd_data.datetime, round_freq)
+        fcd_rounded = FCDRecord(dt, fcd_data.vehicle_id,
+                                fcd_data.segment, fcd_data.start_offset,
+                                fcd_data.speed, fcd_data.status, fcd_data.active)
+        aggregated_gv.add(fcd_rounded)
     print("History rounded")
 
-    sim_start = rounded_history[0][0]
-    sim_end = rounded_history[-1][0]
-    aggregated_gv = GlobalView(data=rounded_history)
+    sim_start = sim.history.fcd_history[0].datetime
+    sim_start = round_datetime(sim_start, round_freq)
+    sim_end = sim.history.fcd_history[-1].datetime
+    sim_end = round_datetime(sim_end, round_freq)
 
     records = []
     for (node_from, node_to), (seg_length, seg_speed) in tqdm(segment_data.items(), unit=' segment'):
@@ -105,11 +109,3 @@ def aggregate_globalview_set(dir_path, round_freq_s, out_dir):
 
 if __name__ == "__main__":
     aggregate_cmd()
-
-
-
-
-
-
-
-
