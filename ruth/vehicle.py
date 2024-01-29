@@ -63,8 +63,10 @@ class VehicleRouteSelection(Enum):
 def set_vehicle_behavior(vehicles: List['Vehicle'],
                          alternatives_ratio: List[float],
                          route_selection_ratio: List[float]):
-    """Set the behaviour of a given percentage of vehicles."""
-
+    """
+    Selects random vehicles according to the ratio set in parameters and sets their type of alternatives calculation
+    and route selection from the calculated alternatives.
+    """
     assert isclose(sum(alternatives_ratio), 1, abs_tol=1e-8)
     assert isclose(sum(route_selection_ratio), 1, abs_tol=1e-8)
     assert alternatives_ratio[0] == route_selection_ratio[0]
