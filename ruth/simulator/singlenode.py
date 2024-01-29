@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithPlans, AlternativeRoutes
 from .route import advance_vehicles_with_queues
@@ -129,37 +129,6 @@ class Simulator:
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
 
-    def compute_alternatives(self, alternatives_providers: List[AlternativesProvider], vehicles: List[Vehicle]):
-        if not vehicles:
-            return [], []
-
-        combined_alts = []
-        combined_vehicles = []
-        for provider in alternatives_providers:
-            selected_vehicles = [v for v in vehicles if v.alternatives == provider.vehicle_behaviour]
-            alts = provider.compute_alternatives(
-                selected_vehicles,
-                k=self.sim.setting.k_alternatives
-            )
-            combined_vehicles.extend(selected_vehicles)
-            combined_alts.extend(alts)
-
-        combined_alts = remove_infinity_alternatives(combined_alts, self.sim.routing_map)
-        return combined_vehicles, combined_alts
-
-    def select_routes(self, route_selection_providers: List[RouteSelectionProvider], vehicles: List[VehicleWithPlans]):
-        if not vehicles:
-            return []
-
-        combined_routes = []
-        for provider in route_selection_providers:
-            selected_vehicles = [(v, alt) for (v, alt) in vehicles if v.route_selection == provider.vehicle_behaviour]
-            vehicles_with_route = provider.select_routes(selected_vehicles)
-            combined_routes.extend(vehicles_with_route)
-
-        assert len(combined_routes) == len(vehicles)
-        return combined_routes
-
     def advance_vehicles(self, vehicles: List[Vehicle], current_offset) -> List[FCDRecord]:
         """Move the vehicles on its route and generate FCD records"""
 
@@ -170,6 +139,42 @@ class Simulator:
                                             self.sim.routing_map,
                                             self.sim.queues_manager,
                                             self.sim.setting.los_vehicles_tolerance)
+
+
+def compute_alternatives(routing_map: Map,
+                         alternatives_providers: List[AlternativesProvider],
+                         vehicles: List[Vehicle],
+                         k_alternatives: int) -> Tuple[List[Vehicle], List[AlternativeRoutes]]:
+    if not vehicles:
+        return [], []
+
+    combined_alts = []
+    combined_vehicles = []
+    for provider in alternatives_providers:
+        selected_vehicles = [v for v in vehicles if v.alternatives == provider.vehicle_behaviour]
+        alts = provider.compute_alternatives(
+            selected_vehicles,
+            k=k_alternatives
+        )
+        combined_vehicles.extend(selected_vehicles)
+        combined_alts.extend(alts)
+
+    combined_alts = remove_infinity_alternatives(combined_alts, routing_map)
+    return combined_vehicles, combined_alts
+
+
+def select_routes(route_selection_providers: List[RouteSelectionProvider], vehicles: List[VehicleWithPlans]):
+    if not vehicles:
+        return []
+
+    combined_routes = []
+    for provider in route_selection_providers:
+        selected_vehicles = [(v, alt) for (v, alt) in vehicles if v.route_selection == provider.vehicle_behaviour]
+        vehicles_with_route = provider.select_routes(selected_vehicles)
+        combined_routes.extend(vehicles_with_route)
+
+    assert len(combined_routes) == len(vehicles)
+    return combined_routes
 
 
 def remove_infinity_alternatives(alternatives: List[AlternativeRoutes], routing_map: Map) -> List[
