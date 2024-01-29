@@ -2,7 +2,7 @@ import sys
 from collections import namedtuple
 from dataclasses import asdict, dataclass, field
 from datetime import timedelta
-from enum import IntFlag, auto
+from enum import Enum, auto
 from math import isclose
 from typing import Any, List, Optional, Tuple
 
@@ -25,7 +25,7 @@ def set_numpy_type(name, fld=None):
 IndexedNode = namedtuple("IndexedNode", ["node", "index"])
 
 
-class VehicleAlternatives(IntFlag):
+class VehicleAlternatives(Enum):
     """
     Enum for different types of route alternatives calculation.
 
@@ -45,7 +45,7 @@ class VehicleAlternatives(IntFlag):
     PLATEAU_FASTEST = auto()
 
 
-class VehicleRouteSelection(IntFlag):
+class VehicleRouteSelection(Enum):
     """
     Enum for different types of route selection from the calculated alternatives.
 
@@ -76,10 +76,10 @@ def set_vehicle_behavior(vehicles: List['Vehicle'],
     n_vehicles_to_change = [int(r * n_vehicles) for r in alternatives_ratio]
 
     index_from = 0
-    for i, (n, alternative) in enumerate(zip(n_vehicles_to_change, VehicleAlternatives)):
+    for n, alternative in zip(n_vehicles_to_change, VehicleAlternatives):
         index_to = index_from + n
-        for id, v in enumerate(vehicles_shuffled[index_from:index_to]):
-            v.alternatives = v.alternatives | alternative
+        for v in vehicles_shuffled[index_from:index_to]:
+            v.alternatives = alternative
         index_from = index_from + n
 
     index_from = n_vehicles_to_change[0]
@@ -89,10 +89,10 @@ def set_vehicle_behavior(vehicles: List['Vehicle'],
     n_vehicles_to_change = [int(r * n_vehicles) for r in route_selection_ratio]
 
     index_from = 0
-    for i, (n, route_selection) in enumerate(zip(n_vehicles_to_change, VehicleRouteSelection)):
+    for n, route_selection in zip(n_vehicles_to_change, VehicleRouteSelection):
         index_to = index_from + n
-        for id, v in enumerate(vehicles_shuffled[index_from:index_to]):
-            v.route_selection = v.route_selection | route_selection
+        for v in vehicles_shuffled[index_from:index_to]:
+            v.route_selection = route_selection
         index_from = index_from + n
 
     return
