@@ -1,6 +1,5 @@
 """Prepare the input file from Origin/Destination matrix."""
 import os.path
-from pathlib import Path
 
 import click
 import networkx
@@ -32,7 +31,7 @@ def gps_to_nodes_with_shortest_path(od_for_id, bbox, download_date, data_dir):
     origin_node_id = ox.nearest_nodes(routing_map.network, origin_lon, origin_lat)
     dest_node_id = ox.nearest_nodes(routing_map.network, destination_lon, destination_lat)
     try:
-        osm_route = routing_map.shortest_path(origin_node_id, dest_node_id)
+        osm_route = routing_map.fastest_path(origin_node_id, dest_node_id)
     except networkx.NetworkXNoPath:
         osm_route = None
 
