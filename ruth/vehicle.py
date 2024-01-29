@@ -26,6 +26,19 @@ IndexedNode = namedtuple("IndexedNode", ["node", "index"])
 
 
 class VehicleAlternatives(IntFlag):
+    """
+    Enum for different types of route alternatives calculation.
+
+    DEFAULT: No alternatives are calculated. The vehicle sticks to its precalculated route taken from the input
+    parquet file.
+    DIJKSTRA_FASTEST: The alternatives are calculated using networkx's k_shortest_paths function with the Dijkstra
+    algorithm. Travel time is set as the edge weight.
+    DIJKSTRA_SHORTEST: The alternatives are calculated using networkx's k_shortest_paths function with the Dijkstra
+    algorithm. Segment length is set as the edge weight.
+    PLATEAU_FASTEST: The alternatives are calculated using the plateau algorithm implemented in evkit
+    (https://code.it4i.cz/everest/evkit). Travel time is set as the edge weight.
+    """
+
     DEFAULT = 0
     DIJKSTRA_FASTEST = auto()
     DIJKSTRA_SHORTEST = auto()
@@ -33,6 +46,14 @@ class VehicleAlternatives(IntFlag):
 
 
 class VehicleRouteSelection(IntFlag):
+    """
+    Enum for different types of route selection from the calculated alternatives.
+
+    NO_ALTERNATIVE: No alternative is selected. Set if DEFAULT is set in VehicleAlternatives.
+    FIRST: The first alternative is selected.
+    RANDOM: A random alternative is selected from the calculated alternatives.
+    PTDR: The alternative is selected using the probability profiles. Implemented in evkit.
+    """
     NO_ALTERNATIVE = 0
     FIRST = auto()
     RANDOM = auto()

@@ -62,18 +62,28 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
     },
     "run" :
     {
-      "vehicles-path": "benchmarks/od-matrices/INPUT-od-matrix-10-vehicles-town-resolution.parquet",
-      "alternatives": "fastest-paths",
-      "route-selection": "first"
+      "vehicles-path": "benchmarks/od-matrices/INPUT-od-matrix-10-vehicles-town-resolution.parquet"
+    },
+    "alternatives" : 
+    {
+      "dijkstra-fastest": 0.3,
+      "dijkstra-shortest": 0.0,
+      "plateau-fastest": 0.0
+    },
+    "route-selection" : {
+      "first": 0.3,
+      "random": 0.0,
+      "ptdr": 0.0
     }
   }
   ```
 * or use command line arguments
     ``` sh
-    ruth-simulator --departure-time="2021-06-16 07:00:00" --k-alternatives=4 --out=simulation_record.pickle --seed=7 run INPUT-od-matrix-10-vehicles-town-resolution.parquet
+    ruth-simulator --departure-time="2021-06-16 07:00:00" --k-alternatives=4 --out=simulation_record.pickle --seed=7 run INPUT-od-matrix-10-vehicles-town-resolution.parquet  --alt-dijkstra-fastest=0.3 --alt-plateau-fastest=0.0 --selection-first=0.3 --selection-random=0.0 --selection-ptdr=0.0
     ```
 
 ### Options
+For the Alternatives and Route selection, percentages of vehicles can be set for each type. The sum of percentages for Alternatives has to be equal to the sum for Route Selection. If the percentages don't add up to 1, no alternatives are calculated for the remaining vehicles and they stick to their original route that is in the input parquet file.
 #### Alternatives
 - shortest-paths networkx implementation of dijkstra algorithm using route length as weight
 - fastest-paths: networkx implementation of dijkstra algorithm using current-travel-time as weight
