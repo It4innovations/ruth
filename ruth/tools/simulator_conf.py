@@ -37,9 +37,6 @@ class CommonArgs(CommonArgsInner):
     speeds_path: Optional[str] = field(serializer=lambda x: '' if x is None else x,
                                        deserializer=lambda x: None if x == '' else x,
                                        default=None)
-    ptdr_path: Optional[str] = field(serializer=lambda x: '' if x is None else x,
-                                     deserializer=lambda x: None if x == '' else x,
-                                     default=None)
     out: str = "simulation-record.pickle"
     seed: Optional[int] = None
     walltime: Optional[timedelta] = field(rename="walltime-s",
