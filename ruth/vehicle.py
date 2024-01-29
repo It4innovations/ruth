@@ -70,7 +70,9 @@ def set_vehicle_behavior(vehicles: List['Vehicle'],
     assert alternatives_ratio[0] == route_selection_ratio[0]
 
     n_vehicles = len(vehicles)
-    vehicles_shuffled = random.sample(vehicles, n_vehicles)
+    vehicles_shuffled = list(vehicles)
+    random.shuffle(vehicles_shuffled)
+
     n_vehicles_to_change = [int(r * n_vehicles) for r in alternatives_ratio]
 
     index_from = 0
