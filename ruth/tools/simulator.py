@@ -31,7 +31,6 @@ class CommonArgs:
     map_update_freq: timedelta
     los_vehicles_tolerance: timedelta
     speeds_path: Optional[str] = None
-    ptdr_path: Optional[str] = None
     out: str = "simulation-record.pickle"
     seed: Optional[int] = None
     walltime: Optional[timedelta] = None
@@ -188,8 +187,6 @@ def start_zeromq_cluster(
                    "are considered for the calculation of LoS in a segment.")
 @click.option("--speeds-path", type=click.Path(exists=True),
               help="Path to csv file with temporary max speeds.")
-@click.option("--ptdr-path", type=click.Path(exists=True),
-              help="Path to msqpack file with probability profiles")
 @click.option("--out", type=str, default="out.pickle")
 @click.option("--seed", type=int, help="Fixed seed for random number generator.")
 @click.option("--walltime-s", type=int, help="Time limit in which the state of simulation is saved")
@@ -207,7 +204,6 @@ def single_node_simulator(ctx,
                           map_update_freq_s,
                           los_vehicles_tolerance_s,
                           speeds_path,
-                          ptdr_path,
                           out,
                           seed,
                           walltime_s,
@@ -230,7 +226,6 @@ def single_node_simulator(ctx,
         map_update_freq=timedelta(seconds=map_update_freq_s),
         los_vehicles_tolerance=timedelta(seconds=los_vehicles_tolerance_s),
         speeds_path=speeds_path,
-        ptdr_path=ptdr_path,
         out=out,
         seed=seed,
         walltime=walltime,
