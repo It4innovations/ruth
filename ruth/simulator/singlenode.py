@@ -80,7 +80,8 @@ class Simulator:
                                   vehicle.is_at_the_end_of_segment(self.sim.routing_map)
                                   and vehicle.alternatives != VehicleAlternatives.DEFAULT]
 
-                computed_vehicles, alts = self.compute_alternatives(alternatives_providers, need_new_route)
+                computed_vehicles, alts = compute_alternatives(self.sim.routing_map, alternatives_providers,
+                                                               need_new_route, self.sim.setting.k_alternatives)
                 assert len(computed_vehicles) == len(alts) == len(need_new_route)
 
             # Find which vehicles should have their routes recomputed
@@ -91,8 +92,7 @@ class Simulator:
                         new_vehicle_routes.append((v, alt))
 
             with timer_set.get("selected_routes"):
-                selected_plans = self.select_routes(route_selection_providers, new_vehicle_routes)
-                # route_selection_provider.select_routes(new_vehicle_routes)
+                selected_plans = select_routes(route_selection_providers, new_vehicle_routes)
                 assert len(selected_plans) == len(new_vehicle_routes)
                 for (vehicle, route) in selected_plans:
                     vehicle.update_followup_route(route)
