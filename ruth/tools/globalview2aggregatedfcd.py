@@ -26,7 +26,6 @@ class Record:
                 f"{self.segment_length};{self.max_speed};{self.current_speed}")
 
 
-# TODO: update for new global view format
 def timed_segment_to_record(dt, node_from, node_to, length, max_speed, aggregated_gv):
     seg_id = f"OSM{node_from}T{node_to}"
     seg = Segment(seg_id, length, max_speed)
