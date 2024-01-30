@@ -49,7 +49,7 @@ class AlternativesRatio:
         self.default = 1 - self.dijkstra_fastest - self.dijkstra_shortest - self.plateau_fastest
         self.default = round(self.default, 2)
         if self.default < 0:
-            raise ValueError("Sum of alternatives ratios must be equal to 1.")
+            raise ValueError("Sum of alternatives ratios must be less than or equal to 1.")
 
     def to_list(self):
         return [self.default, self.dijkstra_fastest, self.dijkstra_shortest, self.plateau_fastest]
@@ -66,7 +66,7 @@ class RouteSelectionRatio:
         self.no_alternative = 1 - self.first - self.random - self.ptdr
         self.no_alternative = round(self.no_alternative, 2)
         if self.no_alternative < 0:
-            raise ValueError("Sum of route selection ratios must be equal to 1.")
+            raise ValueError("Sum of route selection ratios must be less than or equal to 1.")
 
     def to_list(self):
         return [self.no_alternative, self.first, self.random, self.ptdr]
