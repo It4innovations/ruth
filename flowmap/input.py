@@ -208,6 +208,9 @@ def prepare_dataframe(df, interval):
     # change timestamp to the number of frame in the animation
     df['timestamp'] = to_datetime(df['timestamp']).astype(np.int64) // 10 ** 6  # resolution in milliseconds
     df['timestamp'] = df['timestamp'].div(1000 * interval).round().astype(np.int64)
+    if 'segment_id' not in df.columns:
+        df['segment_id'] = 'OSM' + df['node_from'].astype(str) + 'T' + df['node_to'].astype(str)
+
     df = add_meters_driven_column(df)
     df = choose_one_row_per_vehicle_timestamp(df)
     return df
