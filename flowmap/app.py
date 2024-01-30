@@ -1,3 +1,4 @@
+import os
 import click
 import pathlib
 import platform
@@ -129,7 +130,7 @@ def get_info(simulation_path, time_unit, speed, minute, status_at_point):
 
 
 @cli.command()
-@click.argument('simulation-path', type=click.Path(exists=True))
+@click.argument('input-dir', type=click.Path(exists=True))
 @click.option('--output-dir', '-o', default='', help="Path to the folder for the output files.")
 @click.option(
     '--interval',
@@ -139,7 +140,13 @@ def get_info(simulation_path, time_unit, speed, minute, status_at_point):
     show_default=True
 )
 def get_comparison_csv(simulation_path, output_dir, interval):
-    create_simulations_comparison([simulation_path], output_dir, interval)
+    pickles = []
+    for filename in os.listdir(simulation_path):
+        if filename.endswith(".pickle"):
+            pickles.append(os.path.join(simulation_path, filename))
+        else:
+            continue
+    create_simulations_comparison(pickles, output_dir, interval)
 
 
 def main():
