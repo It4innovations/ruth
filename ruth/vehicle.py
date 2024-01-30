@@ -69,7 +69,11 @@ def set_vehicle_behavior(vehicles: List['Vehicle'],
     """
     assert isclose(sum(alternatives_ratio), 1, abs_tol=1e-8)
     assert isclose(sum(route_selection_ratio), 1, abs_tol=1e-8)
-    assert alternatives_ratio[0] == route_selection_ratio[0]
+    if alternatives_ratio[0] != route_selection_ratio[0]:
+        # The percentage of DEFAULT alternatives calculation must be equal to the percentage of NO_ALTERNATIVE route
+        # selection.
+        raise ValueError("Sum of percentages for the alternatives calculation and route selection set in parameters "
+                         "must be equal.")
 
     n_vehicles = len(vehicles)
     vehicles_shuffled = list(vehicles)
