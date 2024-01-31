@@ -139,11 +139,11 @@ def get_info(simulation_path, time_unit, speed, minute, status_at_point):
     help="Time interval in minutes",
     show_default=True
 )
-def get_comparison_csv(simulation_path, output_dir, interval):
+def get_comparison_csv(input_dir, output_dir, interval):
     pickles = []
-    for filename in os.listdir(simulation_path):
+    for filename in os.listdir(input_dir):
         if filename.endswith(".pickle"):
-            pickles.append(os.path.join(simulation_path, filename))
+            pickles.append(os.path.join(input_dir, filename))
         else:
             continue
     create_simulations_comparison(pickles, output_dir, interval)
