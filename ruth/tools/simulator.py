@@ -30,6 +30,7 @@ class CommonArgs:
     k_alternatives: int
     map_update_freq: timedelta
     los_vehicles_tolerance: timedelta
+    travel_time_limit_perc: float = 0.0
     speeds_path: Optional[str] = None
     out: str = "simulation-record.pickle"
     seed: Optional[int] = None
@@ -80,6 +81,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     k_alternatives = common_args.k_alternatives
     map_update_freq = common_args.map_update_freq
     los_vehicles_tolerance = common_args.los_vehicles_tolerance
+    travel_time_limit_perc = common_args.travel_time_limit_perc
     seed = common_args.seed
     speeds_path = common_args.speeds_path
     sim_state = common_args.continue_from
@@ -89,7 +91,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
         if vehicles_path is None:
             raise ValueError("Either vehicles_path or continue_from must be specified.")
         ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
-                        los_vehicles_tolerance, seed, speeds_path=speeds_path)
+                        los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path)
         vehicles, bbox, download_date = load_vehicles(vehicles_path)
 
         set_vehicle_behavior(vehicles, alternatives_ratio.to_list(), route_selection_ratio.to_list())
@@ -185,6 +187,7 @@ def start_zeromq_cluster(
 @click.option("--los-vehicles-tolerance-s", type=int, default=1,
               help="Time tolerance (in seconds, of simulation time) to count which cars (i.e., their timestamps)"
                    "are considered for the calculation of LoS in a segment.")
+@click.option("--travel-time-limit-perc", type=float, default=0.0)
 @click.option("--speeds-path", type=click.Path(exists=True),
               help="Path to csv file with temporary max speeds.")
 @click.option("--out", type=str, default="out.pickle")
@@ -203,6 +206,7 @@ def single_node_simulator(ctx,
                           k_alternatives,
                           map_update_freq_s,
                           los_vehicles_tolerance_s,
+                          travel_time_limit_perc,
                           speeds_path,
                           out,
                           seed,
@@ -225,6 +229,7 @@ def single_node_simulator(ctx,
         k_alternatives=k_alternatives,
         map_update_freq=timedelta(seconds=map_update_freq_s),
         los_vehicles_tolerance=timedelta(seconds=los_vehicles_tolerance_s),
+        travel_time_limit_perc=travel_time_limit_perc,
         speeds_path=speeds_path,
         out=out,
         seed=seed,
