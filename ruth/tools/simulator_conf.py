@@ -34,6 +34,8 @@ class CommonArgs(CommonArgsInner):
                                               serializer=lambda x: x.total_seconds(),
                                               deserializer=lambda x: timedelta(seconds=x),
                                               default=timedelta(seconds=5))
+    travel_time_limit_perc: float = field(rename="travel-time-limit-perc",
+                                          default=0.0)
     speeds_path: Optional[str] = field(serializer=lambda x: '' if x is None else x,
                                        deserializer=lambda x: None if x == '' else x,
                                        default=None)

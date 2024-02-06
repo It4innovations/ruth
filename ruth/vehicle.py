@@ -217,15 +217,28 @@ class Vehicle:
         max_speed_on_next_segment = routing_map.get_current_max_speed(next_segment_from, next_segment_to)
         return max_speed_on_next_segment == 0.0
 
-    def update_followup_route(self, osm_route: Route):
+    def update_followup_route(self, suggested_route: Route, routing_map: Map, travel_time_limit_perc: float = None):
         """
         Updates the route from the current node to the destination node.
         """
-        assert osm_route[-1] == self.dest_node
+        assert suggested_route[-1] == self.dest_node
         node_index = self.next_routing_start.index
         first_part = self.osm_route[:node_index]
-        assert first_part[-1] != osm_route[0]
-        self.osm_route = first_part + osm_route
+        if len(first_part) > 0:
+            assert first_part[-1] != suggested_route[0]
+
+        current_route = self.osm_route[node_index:]
+
+        if travel_time_limit_perc is None or self.alternatives == VehicleAlternatives.DIJKSTRA_SHORTEST:
+            self.osm_route = first_part + suggested_route
+            return
+
+        suggested_route_travel_time = routing_map.get_path_travel_time(suggested_route)
+        current_route_travel_time = routing_map.get_path_travel_time(current_route)
+        travel_time_limit = current_route_travel_time * (1 - travel_time_limit_perc)
+
+        if suggested_route_travel_time < travel_time_limit:
+            self.osm_route = first_part + suggested_route
 
     @property
     def segment_position(self) -> SegmentPosition:

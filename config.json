@@ -6,6 +6,7 @@
     "k-alternatives": 1,
     "map-update-freq-s" : 1,
     "los-vehicles-tolerance-s" : 5,
+    "travel-time-limit-perc" : 0.1,
     "out" : "simulation_record.pickle",
     "seed": 7,
     "walltime-s" : 2000,

@@ -130,9 +130,16 @@ class Map:
     def edges(self):
         return self.current_network.edges()
 
-    def get_travel_time(self, node_from: int, node_to: int, speed_kph: SpeedKph):
-        return float('inf') if speed_kph == 0 else float(
-            self.segment_lengths[(node_from, node_to)]) * 3.6 / float(speed_kph)
+    def get_travel_time(self, node_from: int, node_to: int, speed_kph: SpeedKph) -> float:
+        if speed_kph == 0:
+            return float('inf')
+        segment_length_m = float(self.segment_lengths[(node_from, node_to)])
+        speed_mps = float(speed_kph) / 3.6
+        travel_time_s = segment_length_m / speed_mps
+        return travel_time_s
+
+    def get_path_travel_time(self, path: List[int]):
+        return nx.path_weight(self.current_network, path, weight='current_travel_time')
 
     def init_current_speeds(self):
         speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')

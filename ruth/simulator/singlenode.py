@@ -95,7 +95,7 @@ class Simulator:
                 selected_plans = select_routes(route_selection_providers, new_vehicle_routes)
                 assert len(selected_plans) == len(new_vehicle_routes)
                 for (vehicle, route) in selected_plans:
-                    vehicle.update_followup_route(route)
+                    vehicle.update_followup_route(route, self.sim.routing_map. self.sim.setting.travel_time_limit_perc)
 
             with timer_set.get("advance_vehicle"):
                 fcds = self.advance_vehicles(vehicles_to_be_moved.copy(), offset)

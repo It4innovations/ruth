@@ -61,6 +61,7 @@ class SimSetting:
     k_alternatives: int = 1
     map_update_freq_s: timedelta = timedelta(seconds=1)
     los_vehicles_tolerance: timedelta = timedelta(seconds=0)
+    travel_time_limit_perc: float = 0.0
     seed: InitVar = None
     speeds_path: str = None
 
