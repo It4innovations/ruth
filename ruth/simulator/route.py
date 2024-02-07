@@ -196,12 +196,13 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
     return fcds
 
 
-def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_time: datetime,
+def advance_vehicles_with_queues_2(vehicles_to_be_moved: List[Vehicle], departure_time: datetime,
                                  gv_db: GlobalViewDb, routing_map: Map, queues_manager: QueuesManager,
                                  los_vehicles_tolerance) -> List[FCDRecord]:
     fcds = []
     vehicles_undecided = []
     vehicles_stopped = []
+    len_vehicles_to_be_moved = len(vehicles_to_be_moved)
 
     while len(vehicles_to_be_moved) > 0 or len(vehicles_undecided) > 0:
         # while there still are vehicles to be processed
@@ -213,7 +214,7 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
             current_vehicle_list.remove(vehicle)
             new_fcds = advance_vehicle(vehicle, departure_time, gv_db, routing_map, queues_manager, los_vehicles_tolerance)
             fcds.extend(new_fcds)
-        elif vehicle == queue[0]:
+        elif vehicle.id == queue[0].id:
             # vehicle is the first one in the queue
             current_vehicle_list.remove(vehicle)
             new_fcds = advance_vehicle(vehicle, departure_time, gv_db, routing_map, queues_manager, los_vehicles_tolerance)
@@ -240,4 +241,42 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
                 current_vehicle_list.remove(vehicle)
                 vehicles_undecided.append(vehicle)
 
+    assert len(fcds) == len_vehicles_to_be_moved
+    return fcds
+
+
+def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_time: datetime,
+                                   gv_db: GlobalViewDb, routing_map: Map, queues_manager: QueuesManager,
+                                   los_vehicles_tolerance) -> List[FCDRecord]:
+    fcds = []
+
+    vehicles_in_queues = []
+    for vehicle in vehicles_to_be_moved:
+        queue = queues_manager.queues[(vehicle.current_node, vehicle.next_node)]
+        if vehicle not in queue:
+            new_fcds = advance_vehicle(vehicle, departure_time, gv_db, routing_map, queues_manager,
+                                       los_vehicles_tolerance)
+            fcds.extend(new_fcds)
+        else:
+            vehicles_in_queues.append(vehicle)
+
+    for key, queue in queues_manager.queues.copy().items():
+        for vehicle in queue.copy():
+            try:
+                vehicles_in_queues.remove(vehicle)
+            except ValueError:
+                break
+
+            new_fcds = advance_vehicle(vehicle, departure_time, gv_db, routing_map, queues_manager,
+                                       los_vehicles_tolerance)
+            fcds.extend(new_fcds)
+            was_moved = len(queue) == 0 or (vehicle != queue[0])
+            if not was_moved:
+                break
+
+    for vehicle in vehicles_in_queues:
+        new_fcds = advance_waiting_vehicle(vehicle, routing_map, departure_time)
+        fcds.extend(new_fcds)
+
+    assert len(fcds) == len(vehicles_to_be_moved)
     return fcds
