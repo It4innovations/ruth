@@ -79,23 +79,31 @@ def set_vehicle_behavior(vehicles: List['Vehicle'],
     vehicles_shuffled = list(vehicles)
     random.shuffle(vehicles_shuffled)
 
-    n_vehicles_to_change = [int(r * n_vehicles) for r in alternatives_ratio]
+    # select the number of vehicles to change
+    n_vehicles_to_change_alt = [int(r * n_vehicles) for r in alternatives_ratio]
+    sum_n_vehicles_to_change = sum(n_vehicles_to_change_alt)
+    if sum_n_vehicles_to_change != n_vehicles:
+        # add the difference to the DEFAULT
+        n_vehicles_to_change_alt[0] += n_vehicles - sum_n_vehicles_to_change
+
+    n_vehicles_to_change_selection = [int(r * n_vehicles) for r in route_selection_ratio]
+    n_vehicles_to_change_selection = n_vehicles_to_change_alt[0:1] + n_vehicles_to_change_selection[1:]
 
     index_from = 0
-    for n, alternative in zip(n_vehicles_to_change, VehicleAlternatives):
+    for n, alternative in zip(n_vehicles_to_change_alt, VehicleAlternatives):
         index_to = index_from + n
         for v in vehicles_shuffled[index_from:index_to]:
             v.alternatives = alternative
         index_from = index_from + n
 
-    index_from = n_vehicles_to_change[0]
+    index_from = n_vehicles_to_change_alt[0]
     vehicles_with_alternatives = vehicles_shuffled[index_from:]
     vehicles_shuffled = (vehicles_shuffled[:index_from]
                          + random.sample(vehicles_with_alternatives, len(vehicles_with_alternatives)))
     n_vehicles_to_change = [int(r * n_vehicles) for r in route_selection_ratio]
 
     index_from = 0
-    for n, route_selection in zip(n_vehicles_to_change, VehicleRouteSelection):
+    for n, route_selection in zip(n_vehicles_to_change_selection, VehicleRouteSelection):
         index_to = index_from + n
         for v in vehicles_shuffled[index_from:index_to]:
             v.route_selection = route_selection
