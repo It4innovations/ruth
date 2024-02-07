@@ -105,6 +105,13 @@ class Simulation:
     def __setstate__(self, d):
         self.__dict__.update(d)
         self.routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
+        current_offset = self.compute_current_offset()
+        if current_offset is not None:
+            current_offset = self.setting.departure_time + current_offset
+            fcds = [fcd for fcd in self.history.fcd_history if fcd.datetime >= current_offset]
+            self.global_view = GlobalView()
+            for fcd in fcds:
+                self.global_view.add(fcd)
 
     @property
     def random(self):
