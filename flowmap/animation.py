@@ -215,7 +215,7 @@ class SimulationAnimator(ABC):
         )
 
         timestamp = round(time() * 1000)
-        anim.save(path.join(self.save_path, str(timestamp) + '-rt.mp4'), writer='ffmpeg', fps=self.fps)
+        anim.save(path.join(self.save_path, str(timestamp) + '-rt.gif'), writer='ffmpeg', fps=self.fps)
 
     def _animate(self):
         car_coordinates = []
