@@ -11,7 +11,7 @@ from flowmap.time_unit import TimeUnit
 
 
 def get_real_time(simulation, time_unit: TimeUnit):
-    return (simulation.history.data[-1][0] - simulation.history.data[0][0]) / time_unit.value
+    return (simulation.history.fcd_history[-1].datetime - simulation.history.fcd_history[0].datetime) / time_unit.value
 
 
 def get_percentage(value, total):
