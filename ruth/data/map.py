@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+from time import time
 
 import networkx as nx
 import osmnx as ox
@@ -96,11 +97,12 @@ class Map:
             self._store()
 
         if save_hdf:
-            self.hdf5_file_path = str((Path(self.data_dir) / "map.hdf5").absolute())
+            hdf5_file_name = f"map_{round(time() * 1000)}_{os.getpid()}.hdf5"
+            self.hdf5_file_path = str((Path(self.data_dir) / hdf5_file_name).absolute())
             self.save_hdf()
 
     def save_hdf(self) -> str:
-        temp_path = str((Path(self.data_dir) / "map-temp.hdf5").absolute())
+        temp_path = str((Path(self.data_dir) / f"map_{round(time() * 1000)}_{os.getpid()}_temp.hdf5").absolute())
 
         self.osm_to_hdf_map_ids = save_graph_to_hdf5(self.current_network, temp_path)
         self.hdf_to_osm_map_ids = {v: k for (k, v) in self.osm_to_hdf_map_ids.items()}
