@@ -32,8 +32,6 @@ def timed_segment_to_record(dt, node_from, node_to, length, max_speed, aggregate
     if current_speed is None:
         current_speed = max_speed
         no_vehicle = True
-    if current_speed is not None:
-        a = 3
     seg_id = f"OSM{node_from}T{node_to}"
     return Record(seg_id, dt, round(length, 2), round(max_speed, 2), round(current_speed, 2), no_vehicle)
 
