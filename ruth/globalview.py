@@ -84,13 +84,6 @@ class GlobalView:
     def level_of_service_in_time_at_segment(self, datetime, segment):
         return self.level_of_service_in_front_of_vehicle(datetime, segment, -1, 0, None)
 
-    def speed_in_time_at_segment(self, datetime, segment):
-        speeds = [fcd.speed for fcd in self.fcd_by_segment.get(segment.id, []) if
-                  fcd.datetime == datetime]
-        if len(speeds) == 0:
-            return None
-        return sum(speeds) / len(speeds)
-
     def take_segment_speeds(self) -> Dict[SegmentId, Optional[SpeedKph]]:
         """
         Returns all segments that have been modified since the last call to this

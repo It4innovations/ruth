@@ -37,6 +37,13 @@ class FCDHistory:
 
         return pd.DataFrame(data)
 
+    def speed_in_time_at_segment(self, datetime, node_from, node_to):
+        speeds = [fcd.speed for fcd in self.fcd_by_segment.get(SegmentId((node_from, node_to)), []) if
+                  fcd.datetime == datetime]
+        if len(speeds) == 0:
+            return None
+        return sum(speeds) / len(speeds)
+
     def __getstate__(self):
         self.fcd_history.sort(key=lambda fcd: (fcd.datetime, fcd.segment.id))
         return self.fcd_history
