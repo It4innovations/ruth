@@ -74,15 +74,6 @@ def create_records(sim_path, round_freq_s):
     return records
 
 
-def aggregate_gw_inner(sim_path, round_freq_s, out):
-    records = create_records(sim_path, round_freq_s)
-    with open(out, "w") as csv:
-        csv.write("segment_osm_id;fcd_time_calc;segment_length;max_speed;current_speed\n")
-        csv.write("\n".join(map(repr, records)))
-
-    print(f"Aggregated FCDs are written within '{out}'.")
-
-
 @click.command()
 @click.argument("sim_path", type=click.Path(exists=True))
 @click.option("--round-freq-s", type=int, default=300, help="How to round date times. [Default: 300 (5 min)]")
