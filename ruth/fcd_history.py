@@ -1,7 +1,9 @@
 from collections import defaultdict
-from typing import List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Dict
 
 import pandas as pd
+
+from .data.segment import SegmentId
 
 if TYPE_CHECKING:
     from .simulator.simulation import FCDRecord
@@ -14,8 +16,10 @@ class FCDHistory:
 
     def __init__(self):
         self.fcd_history: List["FCDRecord"] = []
+        self.fcd_by_segment: Dict[SegmentId, List[FCDRecord]] = defaultdict(list)
 
     def add(self, fcd: "FCDRecord"):
+        self.fcd_by_segment[fcd.segment.id].append(fcd)
         self.fcd_history.append(fcd)
 
     def to_dataframe(self):  # todo: maybe process in chunks
