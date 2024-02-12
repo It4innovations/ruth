@@ -5,11 +5,9 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from tqdm import tqdm
 
-from probduration import Segment
-
 from ..simulator.simulation import FCDRecord
 from ..utils import round_datetime
-from ..globalview import GlobalView
+from ..fcd_history import FCDHistory
 from ..simulator import Simulation
 
 
@@ -26,16 +24,15 @@ class Record:
                 f"{self.segment_length};{self.max_speed};{self.current_speed}")
 
 
-def timed_segment_to_record(dt, node_from, node_to, length, max_speed, aggregated_gv):
-    seg_id = f"OSM{node_from}T{node_to}"
-    seg = Segment(seg_id, length, max_speed)
-    current_speed = aggregated_gv.speed_in_time_at_segment(dt, seg)
+def timed_segment_to_record(dt, node_from, node_to, length, max_speed, aggregated_history):
+    current_speed = aggregated_history.speed_in_time_at_segment(dt, node_from, node_to)
     if current_speed is None:
         current_speed = max_speed
+    seg_id = f"OSM{node_from}T{node_to}"
     return Record(seg_id, dt, round(length, 2), round(max_speed, 2), round(current_speed, 2))
 
 
-def aggregate(sim_path, round_freq_s, out=None):
+def create_records(sim_path, round_freq_s):
     sim = Simulation.load(sim_path)
     round_freq = timedelta(seconds=round_freq_s)
 
@@ -47,26 +44,33 @@ def aggregate(sim_path, round_freq_s, out=None):
         else:
             assert False, "Segment without assigned length!"
 
-    aggregated_gv = GlobalView()
-    for fcd_data in sim.history.fcd_history:
-        dt = round_datetime(fcd_data.datetime, round_freq)
-        fcd_rounded = FCDRecord(dt, fcd_data.vehicle_id,
-                                fcd_data.segment, fcd_data.start_offset,
-                                fcd_data.speed, fcd_data.status, fcd_data.active)
-        aggregated_gv.add(fcd_rounded)
+    rounded_history = []
+    for fcd in sim.history.fcd_history:
+        attrs = fcd.__dict__
+        dt_rounded = round_datetime(attrs['datetime'], round_freq)
+        attrs['datetime'] = dt_rounded
+        fcd_rounded = FCDRecord(**attrs)
+        rounded_history.append(fcd_rounded)
     print("History rounded")
 
-    sim_start = sim.history.fcd_history[0].datetime
-    sim_start = round_datetime(sim_start, round_freq)
-    sim_end = sim.history.fcd_history[-1].datetime
-    sim_end = round_datetime(sim_end, round_freq)
+    sim_start = rounded_history[0].datetime
+    sim_end = rounded_history[-1].datetime
+
+    aggregated_history = FCDHistory()
+    for fcd in rounded_history:
+        aggregated_history.add(fcd)
 
     records = []
     for (node_from, node_to), (seg_length, seg_speed) in tqdm(segment_data.items(), unit=' segment'):
         for time in pd.date_range(start=sim_start, end=sim_end, freq=round_freq):
-            record = timed_segment_to_record(time, node_from, node_to, seg_length, seg_speed, aggregated_gv)
+            record = timed_segment_to_record(time, node_from, node_to, seg_length, seg_speed, aggregated_history)
             records.append(record)
 
+    return records
+
+
+def aggregate_to_file(sim_path, round_freq_s, out):
+    records = create_records(sim_path, round_freq_s)
     with open(out, "w") as csv:
         csv.write("segment_osm_id;fcd_time_calc;segment_length;max_speed;current_speed\n")
         csv.write("\n".join(map(repr, records)))
@@ -82,7 +86,7 @@ aggregate_cmd = click.Group()
 @click.option("--round-freq-s", type=int, default=300, help="How to round date times. [Default: 300 (5 min)]")
 @click.option("--out", type=str, default="out.csv")
 def aggregate_globalview(sim_path, round_freq_s, out):
-    return aggregate(sim_path, round_freq_s, out)
+    aggregate_to_file(sim_path, round_freq_s, out)
 
 
 @aggregate_cmd.command()
@@ -103,7 +107,7 @@ def aggregate_globalview_set(dir_path, round_freq_s, out_dir):
         name = parts[0]
 
         out_file_path = os.path.join(out_dir_, f"{name}-aggregated-fcd.csv")
-        aggregate(file_path, round_freq_s, out_file_path)
+        aggregate_to_file(file_path, round_freq_s, out_file_path)
 
 
 if __name__ == "__main__":
