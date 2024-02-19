@@ -85,12 +85,12 @@ def aggregate_speed_profiles(sim_path, round_freq_s, out):
     round_freq_min = int(round_freq_s / 60)
 
     with open(out, "w") as csv:
-        csv.write("date;road_id;time_in_minutes_from;time_in_minutes_to;speed_in_kmh\n")
+        csv.write("date;road_id;time_in_minutes_from;time_in_minutes_to;speed_kph\n")
         for record in records:
             date = record.fcd_time_calc.strftime("%Y-%m-%d")
             time_in_minutes = record.fcd_time_calc.hour * 60 + record.fcd_time_calc.minute
             csv.write(f"{date};{record.segment_osm_id};{time_in_minutes};"
-                      f"{time_in_minutes + round_freq_min};{int(record.current_speed)}\n")
+                      f"{time_in_minutes + round_freq_min};{int(record.current_speed * 3.6)}\n")
 
     print(f"Aggregated FCDs are written within '{out}'.")
 
