@@ -52,6 +52,8 @@ class CommonArgs(CommonArgsInner):
     continue_from: Optional[Simulation] = field(serializer=lambda x: x.store("continue-from.pickle"),
                                                 deserializer=lambda x: None if x == "" else Simulation.load(x),
                                                 default=None)
+    disable_stuck_detection: bool = False
+
 
 
 @serde(rename_all="kebabcase")
