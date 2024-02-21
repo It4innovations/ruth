@@ -62,11 +62,12 @@ class Simulator:
 
             offset = self.sim.round_time_offset(self.current_offset)
 
-            # check if the simulation is stuck
-            if (self.current_offset - last_time_moved) >= (self.sim.setting.round_freq * 4):
-                logger.error(
-                    f"The simulation is stuck at {self.current_offset}.")
-                break
+            if not self.sim.setting.disable_stuck_detection:
+                # check if the simulation is stuck
+                if (self.current_offset - last_time_moved) >= (self.sim.setting.round_freq * 4):
+                    logger.error(
+                        f"The simulation is stuck at {self.current_offset}.")
+                    break
 
             with timer_set.get("update_map_speeds"):
                 self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)

@@ -37,6 +37,7 @@ class CommonArgs:
     walltime: Optional[timedelta] = None
     saving_interval: Optional[timedelta] = None
     continue_from: Optional[Simulation] = None
+    disable_stuck_detection: bool = True
 
 
 @dataclass
@@ -85,13 +86,15 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     seed = common_args.seed
     speeds_path = common_args.speeds_path
     sim_state = common_args.continue_from
+    disable_stuck_detection = common_args.disable_stuck_detection
 
     # TODO: solve the debug symbol
     if sim_state is None:
         if vehicles_path is None:
             raise ValueError("Either vehicles_path or continue_from must be specified.")
         ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
-                        los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path)
+                        los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
+                        disable_stuck_detection=disable_stuck_detection)
         vehicles, bbox, download_date = load_vehicles(vehicles_path)
 
         set_vehicle_behavior(vehicles, alternatives_ratio.to_list(), route_selection_ratio.to_list())
@@ -197,6 +200,8 @@ def start_zeromq_cluster(
               help="Time interval in which the state of simulation periodically is saved")
 @click.option("--continue-from", type=click.Path(exists=True),
               help="Path to a saved state of simulation to continue from.")
+@click.option("--disable-stuck-detection", is_flag=True,
+              help="Continue simulation even if all vehicles are stuck.")
 @click.pass_context
 def single_node_simulator(ctx,
                           debug,
@@ -212,7 +217,8 @@ def single_node_simulator(ctx,
                           seed,
                           walltime_s,
                           saving_interval_s,
-                          continue_from):
+                          continue_from,
+                          disable_stuck_detection):
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
     ctx.ensure_object(dict)
 
@@ -235,7 +241,8 @@ def single_node_simulator(ctx,
         seed=seed,
         walltime=walltime,
         saving_interval=saving_interval,
-        continue_from=sim_state
+        continue_from=sim_state,
+        disable_stuck_detection=disable_stuck_detection
     )
 
 
