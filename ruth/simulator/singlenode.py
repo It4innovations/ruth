@@ -54,12 +54,19 @@ class Simulator:
 
         step = self.sim.number_of_steps
         last_map_update = self.current_offset
+        last_time_moved = self.current_offset
 
         while self.current_offset is not None:
             step_start_dt = datetime.now()
             timer_set = TimerSet()
 
             offset = self.sim.round_time_offset(self.current_offset)
+
+            # check if the simulation is stuck
+            if (self.current_offset - last_time_moved) >= (self.sim.setting.round_freq * 4):
+                logger.error(
+                    f"The simulation is stuck at {self.current_offset}.")
+                break
 
             with timer_set.get("update_map_speeds"):
                 self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
@@ -98,7 +105,9 @@ class Simulator:
                     vehicle.update_followup_route(route, self.sim.routing_map, self.sim.setting.travel_time_limit_perc)
 
             with timer_set.get("advance_vehicle"):
-                fcds = self.advance_vehicles(vehicles_to_be_moved.copy(), offset)
+                fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy(), offset)
+                if has_moved or self.sim.routing_map.has_temporary_speeds_planned():
+                    last_time_moved = self.current_offset
 
             with timer_set.get("update"):
                 self.sim.update(fcds)

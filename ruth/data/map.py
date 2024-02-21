@@ -343,6 +343,9 @@ class Map:
         nx.set_edge_attributes(self.current_network, values=new_current_speeds, name='current_speed')
         nx.set_edge_attributes(self.current_network, values=new_travel_times, name='current_travel_time')
 
+    def has_temporary_speeds_planned(self):
+        return len(self.temporary_speeds) > 0
+
     def get_hdf5_edge_id(self, segment_id: SegmentId) -> int:
         (node_from, node_to) = segment_id
         return get_osmid_from_data(self.current_network[node_from][node_to])

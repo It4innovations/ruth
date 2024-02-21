@@ -198,9 +198,10 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
 
 def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_time: datetime,
                                    gv_db: GlobalViewDb, routing_map: Map, queues_manager: QueuesManager,
-                                   los_vehicles_tolerance) -> List[FCDRecord]:
+                                   los_vehicles_tolerance):
     fcds = []
 
+    vehicles_moved = False
     vehicles_in_queues = []
     for vehicle in vehicles_to_be_moved:
         queue = queues_manager.queues[(vehicle.current_node, vehicle.next_node)]
@@ -208,6 +209,8 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
             new_fcds = advance_vehicle(vehicle, departure_time, gv_db, routing_map, queues_manager,
                                        los_vehicles_tolerance)
             fcds.extend(new_fcds)
+            was_moved = len(queue) == 0 or (vehicle != queue[0])
+            vehicles_moved = vehicles_moved or was_moved
         else:
             vehicles_in_queues.append(vehicle)
 
@@ -222,6 +225,7 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
                                        los_vehicles_tolerance)
             fcds.extend(new_fcds)
             was_moved = len(queue) == 0 or (vehicle != queue[0])
+            vehicles_moved = vehicles_moved or was_moved
             if not was_moved:
                 break
 
@@ -230,4 +234,4 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
         fcds.extend(new_fcds)
 
     assert len(fcds) == len(vehicles_to_be_moved)
-    return fcds
+    return fcds, vehicles_moved
