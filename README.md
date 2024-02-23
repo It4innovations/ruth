@@ -12,6 +12,11 @@ Only records for timestamps and segments which are present in the simulation are
 python3 speed_profiles.py --help
 ```
 
+### Arguments
+* path to the simulation record file,
+* `--round-freq-s` - frequency of the aggregation in seconds,
+* `--out` - path to the output file.
+
 ## Example
 ```
 python3 speed_profiles.py simulation_record.pickle --round-freq-s 600 --out speed_profiles.csv
