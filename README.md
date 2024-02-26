@@ -80,4 +80,22 @@ For fixed number of vehicles that will be depicted with maximum line width, use 
     ```
     traffic-flow-map get-info <PATH_TO_DATA> --status-at-point 0.5
     ```
-
+### Generate CSV file with simulation progress
+* generate CSV file with data calculated for every n minutes of the simulation
+* use `get_comparison_csv` to generate CSV file with simulation progress for 5 minute intervals
+    #### Example 
+    ```
+    traffic-flow-map get_comparison_csv <PATH_TO_INPUT_DIR> --output-dir <PATH_TO_OUTPUT_CSV> --interval 5
+    ```
+* CSV columns contain:
+    * time offset,
+    * number of active vehicles in time interval & since start,
+    * columns with number of vehicles with different alternative route algorithm,
+    * columns with number of vehicles with different alternative route selection,
+    * number of vehicles that finished journey in time interval & since start,
+    * total meters driven in time interval & since start,
+    * total driving time in time interval & since start,
+    * number of segments visited in time interval & since start,
+    * average speed in time interval & since start,
+    * number of segments in different speed ranges in time interval & since start,
+    * number of vehicles in different speed ranges in time interval & since start.
