@@ -39,11 +39,12 @@ def move_on_segment(
         segment_position = SegmentPosition(segment_position.index + 1, start_position)
         current_segment = driving_route[segment_position.index]
 
-        level_of_service = gv_db.gv.level_of_service_in_front_of_vehicle(current_time, current_segment, vehicle.id,
-                                                                         start_position, los_vehicles_tolerance)
-    else:
+    if segment_position.index == len(driving_route) and start_position == current_segment.length:
         # the end of the driving route
         level_of_service = 1.0
+    else:
+        level_of_service = gv_db.gv.level_of_service_in_front_of_vehicle(current_time, current_segment, vehicle.id,
+                                                                         start_position, los_vehicles_tolerance)
 
     # if car is stuck in traffic jam, it will not move and its speed will be 0
     if level_of_service == float("inf"):
@@ -209,8 +210,7 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
             new_fcds = advance_vehicle(vehicle, departure_time, gv_db, routing_map, queues_manager,
                                        los_vehicles_tolerance)
             fcds.extend(new_fcds)
-            was_moved = len(queue) == 0 or (vehicle != queue[0])
-            vehicles_moved = vehicles_moved or was_moved
+            vehicles_moved = True
         else:
             vehicles_in_queues.append(vehicle)
 
