@@ -57,6 +57,7 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
       "walltime-s" : 2000,
       "saving-interval-s" : 100,
       "speeds-path" : "",
+      "travel-time-limit-perc": 0.1,
       "ptdr-path" : "",
       "continue-from": ""
     },
@@ -125,3 +126,5 @@ csv file with aggregated information about speeds during simulation
     ...
   ]
   ```
+#### Stuck detection
+Simulator detects if the simulation is stuck and stops it. The detection is based on all vehicles being in the same position for a certain amount of time and no temporary max speeds are to be updated. It can be turned off by using "--disable-stuck-detection" flag.
