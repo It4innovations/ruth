@@ -59,7 +59,7 @@ class SimulationLog:
             'number of active vehicles in time interval',
             'number of active vehicles since start']
         for alternative in VehicleAlternatives.__members__.values():
-            columns.append(f"number of active vehicles with {alternative.name.lower()} alternative selection")
+            columns.append(f"number of active vehicles with {alternative.name.lower()} alternative route algorithm")
         for selection in VehicleRouteSelection.__members__.values():
             columns.append(f"number of active vehicles with {selection.name.lower()} route selection")
 
