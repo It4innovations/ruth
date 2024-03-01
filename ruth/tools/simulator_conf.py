@@ -53,6 +53,7 @@ class CommonArgs(CommonArgsInner):
                                                 deserializer=lambda x: None if x == "" else Simulation.load(x),
                                                 default=None)
     disable_stuck_detection: bool = False
+    plateau_default_route: bool = False
 
 
 

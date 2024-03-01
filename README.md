@@ -59,7 +59,9 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
       "speeds-path" : "",
       "travel-time-limit-perc": 0.1,
       "ptdr-path" : "",
-      "continue-from": ""
+      "continue-from": "",
+      "disable-stuck-detection": false,
+      "plateau-default-route": true
     },
     "run" :
     {
@@ -89,6 +91,7 @@ For the Alternatives and Route selection, percentages of vehicles can be set for
 - shortest-paths networkx implementation of dijkstra algorithm using route length as weight
 - fastest-paths: networkx implementation of dijkstra algorithm using current-travel-time as weight
 - distributed: cpp implementation of Plateau algorithm
+  - **plateau-default-route**: flag to recalculate the default route with Plateau algorithm
 #### Route selection
 - first: uses the first from found alternatives
 - random: uses random alternative

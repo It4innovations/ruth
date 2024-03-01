@@ -12,7 +12,9 @@
     "walltime-s" : 2000,
     "saving-interval-s" : 100,
     "speeds-path" : "",
-    "continue-from": ""
+    "continue-from": "",
+    "disable-stuck-detection": false,
+    "plateau-default-route": true
   },
   "run" :
   {

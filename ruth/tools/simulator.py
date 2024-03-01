@@ -1,4 +1,3 @@
-import enum
 import logging
 import os
 import shutil
@@ -38,6 +37,7 @@ class CommonArgs:
     saving_interval: Optional[timedelta] = None
     continue_from: Optional[Simulation] = None
     disable_stuck_detection: bool = True
+    plateau_default_route: bool = False
 
 
 @dataclass
@@ -87,6 +87,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     speeds_path = common_args.speeds_path
     sim_state = common_args.continue_from
     disable_stuck_detection = common_args.disable_stuck_detection
+    plateau_default_route = common_args.plateau_default_route
 
     # TODO: solve the debug symbol
     if sim_state is None:
@@ -94,7 +95,8 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
             raise ValueError("Either vehicles_path or continue_from must be specified.")
         ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
                         los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
-                        disable_stuck_detection=disable_stuck_detection)
+                        disable_stuck_detection=disable_stuck_detection,
+                        plateau_default_route=plateau_default_route)
         vehicles, bbox, download_date = load_vehicles(vehicles_path)
 
         set_vehicle_behavior(vehicles, alternatives_ratio.to_list(), route_selection_ratio.to_list())
@@ -202,6 +204,8 @@ def start_zeromq_cluster(
               help="Path to a saved state of simulation to continue from.")
 @click.option("--disable-stuck-detection", is_flag=True,
               help="Continue simulation even if all vehicles are stuck.")
+@click.option("--plateau-default-route", is_flag=True,
+              help="Recalculate default route to plateau fastest route.")
 @click.pass_context
 def single_node_simulator(ctx,
                           debug,
@@ -218,7 +222,8 @@ def single_node_simulator(ctx,
                           walltime_s,
                           saving_interval_s,
                           continue_from,
-                          disable_stuck_detection):
+                          disable_stuck_detection,
+                          plateau_default_route):
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
     ctx.ensure_object(dict)
 
@@ -242,7 +247,8 @@ def single_node_simulator(ctx,
         walltime=walltime,
         saving_interval=saving_interval,
         continue_from=sim_state,
-        disable_stuck_detection=disable_stuck_detection
+        disable_stuck_detection=disable_stuck_detection,
+        plateau_default_route=plateau_default_route,
     )
 
 
@@ -353,13 +359,15 @@ class ZeroMqContext:
 
 
 def create_alternatives_providers(alternatives_ratio: AlternativesRatio,
-                                  zmq_ctx: ZeroMqContext) -> List[AlternativesProvider]:
+                                  zmq_ctx: ZeroMqContext,
+                                  plateu_default_route: bool = False,
+                                  ) -> List[AlternativesProvider]:
     providers = []
     if alternatives_ratio.dijkstra_fastest > 0:
         providers.append(FastestPathsAlternatives())
     if alternatives_ratio.dijkstra_shortest > 0:
         providers.append(ShortestPathsAlternatives())
-    if alternatives_ratio.plateau_fastest > 0:
+    if alternatives_ratio.plateau_fastest > 0 or plateu_default_route:
         providers.append(ZeroMQDistributedAlternatives(client=zmq_ctx.get_or_create_client(5555)))
 
     return providers
@@ -432,7 +440,9 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
         end_step_fns.append(store_simulation_at_interval(saving_interval, f"run{task_id}"))
 
     zmq_ctx = ZeroMqContext()
-    alternatives_providers = create_alternatives_providers(alternatives_ratio, zmq_ctx=zmq_ctx)
+    alternatives_providers = create_alternatives_providers(alternatives_ratio,
+                                                           zmq_ctx=zmq_ctx,
+                                                           plateu_default_route=common_args.plateau_default_route)
     route_selection_providers = create_route_selection_providers(route_selection_ratio, zeromq_ctx=zmq_ctx,
                                                                  seed=common_args.seed)
 

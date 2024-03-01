@@ -65,6 +65,7 @@ class SimSetting:
     seed: InitVar = None
     speeds_path: str = None
     disable_stuck_detection: bool = True
+    plateau_default_route: bool = False
 
     def __post_init__(self, seed):
         if seed is not None:
