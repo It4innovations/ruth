@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from tqdm import tqdm
 
-
 from ruth.utils import round_datetime
 from ruth.simulator import Simulation
 from ruth.fcd_history import FCDHistory
@@ -36,7 +35,7 @@ def timed_segment_to_record(dt, node_from, node_to, length, max_speed, aggregate
     return Record(seg_id, dt, round(length, 2), round(max_speed, 2), round(current_speed, 2), no_vehicle)
 
 
-def create_records(sim_path, round_freq_s):
+def create_records(sim_path, round_freq_s, out):
     sim = Simulation.load(sim_path)
     round_freq = timedelta(seconds=round_freq_s)
 
@@ -64,14 +63,18 @@ def create_records(sim_path, round_freq_s):
     for fcd in rounded_history:
         aggregated_history.add(fcd)
 
+    round_freq_min = int(round_freq_s / 60)
 
-    records = []
-    for (node_from, node_to), (seg_length, seg_speed) in tqdm(segment_data.items(), unit=' segment'):
-        for time in pd.date_range(start=sim_start, end=sim_end, freq=round_freq):
-            record = timed_segment_to_record(time, node_from, node_to, seg_length, seg_speed, aggregated_history)
-            records.append(record)
+    with open(out, "a") as csv:
+        for (node_from, node_to), (seg_length, seg_speed) in tqdm(segment_data.items(), unit=' segment'):
+            for time in pd.date_range(start=sim_start, end=sim_end, freq=round_freq):
+                record = timed_segment_to_record(time, node_from, node_to, seg_length, seg_speed, aggregated_history)
 
-    return records
+                if not record.no_vehicle:
+                    date = record.fcd_time_calc.strftime("%Y-%m-%d")
+                    time_in_minutes = record.fcd_time_calc.hour * 60 + record.fcd_time_calc.minute
+                    csv.write(f"{date};{record.segment_osm_id};{time_in_minutes};"
+                              f"{time_in_minutes + round_freq_min};{int(record.current_speed * 3.6)}\n")
 
 
 @click.command()
@@ -79,19 +82,10 @@ def create_records(sim_path, round_freq_s):
 @click.option("--round-freq-s", type=int, default=300, help="How to round date times. [Default: 300 (5 min)]")
 @click.option("--out", type=str, default="out.csv")
 def aggregate_speed_profiles(sim_path, round_freq_s, out):
-    records = create_records(sim_path, round_freq_s)
-    records = [r for r in records if not r.no_vehicle]
-
-    round_freq_min = int(round_freq_s / 60)
-
     with open(out, "w") as csv:
         csv.write("date;road_id;time_in_minutes_from;time_in_minutes_to;speed_kph\n")
-        for record in records:
-            date = record.fcd_time_calc.strftime("%Y-%m-%d")
-            time_in_minutes = record.fcd_time_calc.hour * 60 + record.fcd_time_calc.minute
-            csv.write(f"{date};{record.segment_osm_id};{time_in_minutes};"
-                      f"{time_in_minutes + round_freq_min};{int(record.current_speed * 3.6)}\n")
 
+    create_records(sim_path, round_freq_s, out)
     print(f"Aggregated FCDs are written within '{out}'.")
 
 
