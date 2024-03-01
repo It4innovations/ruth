@@ -199,7 +199,7 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
 
 def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_time: datetime,
                                    gv_db: GlobalViewDb, routing_map: Map, queues_manager: QueuesManager,
-                                   los_vehicles_tolerance):
+                                   los_vehicles_tolerance) -> Tuple[List[FCDRecord], bool]:
     fcds = []
 
     vehicles_moved = False
