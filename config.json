@@ -18,7 +18,7 @@
   },
   "run" :
   {
-    "vehicles-path": "benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet"
+    "vehicles-path": "/mnt/proj2/open-27-41/simulator/ruth/benchmarks/prague/10K_290123.parquet"
   },
   "alternatives" : {
     "dijkstra-fastest": 1.0,
