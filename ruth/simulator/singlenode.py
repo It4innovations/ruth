@@ -55,7 +55,10 @@ class Simulator:
         step = self.sim.number_of_steps
         last_map_update = self.current_offset
 
-        while self.current_offset is not None:
+        MAX_STEP = 10
+        STEP = 0
+        while self.current_offset is not None and STEP < MAX_STEP:
+            STEP += 1
             step_start_dt = datetime.now()
             timer_set = TimerSet()
 
