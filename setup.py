@@ -26,11 +26,10 @@ setup(
             "ruth-simulator = ruth.tools.simulator:main",
             "ruth-simulator-conf = ruth.tools.simulator_conf:main",
             "ruth-data-preprocessing = ruth.tools.preprocessbenchmarkdata:main",
-            "ruth-split-segment-id = ruth.tools.splitsegmentid:main",
-            "ruth-show-gv = ruth.tools.vizglobalview:viz",
             "ruth-traffic-flow-to-od-matrix = ruth.tools.trafficflow2odmatrix:convert",
             "ruth-aggregate-fcd = ruth.tools.globalview2aggregatedfcd:aggregate_cmd",
-            "ruth-od-matrix-to-simulator-input = ruth.tools.odmatrix2simulatorinput:convert"
+            "ruth-od-matrix-to-simulator-input = ruth.tools.odmatrix2simulatorinput:convert",
+            "ruth-combine-od-matrix = ruth.tools.combineodmatrix:combine_odmatrix",
         ]
     }
 )
