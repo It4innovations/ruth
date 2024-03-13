@@ -18,12 +18,12 @@
   },
   "run" :
   {
-    "vehicles-path": "/mnt/proj2/open-27-41/simulator/ruth/benchmarks/prague/10K_290123.parquet"
+    "vehicles-path": "/mnt/proj1/dd-23-154/bbox_parquets/250K_19022024.parquet"
   },
   "alternatives" : {
-    "dijkstra-fastest": 1.0,
+    "dijkstra-fastest": 0.0,
     "dijkstra-shortest": 0.0,
-    "plateau-fastest": 0.0
+    "plateau-fastest": 1.0
   },
   "route-selection" : {
     "first": 1.0,
