@@ -61,9 +61,10 @@ class Simulator:
         last_map_update = self.current_offset
         last_time_moved = self.current_offset
 
-        MAX_STEP = 10
+        #MAX_STEP = 10000
         STEP = 0
-        while self.current_offset is not None and STEP < MAX_STEP:
+        #while self.current_offset is not None and STEP < MAX_STEP:
+        while self.current_offset is not None:
             STEP += 1
             step_start_dt = datetime.now()
             timer_set = TimerSet()
@@ -135,7 +136,7 @@ class Simulator:
 
             step_dur = datetime.now() - step_start_dt
             logger.info(
-                f"{step}. active: {len(vehicles_to_be_moved)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
+                f"{step}. active: {len(vehicles_to_be_moved)}, need_new_route: {len(need_new_route)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
             self.sim.duration += step_dur
 
             if end_step_fns is not None:
@@ -143,7 +144,7 @@ class Simulator:
                     for fn in end_step_fns:
                         fn(self.state)
 
-            self.sim.save_step_info(self.current_offset, step, len(vehicles_to_be_moved), step_dur, timer_set.collect())
+            self.sim.save_step_info(self.current_offset, step, len(vehicles_to_be_moved), step_dur, timer_set.collect(), len(need_new_route))
 
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
