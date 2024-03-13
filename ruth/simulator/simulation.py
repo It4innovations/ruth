@@ -33,6 +33,7 @@ class StepInfo:
     n_active: int
     duration: timedelta
     parts: Dict[str, float]
+    need_new_route: int
 
 
 @dataclass
@@ -141,8 +142,8 @@ class Simulation:
         if offset_threshold is not None:
             self.global_view.drop_old(self.setting.departure_time + offset_threshold)
 
-    def save_step_info(self, step, n_active, duration, parts):
-        self.steps_info.append(StepInfo(step, n_active, duration, parts))
+    def save_step_info(self, step, n_active, duration, parts, need_new_route):
+        self.steps_info.append(StepInfo(step, n_active, duration, parts, need_new_route))
 
     def steps_info_to_dataframe(self):
         if not self.steps_info:
