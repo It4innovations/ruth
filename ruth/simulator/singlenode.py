@@ -139,7 +139,7 @@ class Simulator:
                     for fn in end_step_fns:
                         fn(self.state)
 
-            self.sim.save_step_info(step, len(vehicles_to_be_moved), step_dur, timer_set.collect())
+            self.sim.save_step_info(self.current_offset, step, len(vehicles_to_be_moved), step_dur, timer_set.collect())
 
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
