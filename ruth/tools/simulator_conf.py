@@ -10,8 +10,8 @@ from serde import serde, field, Strict
 from serde.json import from_json
 
 from ..simulator import Simulation
-from .. tools.simulator import (run_inner, AlternativesRatio as AlternativesRatioInner, CommonArgs as CommonArgsInner,
-                                RouteSelectionRatio as RouteSelectionRatioInner)
+from ..tools.simulator import (run_inner, AlternativesRatio as AlternativesRatioInner, CommonArgs as CommonArgsInner,
+                               RouteSelectionRatio as RouteSelectionRatioInner)
 
 
 @serde(rename_all="kebabcase", type_check=Strict)
@@ -52,9 +52,8 @@ class CommonArgs(CommonArgsInner):
     continue_from: Optional[Simulation] = field(serializer=lambda x: x.store("continue-from.pickle"),
                                                 deserializer=lambda x: None if x == "" else Simulation.load(x),
                                                 default=None)
-    disable_stuck_detection: bool = False
+    stuck_detection: int = 0
     plateau_default_route: bool = False
-
 
 
 @serde(rename_all="kebabcase")
