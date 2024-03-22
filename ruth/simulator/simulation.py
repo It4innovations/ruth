@@ -154,9 +154,9 @@ class Simulation:
 
         first = self.steps_info[0]
         return pd.DataFrame(
-            [(si.step, si.n_active, si.duration / timedelta(milliseconds=1), *si.parts.values())
+            [(si.simulation_offset, si.step, si.n_active, si.duration / timedelta(milliseconds=1), *si.parts.values())
              for si in self.steps_info],
-            columns=["step", "n_active", "duration"] + list(first.parts.keys()))
+            columns=["simulation_offset", "step", "n_active", "duration"] + list(first.parts.keys()))
 
     @property
     def last_step(self):
