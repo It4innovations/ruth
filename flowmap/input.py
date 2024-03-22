@@ -2,6 +2,8 @@ from datetime import timedelta
 import numpy as np
 from dataclasses import dataclass, InitVar, field
 from collections import defaultdict
+
+import pandas as pd
 from pandas import to_datetime
 from networkx import MultiDiGraph as Graph
 from typing import NewType
@@ -203,11 +205,17 @@ def add_meters_driven_column(df):
     return df
 
 
-def prepare_dataframe(df, interval):
-    df['timestamp_datetime'] = df['timestamp']
+def round_timestamps(df, speed, fps, column):
     # change timestamp to the number of frame in the animation
-    df['timestamp'] = to_datetime(df['timestamp']).astype(np.int64) // 10 ** 6  # resolution in milliseconds
-    df['timestamp'] = df['timestamp'].div(1000 * interval).round().astype(np.int64)
+    interval = speed / fps
+    df[column] = to_datetime(df[column]).astype(np.int64) // 10 ** 6  # resolution in milliseconds
+    df[column] = df[column].div(1000 * interval).round().astype(np.int64)
+    return df
+
+
+def prepare_dataframe(df, speed, fps):
+    df['timestamp_datetime'] = df['timestamp']
+    df = round_timestamps(df, speed, fps, 'timestamp')
     if 'segment_id' not in df.columns:
         df['segment_id'] = 'OSM' + df['node_from'].astype(str) + 'T' + df['node_to'].astype(str)
 
@@ -217,8 +225,7 @@ def prepare_dataframe(df, interval):
 
 
 def dataframe_to_sorted_records(df, graph, speed, fps):
-    interval = speed / fps
-    df = prepare_dataframe(df, interval)
+    df = prepare_dataframe(df, speed, fps)
     records = [Record(**kwargs, graph=graph) for kwargs in df.to_dict(orient='records')]
     records = sorted(records, key=lambda x: (x.vehicle_id, x.timestamp))
 
@@ -313,3 +320,23 @@ def preprocess_data(df, graph, speed=1, fps=25, divide: int = 2):
                             number_of_finished_vehicles_in_time,
                             total_simulation_time_in_time_s,
                             total_meters_driven_in_time)
+
+
+def calculate_computation_by_simulation_time(steps_info, sim_start_time, max_rounded_timestamp, speed, fps):
+    steps_info = steps_info.loc[:, ['simulation_offset', 'duration']]
+    steps_info['simulation_offset'] = pd.to_timedelta(steps_info['simulation_offset'])
+    steps_info['simulation_time'] = steps_info['simulation_offset'] + sim_start_time
+    steps_info = round_timestamps(steps_info, speed, fps, 'simulation_time')
+
+    steps_info.loc[steps_info.index[-1], 'simulation_time'] = max_rounded_timestamp
+
+    steps_info.sort_values(by='simulation_time', inplace=True)
+    steps_info['computation_time'] = steps_info['duration'].cumsum()
+    steps_info = steps_info.loc[:, ['simulation_time', 'computation_time']]
+
+    min_timestamp, max_timestamp = steps_info['simulation_time'].min(), steps_info['simulation_time'].max()
+    steps_info = steps_info.groupby('simulation_time').max()
+    steps_info = steps_info.reindex(list(range(min_timestamp, max_timestamp + 1)), method='ffill').reset_index()
+
+    computation_by_simulation_time = steps_info.set_index('simulation_time')['computation_time'].to_dict()
+    return computation_by_simulation_time

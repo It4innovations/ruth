@@ -21,7 +21,7 @@ from ruth.simulator import Simulation
 
 from flowmap.ax_settings import AxSettings
 from flowmap.zoom import get_zoom
-from flowmap.input import preprocess_data
+from flowmap.input import preprocess_data, calculate_computation_by_simulation_time
 
 
 def load_file_content(path):
@@ -33,6 +33,10 @@ def round_timedelta(td):
     seconds = td.total_seconds()
     rounded_seconds = round(seconds)
     return timedelta(seconds=rounded_seconds)
+
+
+def timedeltas_to_timestamps(timedeltas: np.array, start_time: datetime) -> np.array:
+    return np.array([start_time + td for td in timedeltas])
 
 
 class SimulationAnimator(ABC):
@@ -85,9 +89,9 @@ class SimulationAnimator(ABC):
             print(f'{k}: {v} ms')
 
     def _load_data(self):
-        sim = Simulation.load(self.simulation_path)
-        self.g = sim.routing_map.network
-        self.sim_history = sim.history.to_dataframe()
+        self.sim = Simulation.load(self.simulation_path)
+        self.g = self.sim.routing_map.network
+        self.sim_history = self.sim.history.to_dataframe()
 
     def _preprocess_data(self):
         preprocessed_data = preprocess_data(self.sim_history, self.g, self.speed, self.fps, self.divide)
@@ -110,6 +114,12 @@ class SimulationAnimator(ABC):
         for seg in preprocessed_data.timed_segments:
             self.timed_seg_dict[seg.timestamp].append(seg)
 
+        self.computation_by_simulation_time = calculate_computation_by_simulation_time(self.sim.steps_info_to_dataframe(),
+                                                                                       self.sim.setting.departure_time,
+                                                                                       max_timestamp,
+                                                                                       self.speed,
+                                                                                       self.fps)
+
     def _set_ax_settings_if_zoom(self):
         if self.zoom:
             print('Use the zoom button to choose an area that will be zoomed in in the animation.')
@@ -119,8 +129,11 @@ class SimulationAnimator(ABC):
     def _get_stats_text(self, timestamp: int):
         simulation_time_formatted = round_timedelta(self.total_simulation_time_in_time_s[timestamp])
         total_km_driven = round(self.total_meters_driven_in_time[timestamp] / 1000, 2)
+        computation_time = timedelta(milliseconds=self.computation_by_simulation_time[timestamp])
+
         return f"Total driving time (sum of all cars): {simulation_time_formatted}\n" \
-               f"Total KMs driven: {total_km_driven} km\n"
+               f"Total KMs driven: {total_km_driven} km\n" \
+               f"Computation time: {computation_time}\n"
 
     def _get_finished_vehicles_text(self, timestamp: int):
         return f'Finished vehicles: {self.number_of_finished_vehicles_in_time[timestamp]} / {self.number_of_vehicles}'
@@ -168,7 +181,7 @@ class SimulationAnimator(ABC):
 
         self.stats_text = plt.figtext(
             0.7,
-            0.05,
+            0.04,
             self._get_stats_text(self.timestamp_from))
 
         self.ax_traffic = self.ax_map.twinx()
