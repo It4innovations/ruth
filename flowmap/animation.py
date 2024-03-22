@@ -40,6 +40,13 @@ def timedeltas_to_timestamps(timedeltas: np.array, start_time: datetime) -> np.a
     return np.array([start_time + td for td in timedeltas])
 
 
+def load_description(path):
+    description = load_file_content(path)
+    if len(description) > 990:
+        print('Warning: description is too long. The end might not be visible in the animation.')
+    return description
+
+
 class SimulationAnimator(ABC):
     def __init__(self, simulation_path, fps, save_path, frame_start, frames_len,
                  width_modif, title, description_path, speed, divide, max_width_count, plot_cars, zoom):
@@ -50,7 +57,7 @@ class SimulationAnimator(ABC):
         self.frames_len = frames_len
         self.width_modif = width_modif
         self.title = title
-        self.description = load_file_content(description_path) if description_path else None
+        self.description = load_description(description_path) if description_path else None
         self.speed = speed
         self.divide = divide
         self.max_width_count = max_width_count
