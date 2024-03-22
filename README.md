@@ -60,8 +60,8 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
       "travel-time-limit-perc": 0.1,
       "ptdr-path" : "",
       "continue-from": "",
-      "disable-stuck-detection": false,
-      "plateau-default-route": true
+      "stuck-detection": 0,
+      "plateau-default-route": false
     },
     "run" :
     {
@@ -130,4 +130,7 @@ csv file with aggregated information about speeds during simulation
   ]
   ```
 #### Stuck detection
-Simulator detects if the simulation is stuck and stops it. The detection is based on all vehicles being in the same position for a certain amount of time and no temporary max speeds are to be updated. It can be turned off by using "--disable-stuck-detection" flag.
+Parameter `stuck-detection` defines the number of round-frequency-s long rounds with no vehicles movement
+that have to pass before the simulation is terminated.  
+The detection is based on all vehicles being in the same position for the whole time no temporary max speeds are to be updated.
+If the parameter is **set to 0**, the detection is **disabled**.

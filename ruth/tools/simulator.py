@@ -36,7 +36,7 @@ class CommonArgs:
     walltime: Optional[timedelta] = None
     saving_interval: Optional[timedelta] = None
     continue_from: Optional[Simulation] = None
-    disable_stuck_detection: bool = True
+    stuck_detection: int = 0
     plateau_default_route: bool = False
 
 
@@ -86,7 +86,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     seed = common_args.seed
     speeds_path = common_args.speeds_path
     sim_state = common_args.continue_from
-    disable_stuck_detection = common_args.disable_stuck_detection
+    stuck_detection = common_args.stuck_detection
     plateau_default_route = common_args.plateau_default_route
 
     # TODO: solve the debug symbol
@@ -95,7 +95,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
             raise ValueError("Either vehicles_path or continue_from must be specified.")
         ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
                         los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
-                        disable_stuck_detection=disable_stuck_detection,
+                        stuck_detection=stuck_detection,
                         plateau_default_route=plateau_default_route)
         vehicles, bbox, download_date = load_vehicles(vehicles_path)
 
@@ -202,8 +202,9 @@ def start_zeromq_cluster(
               help="Time interval in which the state of simulation periodically is saved")
 @click.option("--continue-from", type=click.Path(exists=True),
               help="Path to a saved state of simulation to continue from.")
-@click.option("--disable-stuck-detection", is_flag=True,
-              help="Continue simulation even if all vehicles are stuck.")
+@click.option("--stuck-detection", type=int, default=0,
+              help="Number of round-frequency-s long rounds with no vehicles movement before the simulation is "
+                   "terminated. 0 means no stuck detection.")
 @click.option("--plateau-default-route", is_flag=True,
               help="Recalculate default route to plateau fastest route.")
 @click.pass_context
@@ -222,7 +223,7 @@ def single_node_simulator(ctx,
                           walltime_s,
                           saving_interval_s,
                           continue_from,
-                          disable_stuck_detection,
+                          stuck_detection,
                           plateau_default_route):
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
     ctx.ensure_object(dict)
@@ -247,7 +248,7 @@ def single_node_simulator(ctx,
         walltime=walltime,
         saving_interval=saving_interval,
         continue_from=sim_state,
-        disable_stuck_detection=disable_stuck_detection,
+        stuck_detection=stuck_detection,
         plateau_default_route=plateau_default_route,
     )
 

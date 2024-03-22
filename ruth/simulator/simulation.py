@@ -65,7 +65,7 @@ class SimSetting:
     travel_time_limit_perc: float = 0.0
     seed: InitVar = None
     speeds_path: str = None
-    disable_stuck_detection: bool = True
+    stuck_detection: int = 0
     plateau_default_route: bool = False
 
     def __post_init__(self, seed):

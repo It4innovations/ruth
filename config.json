@@ -13,8 +13,8 @@
     "saving-interval-s" : 100,
     "speeds-path" : "",
     "continue-from": "",
-    "disable-stuck-detection": false,
-    "plateau-default-route": true
+    "stuck-detection": 0,
+    "plateau-default-route": false
   },
   "run" :
   {
