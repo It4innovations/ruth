@@ -2,7 +2,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Callable, List, Optional, Tuple
 
-from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithPlans, AlternativeRoutes
+from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithPlans, AlternativeRoutes, \
+    ZeroMQDistributedAlternatives
 from .route import advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
 from ..data.map import Map
@@ -52,6 +53,10 @@ class Simulator:
         for alternatives_provider in alternatives_providers:
             alternatives_provider.load_map(self.sim.routing_map)
 
+            if self.sim.setting.plateau_default_route:
+                if isinstance(alternatives_provider, ZeroMQDistributedAlternatives):
+                    self.change_baseline_alternatives(self.sim.vehicles, alternatives_provider)
+
         step = self.sim.number_of_steps
         last_map_update = self.current_offset
         last_time_moved = self.current_offset
@@ -62,9 +67,10 @@ class Simulator:
 
             offset = self.sim.round_time_offset(self.current_offset)
 
-            if not self.sim.setting.disable_stuck_detection:
+            if self.sim.setting.stuck_detection:
                 # check if the simulation is stuck
-                if (self.current_offset - last_time_moved) >= (self.sim.setting.round_freq * 4):
+                if ((self.current_offset - last_time_moved) >=
+                        (self.sim.setting.round_freq * self.sim.setting.stuck_detection)):
                     logger.error(
                         f"The simulation is stuck at {self.current_offset}.")
                     break
@@ -134,7 +140,7 @@ class Simulator:
                     for fn in end_step_fns:
                         fn(self.state)
 
-            self.sim.save_step_info(step, len(vehicles_to_be_moved), step_dur, timer_set.collect())
+            self.sim.save_step_info(self.current_offset, step, len(vehicles_to_be_moved), step_dur, timer_set.collect())
 
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
@@ -149,6 +155,25 @@ class Simulator:
                                             self.sim.routing_map,
                                             self.sim.queues_manager,
                                             self.sim.setting.los_vehicles_tolerance)
+
+    def change_baseline_alternatives(self,
+                                     vehicles: List[Vehicle],
+                                     alternatives_provider: AlternativesProvider):
+        vehicles = [v for v in vehicles if v.osm_route is not None]
+        logger.info(f"Computing default routes with {alternatives_provider.vehicle_behaviour}")
+        alts = alternatives_provider.compute_alternatives(
+            vehicles,
+            k=1
+        )
+        assert len(vehicles) == len(alts)
+
+        for vehicle, alt in zip(vehicles, alts):
+            if alt is not None and alt != []:
+                vehicle.update_followup_route(alt[0], self.sim.routing_map, travel_time_limit_perc=None)
+            else:
+                vehicle.osm_route = None
+                vehicle.active = False
+                vehicle.status = "no plateau route"
 
 
 def compute_alternatives(routing_map: Map,

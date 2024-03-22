@@ -29,6 +29,7 @@ class FCDRecord:
 
 @dataclass
 class StepInfo:
+    simulation_offset: timedelta
     step: int
     n_active: int
     duration: timedelta
@@ -64,7 +65,8 @@ class SimSetting:
     travel_time_limit_perc: float = 0.0
     seed: InitVar = None
     speeds_path: str = None
-    disable_stuck_detection: bool = True
+    stuck_detection: int = 0
+    plateau_default_route: bool = False
 
     def __post_init__(self, seed):
         if seed is not None:
@@ -100,7 +102,8 @@ class Simulation:
     def __getstate__(self):
         d = self.__dict__.copy()
         d.pop("routing_map")
-        d.pop("global_view")
+        if "global_view" in d:
+            d.pop("global_view")
         return d
 
     def __setstate__(self, d):
@@ -142,8 +145,8 @@ class Simulation:
         if offset_threshold is not None:
             self.global_view.drop_old(self.setting.departure_time + offset_threshold)
 
-    def save_step_info(self, step, n_active, duration, parts):
-        self.steps_info.append(StepInfo(step, n_active, duration, parts))
+    def save_step_info(self, simulation_offset, step, n_active, duration, parts):
+        self.steps_info.append(StepInfo(simulation_offset, step, n_active, duration, parts))
 
     def steps_info_to_dataframe(self):
         if not self.steps_info:
@@ -151,9 +154,9 @@ class Simulation:
 
         first = self.steps_info[0]
         return pd.DataFrame(
-            [(si.step, si.n_active, si.duration / timedelta(milliseconds=1), *si.parts.values())
+            [(si.simulation_offset, si.step, si.n_active, si.duration / timedelta(milliseconds=1), *si.parts.values())
              for si in self.steps_info],
-            columns=["step", "n_active", "duration"] + list(first.parts.keys()))
+            columns=["simulation_offset", "step", "n_active", "duration"] + list(first.parts.keys()))
 
     @property
     def last_step(self):
