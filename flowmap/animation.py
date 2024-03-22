@@ -21,7 +21,8 @@ from ruth.simulator import Simulation
 
 from flowmap.ax_settings import AxSettings
 from flowmap.zoom import get_zoom
-from flowmap.input import preprocess_data, calculate_computation_by_simulation_time
+from flowmap.input import preprocess_data, calculate_computation_by_simulation_time, prepare_dataframe, \
+    calculate_active_vehicles_in_time
 
 
 def load_file_content(path):
@@ -94,7 +95,9 @@ class SimulationAnimator(ABC):
         self.sim_history = self.sim.history.to_dataframe()
 
     def _preprocess_data(self):
-        preprocessed_data = preprocess_data(self.sim_history, self.g, self.speed, self.fps, self.divide)
+        df = prepare_dataframe(self.sim_history, self.speed, self.fps)
+        self.active_vehicles_in_time = calculate_active_vehicles_in_time(df)
+        preprocessed_data = preprocess_data(df, self.g, self.divide)
         self.segments = preprocessed_data.segments
         self.number_of_vehicles = preprocessed_data.number_of_vehicles
         self.number_of_finished_vehicles_in_time = preprocessed_data.number_of_finished_vehicles_in_time
@@ -136,7 +139,9 @@ class SimulationAnimator(ABC):
                f"Computation time: {computation_time}\n"
 
     def _get_finished_vehicles_text(self, timestamp: int):
-        return f'Finished vehicles: {self.number_of_finished_vehicles_in_time[timestamp]} / {self.number_of_vehicles}'
+        return \
+            f'Finished vehicles: {self.number_of_finished_vehicles_in_time[timestamp]} / {self.number_of_vehicles}\n' \
+            f'Active vehicles: {self.active_vehicles_in_time[timestamp]}'
 
     def _prepare_base_map(self):
         mpl.use('Agg')
@@ -163,10 +168,10 @@ class SimulationAnimator(ABC):
 
         self.finished_vehicles_text = plt.figtext(
             0.7,
-            0.09,
+            0.08,
             self._get_finished_vehicles_text(self.timestamp_from),
             ha='left',
-            fontsize=20)
+            fontsize=15)
 
         if self.description:
             txt = plt.figtext(
@@ -181,7 +186,7 @@ class SimulationAnimator(ABC):
 
         self.stats_text = plt.figtext(
             0.7,
-            0.04,
+            0.03,
             self._get_stats_text(self.timestamp_from))
 
         self.ax_traffic = self.ax_map.twinx()

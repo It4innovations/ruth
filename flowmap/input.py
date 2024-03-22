@@ -224,8 +224,7 @@ def prepare_dataframe(df, speed, fps):
     return df
 
 
-def dataframe_to_sorted_records(df, graph, speed, fps):
-    df = prepare_dataframe(df, speed, fps)
+def dataframe_to_sorted_records(df, graph):
     records = [Record(**kwargs, graph=graph) for kwargs in df.to_dict(orient='records')]
     records = sorted(records, key=lambda x: (x.vehicle_id, x.timestamp))
 
@@ -240,7 +239,7 @@ def is_last_record_for_vehicle(processing_record, next_record):
     return next_record is None or processing_record.vehicle_id != next_record.vehicle_id
 
 
-def preprocess_data(df, graph, speed=1, fps=25, divide: int = 2):
+def preprocess_data(df, graph, divide: int = 2):
     assert (
             divide >= 2
     ), f"Invalid value of divide '{divide}'. It must be greater or equal to 2."
@@ -251,7 +250,7 @@ def preprocess_data(df, graph, speed=1, fps=25, divide: int = 2):
     number_of_finished_vehicles_in_time = defaultdict(int)
     total_simulation_time_in_time_s = defaultdict(lambda: timedelta(0))
     total_meters_driven_in_time = defaultdict(int)
-    records = dataframe_to_sorted_records(df, graph, speed, fps)
+    records = dataframe_to_sorted_records(df, graph)
 
     for i, (processing_record, next_record) in enumerate(
             zip(records[:], records[1:] + [None])
@@ -340,3 +339,8 @@ def calculate_computation_by_simulation_time(steps_info, sim_start_time, max_rou
 
     computation_by_simulation_time = steps_info.set_index('simulation_time')['computation_time'].to_dict()
     return computation_by_simulation_time
+
+
+def calculate_active_vehicles_in_time(df):
+    df = df.groupby('timestamp')['vehicle_id'].count()
+    return df.to_dict()
