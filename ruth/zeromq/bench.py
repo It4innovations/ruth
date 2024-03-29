@@ -1,5 +1,5 @@
-import itertools
 import logging
+
 import pandas as pd
 import time
 import json
@@ -7,16 +7,12 @@ import socket
 import subprocess
 import os
 import sys
-import signal
 
 from typing import List
 from pathlib import Path
-from collections import defaultdict
 from contextlib import closing
 from dataclasses import dataclass
 from cluster.cluster import Cluster, start_process
-from cluster import cluster
-from src.client import Client
 
 
 def get_pbs_nodes() -> List[str]:
@@ -60,7 +56,7 @@ def run(workers: int,
         EVKIT_PATH: str,
         MODULES: List[str],
         ENV_PATH,
-        try_to_kill:bool):
+        try_to_kill: bool):
     """
     Run the workers in a distributed fashion by spawning them on multiple host(s), nodes.
     workers: int    = amount of workers
