@@ -40,7 +40,6 @@ distributed spawning of workers accross nodes.
 In order to run the simulation in distributed fashion we can use ```bench.py```, specifically function ```run```.
 For correct incorporation of nodes spawned and configuration this function has to be used inside ```ruth```, otherwise 
 we may simply use ```bench.py``` and edit it's parameters since it spawns the ```run``` with following parameters:
-
 ```
 WORK_DIR = Path(os.getcwd()).absolute()
 WORKER_DIR = WORK_DIR / str(sys.argv[1])
@@ -60,6 +59,10 @@ workers = 32
 try_to_kill = False
 
 run(...)
+```
+Or run the command:
+```
+ruth-distributed EXPERIMENT_NAME EVKIT_DIR_PATH --config-file="config.json" --workers=32
 ```
 
 ## Submitting a job
