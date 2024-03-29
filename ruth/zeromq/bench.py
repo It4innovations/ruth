@@ -1,5 +1,5 @@
+import itertools
 import logging
-
 import pandas as pd
 import time
 import json
@@ -7,12 +7,16 @@ import socket
 import subprocess
 import os
 import sys
+import signal
 
 from typing import List
 from pathlib import Path
+from collections import defaultdict
 from contextlib import closing
 from dataclasses import dataclass
 from cluster.cluster import Cluster, start_process
+from cluster import cluster
+from src.client import Client
 
 
 def get_pbs_nodes() -> List[str]:
@@ -56,16 +60,18 @@ def run(workers: int,
         EVKIT_PATH: str,
         MODULES: List[str],
         ENV_PATH,
-        try_to_kill: bool):
+        try_to_kill:bool,
+        spawn_workers_at_main_node:bool):
     """
     Run the workers in a distributed fashion by spawning them on multiple host(s), nodes.
-    workers: int    = amount of workers
-    WORKER_DIR      = where the workers will be stored
-    CONFIG_FILE     = path to config file (from ruth)
-    EVKIT_PATH      = path to evkit
-    MODULES         = modules used in order to spawn workers
-    ENV_PATH        = path to the environment
-    try_to_kill     = Experimental, tries to kill workers after simulation is computed
+    workers                     = amount of workers
+    WORKER_DIR                  = where the workers will be stored
+    CONFIG_FILE                 = path to config file (from ruth)
+    EVKIT_PATH                  = path to evkit
+    MODULES                     = modules used in order to spawn workers
+    ENV_PATH                    = path to the environment
+    try_to_kill                 = experimental, tries to kill workers after simulation is computed
+    spawn_workers_at_main_node  = experimental, spawns workers at the same node where main process is located
 
     Problem:
     Killing workers may result in error due to rights (connected to cluster library)
@@ -112,66 +118,70 @@ def run(workers: int,
         time.sleep(0.25)
     print("Worker built")
 
-    for w in range(workers):
-        try:
-            cluster_data = Cluster(str(WORK_DIR))
-            print(f"Saving to: {WORKER_DIR}")
-            print(f"Environment in: {ENV_PATH}")
-            print(f"Running client at: {CLIENT_ADDRESS}")
-            output = WORKER_DIR / f"workers_{w}"
+    # Include spawning of workers on same node
+    if spawn_workers_at_main_node == True:
+        starting_node = 0
+    else:
+        starting_node = 1
+        
+    try:
+        cluster_data = Cluster(str(WORK_DIR))
+        print(f"Saving to: {WORKER_DIR}")
+        print(f"Environment in: {ENV_PATH}")
+        print(f"Running client at: {CLIENT_ADDRESS}")
+        output = WORKER_DIR / f"workers_{workers}"
 
-            for n in range(1, len(hosts)):
-                HOST_ADDRESS = hosts[n]
+        for n in range(starting_node, len(hosts)):
+            HOST_ADDRESS = hosts[n]
 
-                for i in range(w):
-                    print(f"Creating worker {i} at host {HOST_ADDRESS}")
-                    worker_dir = output / f"node_{n}" / f"worker_{i}"
-                    worker_dir.mkdir(parents=True, exist_ok=True)
-                    worker_process = start_process(
-                        commands=[
-                            f"{target_dir}/target/release/worker run {CLIENT_ADDRESS}:{port} {CLIENT_ADDRESS}:{management_port}"],
-                        workdir=str(worker_dir),
-                        env={"RUST_LOG": "debug"},
-                        pyenv=str(ENV_PATH),
-                        modules=MODULES,
-                        hostname=HOST_ADDRESS,
-                        name=f"worker_{i}"
-                    )
-                    time.sleep(1)
-                    cluster_data.add(worker_process)
+            for i in range(workers):
+                print(f"Creating worker {i} at host {HOST_ADDRESS}")
+                worker_dir = output / f"node_{n}" / f"worker_{i}"
+                worker_dir.mkdir(parents=True, exist_ok=True)
+                worker_process = start_process(
+                    commands=[
+                        f"{target_dir}/target/release/worker run {CLIENT_ADDRESS}:{port} {CLIENT_ADDRESS}:{management_port}"],
+                    workdir=str(worker_dir),
+                    env={"RUST_LOG": "debug"},
+                    pyenv=str(ENV_PATH),
+                    modules=MODULES,
+                    hostname=HOST_ADDRESS,
+                    name=f"worker_{i}"
+                )
+                time.sleep(1)
+                cluster_data.add(worker_process)
 
-            # Wait for workers to be spawned
-            time.sleep(30)
+        # Wait for workers to be spawned
+        time.sleep(30)
 
-            # Start main
-            main_dir = output / f"main"
-            main_dir.mkdir(parents=True, exist_ok=True)
-            main_process = start_process(
-                commands=[f"ruth-simulator-conf --config-file={CONFIG_FILE} run"],
-                workdir=str(main_dir),
-                pyenv=str(ENV_PATH),
-                env={"port": port},
-                modules=MODULES,
-                hostname=CLIENT_ADDRESS,
-                name=f"main"
-            )
-            cluster_data.add(main_process)
+        # Start main
+        main_dir = output / f"main"
+        main_dir.mkdir(parents=True, exist_ok=True)
+        main_process = start_process(
+            commands=[f"ruth-simulator-conf --config-file={CONFIG_FILE} run"],
+            workdir=str(main_dir),
+            pyenv=str(ENV_PATH),
+            env={"port": port},
+            modules=MODULES,
+            hostname=CLIENT_ADDRESS,
+            name=f"main"
+        )
+        cluster_data.add(main_process)
 
-            # Start timer since we're running simulation
-            start = time.time()
-            print("Runing the main computation")
-            while is_running(main_process.pid):
-                time.sleep(0.25)
-            end = time.time()
-            duration = end - start
-            print(f"Workers per node: {w}, Nodes: {len(hosts) - 1}, computation time: {duration}")
-            if try_to_kill == True:
-                cluster_data.kill()
-            return RunResult(repeat=0, output=output, duration=duration)
+        # Start timer since we're running simulation
+        start = time.time()
+        print("Runing the main computation")
+        while is_running(main_process.pid):
+            time.sleep(0.25)
+        end = time.time()
+        duration = end - start
+        print(f"Workers per node: {workers}, Nodes: {len(hosts) - 1}, computation time: {duration}")
+        if try_to_kill == True:
+            cluster_data.kill()
+        return RunResult(repeat=0, output=output, duration=duration)
 
-        except Exception as e:
-            print(e)
-            continue
+    except Exception as e:
+        print(e)
 
 
 def bench(hosts: List[str], WORKER_DIR) -> RunResult:
@@ -293,6 +303,7 @@ if __name__ == "__main__":
     hosts = get_slurm_nodes()
     workers = 32
     try_to_kill = False
+    spawn_workers_at_main_node = False
 
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(module)s:%(levelname)s %(message)s")
 
@@ -304,7 +315,8 @@ if __name__ == "__main__":
         EVKIT_PATH=EVKIT_PATH,
         MODULES=MODULES,
         ENV_PATH=ENV_PATH,
-        try_to_kill=try_to_kill
+        try_to_kill=try_to_kill,
+        spawn_workers_at_main_node=spawn_workers_at_main_node
     )
     # result = bench(nodes, WORKER_DIR)
 
