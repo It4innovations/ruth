@@ -370,7 +370,8 @@ def create_alternatives_providers(alternatives_ratio: AlternativesRatio,
     if alternatives_ratio.dijkstra_shortest > 0:
         providers.append(ShortestPathsAlternatives())
     if alternatives_ratio.plateau_fastest > 0 or plateu_default_route:
-        providers.append(ZeroMQDistributedAlternatives(client=zmq_ctx.get_or_create_client(port=int(os.environ['port']))))
+        port = int(os.environ['port']) if 'port' in os.environ else 5555
+        providers.append(ZeroMQDistributedAlternatives(client=zmq_ctx.get_or_create_client(port=port)))
     return providers
 
 
