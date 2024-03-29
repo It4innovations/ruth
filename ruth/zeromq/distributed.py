@@ -10,14 +10,15 @@ from ..zeromq.bench import get_slurm_nodes, run
 
 
 @click.command()
-@click.argument("worker-dir", type=str)
-@click.argument("evkit-path", type=click.Path(exists=True))
+@click.argument("experiment-name", type=str)
+@click.argument("evkit-dir-path", type=click.Path(exists=True))
 @click.option("--config-file", type=click.Path(exists=True), help="Path to simulation config.", default="config.json")
 @click.option("--workers", type=int, default=32, help="Number of workers. Default 32.")
+@click.option("--spawn-workers-at-main-node", is_flag=True, help="Spawn workers at main node.")
 @click.option("--try-to-kill", is_flag=True, help="Try to kill workers after simulation is computed.")
-def distributed(worker_dir, evkit_path, config_file, workers, try_to_kill):
+def distributed(experiment_name, evkit_path, config_file, workers, spawn_workers_at_main_node, try_to_kill):
     work_dir = Path(os.getcwd()).absolute()
-    worker_dir = work_dir / worker_dir
+    worker_dir = work_dir / experiment_name
     env_path = os.environ["VIRTUAL_ENV"]
     modules = [
         "Python/3.10.8-GCCcore-12.2.0",
@@ -39,7 +40,8 @@ def distributed(worker_dir, evkit_path, config_file, workers, try_to_kill):
         EVKIT_PATH=evkit_path,
         MODULES=modules,
         ENV_PATH=env_path,
-        try_to_kill=try_to_kill
+        try_to_kill=try_to_kill,
+        spawn_workers_at_main_node=spawn_workers_at_main_node
     )
     # result = bench(nodes, WORKER_DIR)
 
