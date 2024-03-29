@@ -18,7 +18,7 @@
   },
   "run" :
   {
-    "vehicles-path": "/mnt/proj1/dd-23-154/bbox_parquets/250K_19022024.parquet"
+    "vehicles-path": "benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet"
   },
   "alternatives" : {
     "dijkstra-fastest": 0.0,

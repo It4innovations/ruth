@@ -84,6 +84,8 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
     ``` sh
     ruth-simulator --departure-time="2021-06-16 07:00:00" --k-alternatives=4 --out=simulation_record.pickle --seed=7 run INPUT-od-matrix-10-vehicles-town-resolution.parquet  --alt-dijkstra-fastest=0.3 --alt-plateau-fastest=0.0 --selection-first=0.3 --selection-random=0.0 --selection-ptdr=0.0
     ```
+### Distributed run
+More information about distributed run can be found in **ruth/zeromq/README.md**.
 
 ### Options
 For the Alternatives and Route selection, percentages of vehicles can be set for each type. The sum of percentages for Alternatives has to be equal to the sum for Route Selection. If the percentages don't add up to 1, no alternatives are calculated for the remaining vehicles and they stick to their original route that is in the input parquet file.
@@ -91,6 +93,8 @@ For the Alternatives and Route selection, percentages of vehicles can be set for
 - shortest-paths networkx implementation of dijkstra algorithm using route length as weight
 - fastest-paths: networkx implementation of dijkstra algorithm using current-travel-time as weight
 - distributed: cpp implementation of Plateau algorithm
+  - provided by [evkit](https://code.it4i.cz/everest/evkit)
+  - ports either taken from the environment or set to 5555 and 5556.
   - **plateau-default-route**: flag to recalculate the default route with Plateau algorithm
 #### Route selection
 - first: uses the first from found alternatives
