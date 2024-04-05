@@ -424,11 +424,16 @@ def run(ctx,
         ptdr=selection_ptdr
     )
 
-    run_inner(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+    ctx.obj['simulation_finished'] = run_inner(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
 
 
 def run_inner(common_args: CommonArgs, vehicles_path: Path,
-              alternatives_ratio, route_selection_ratio):
+              alternatives_ratio, route_selection_ratio) -> bool:
+    """
+    Create simulation with given parameters.
+
+    :return: True if the simulation finished, False otherwise.
+    """
     out = common_args.out
     walltime = common_args.walltime
     saving_interval = common_args.saving_interval
@@ -461,7 +466,9 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
         route_selection_providers=route_selection_providers,
         end_step_fns=end_step_fns,
     )
-    simulator.state.store(out)
+    simulation = simulator.state
+    simulation.store(out)
+    return simulation.finished()
 
 
 def main():
