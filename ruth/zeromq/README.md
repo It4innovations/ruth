@@ -82,3 +82,42 @@ ml Boost/1.81.0-GCC-12.2.0
 source VENV_PATH
 python3 bench.py EXPERIMENT_NAME
 ```
+
+## Running benchmark
+Benchmark is using run as a background process in order to execute all experiments.
+Example of running a benchmark can be seen below:
+```
+WORK_DIR = Path(os.getcwd()).absolute()
+WORKER_DIR = WORK_DIR / "bench_example"
+ENV_PATH = os.environ["VIRTUAL_ENV"]
+MODULES = [
+    "Python/3.10.8-GCCcore-12.2.0",
+    "GCC/12.2.0",
+    "SQLite/3.39.4-GCCcore-12.2.0",
+    "HDF5/1.14.0-gompi-2022b",
+    "CMake/3.24.3-GCCcore-12.2.0",
+    "Boost/1.81.0-GCC-12.2.0"
+]
+CONFIG_FILE = "/mnt/proj2/open-27-41/simulator/ruth/config.json"
+EVKIT_PATH = "/mnt/proj2/open-27-41/simulator/evkit"
+hosts = get_slurm_nodes()
+workers = [1, 2]
+try_to_kill = False
+spawn_workers_at_main_node = False
+repeats = 1
+
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(module)s:%(levelname)s %(message)s")
+
+result = bench(
+    workers=workers,
+    hosts=hosts,
+    OUTPUT_DIR=WORKER_DIR,
+    CONFIG_FILE=CONFIG_FILE,
+    EVKIT_PATH=EVKIT_PATH,
+    MODULES=MODULES,
+    ENV_PATH=ENV_PATH,
+    try_to_kill=try_to_kill,
+    spawn_workers_at_main_node=spawn_workers_at_main_node,
+    repeats=1
+)
+```
