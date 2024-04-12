@@ -24,36 +24,24 @@ def cli():
 
 
 def click_animation_options(function):
-    function = click.option('--fps', '-f', default=25, help="Set video frames per second.", show_default=True)(function)
+    function = click.option('--fps', '-f', default=25, type=int, help="Set video frames per second.",
+                            show_default=True)(function)
     function = click.option('--save-path', default='', help="Path to the folder for the output video.")(function)
-    function = click.option('--frame-start', default=0, help="Number of frames to skip before plotting.")(function)
-    function = click.option('--frames-len', help="Number of frames to plot")(function)
-    function = click.option(
-        '--width-modif',
-        default=10,
-        type=click.IntRange(2, 200, clamp=True),
-        show_default=True,
-        help="Adjust width."
-    )(function)
+    function = click.option('--frame-start', default=0, type=int,
+                            help="Number of frames to skip before plotting.")(function)
+    function = click.option('--frames-len', type=int, help="Number of frames to plot")(function)
+    function = click.option('--width-modif', default=10, type=click.IntRange(2, 200, clamp=True), show_default=True,
+                            help="Adjust width.")(function)
     function = click.option('--title', '-t', default='', help="Set video title")(function)
     function = click.option('--description-path', default='', help="Path to the file with description to be added to "
                                                                    "the video.")(function)
-    function = click.option('--speed', '-s', help="Set video speed.")(function)
-    function = click.option(
-        '--divide',
-        '-d',
-        default=2,
-        help="Into how many parts will each segment be split.",
-        show_default=True
-    )(function)
-    function = click.option(
-        '--max-width-count',
-        '-m',
-        default=None,
-        help="Number of vehicles that corresponds to the maximum width of the segment. If not specified, it will be set "
-                "dynamically according to the data.",
-        show_default=True
-    )(function)
+    function = click.option('--speed', '-s', type=int, help="Set video speed.")(function)
+    function = click.option('--divide', '-d', default=2, type=int,
+                            help="Into how many parts will each segment be split.", show_default=True)(function)
+    function = click.option('--max-width-count', '-m', default=None, type=int,
+                            help="Number of vehicles that corresponds to the maximum width of the segment. If not "
+                                 "specified, it will be set dynamically according to the data.",
+                            show_default=True)(function)
     function = click.option('--plot-cars', '-c', is_flag=True, help="Visualize cars on the map.")(function)
     function = click.option('--zoom', '-z', is_flag=True, help="Choose zoom manually.")(function)
     return function
