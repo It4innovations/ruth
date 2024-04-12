@@ -23,8 +23,7 @@ def cli():
     pass
 
 
-def click_animation_common(function):
-    function = click.argument('simulation_path')(function)
+def click_animation_options(function):
     function = click.option('--fps', '-f', default=25, help="Set video frames per second.", show_default=True)(function)
     function = click.option('--save-path', default='', help="Path to the folder for the output video.")(function)
     function = click.option('--frame-start', default=0, help="Number of frames to skip before plotting.")(function)
@@ -39,7 +38,7 @@ def click_animation_common(function):
     function = click.option('--title', '-t', default='', help="Set video title")(function)
     function = click.option('--description-path', default='', help="Path to the file with description to be added to "
                                                                    "the video.")(function)
-    function = click.option('--speed', '-s', default=1, help="Set video speed.")(function)
+    function = click.option('--speed', '-s', help="Set video speed.")(function)
     function = click.option(
         '--divide',
         '-d',
@@ -57,6 +56,12 @@ def click_animation_common(function):
     )(function)
     function = click.option('--plot-cars', '-c', is_flag=True, help="Visualize cars on the map.")(function)
     function = click.option('--zoom', '-z', is_flag=True, help="Choose zoom manually.")(function)
+    return function
+
+
+def click_animation_common(function):
+    function = click.argument('simulation_path')(function)
+    function = click_animation_options(function)
     return function
 
 
