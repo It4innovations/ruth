@@ -6,6 +6,7 @@ import socket
 import subprocess
 import os
 import sys
+import dataclasses
 
 from typing import List
 from pathlib import Path
@@ -30,6 +31,14 @@ def find_free_port() -> int:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return s.getsockname()[1]
 
+def is_port_open(port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(2)
+    try:
+        s.connect(("", port)) 
+        return True
+    except:
+        return False
 
 def is_running(pid):
     """ Check For the existence of a unix pid. """
@@ -71,9 +80,12 @@ def run(workers: int,
     Potential Issue:
     -   Killing workers may result in error due to rights (connected to cluster library)
     """
-    # Find open port
-    port = find_free_port()
-    management_port = port + 1
+    # Find open ports
+    while True:
+        port = find_free_port()
+        management_port = find_free_port()
+        if port != management_port:
+            break
 
     # Set Client
     CLIENT_ADDRESS = hosts[0]
@@ -85,6 +97,7 @@ def run(workers: int,
     build_process = start_process(
         commands=[f"cargo build --release --features alternatives,rpath --manifest-path {EVKIT_PATH}/Cargo.toml"],
         workdir=str(target_dir),
+        env={"RUST_LOG": "debug"},
         pyenv=str(ENV_PATH),
         modules=MODULES,
         hostname=CLIENT_ADDRESS,
@@ -110,9 +123,11 @@ def run(workers: int,
         print(f"Running client at: {CLIENT_ADDRESS}")
         output = WORKER_DIR / f"workers_{workers}"
 
+        start_time = time.time()
         for n in range(starting_node, len(hosts)):
             HOST_ADDRESS = hosts[n]
 
+            #start_time = time.time()
             for i in range(workers):
                 print(f"Creating worker {i} at host {HOST_ADDRESS}")
                 worker_dir = output / f"node_{n}" / f"worker_{i}"
@@ -127,23 +142,27 @@ def run(workers: int,
                     hostname=HOST_ADDRESS,
                     name=f"worker_{i}"
                 )
-                time.sleep(1)
+                #time.sleep(1)
                 cluster_data.add(worker_process)
 
-        # Wait for workers to be spawned
-        time.sleep(30)
+        # Wait for workers to be spawned => Inside Client
+        time.sleep(60)
+        end_time = time.time()
+        total_time = end_time - start_time
+        print(f"Spawning of workers took: {total_time}")
 
         # Start main
+        start = time.time()
         main_dir = output / f"main"
         main_dir.mkdir(parents=True, exist_ok=True)
         main_process = start_process(
-            commands=[f"ruth-simulator-conf --config-file={CONFIG_FILE} run"],
-            workdir=str(main_dir),
-            pyenv=str(ENV_PATH),
-            env={"port": port},
-            modules=MODULES,
-            hostname=CLIENT_ADDRESS,
-            name=f"main"
+           commands=[f"ruth-simulator-conf --config-file={CONFIG_FILE} run"],
+           workdir=str(main_dir),
+           pyenv=str(ENV_PATH),
+           env={"port": port, "broadcast_port": management_port},
+           modules=MODULES,
+           hostname=CLIENT_ADDRESS,
+           name=f"main"
         )
         cluster_data.add(main_process)
 
@@ -160,7 +179,7 @@ def run(workers: int,
 
         # Save to file and return info about run
         result = RunResult(repeat=0, output=output, duration=duration)
-        json_data = json.dumps(results)
+        json_data = json.dumps(dataclasses.asdict(result))
         df = pd.read_json(json_data)
         df.to_csv(f"{WORKER_DIR}/results.csv", index=False)
         return result
@@ -216,7 +235,7 @@ def bench(workers: List[int],
         management_port = port + 1
 
         for w in workers:
-            WORKER_DIR = OUTPUT_DIR / str(w)
+            WORKER_DIR = OUTPUT_DIR / str(r) / str(w)
             try:
                 result = run(w, hosts, WORKER_DIR, CONFIG_FILE, EVKIT_PATH, MODULES, ENV_PATH, try_to_kill, spawn_workers_at_main_node)
                 results.append(result)
@@ -226,7 +245,7 @@ def bench(workers: List[int],
                 continue
 
     # Save
-    json_data = json.dumps(results)
+    json_data = json.dumps(dataclasses.asdict(result))
     df = pd.read_json(json_data)
     df.to_csv(f"{OUTPUT_DIR}/results.csv", index=False)
 
