@@ -353,10 +353,10 @@ class ZeroMqContext:
     def __init__(self):
         self.clients = {}
 
-    def get_or_create_client(self, port: int) -> Client:
+    def get_or_create_client(self, port: int, broadcast_port: int) -> Client:
         if port not in self.clients:
-            assert (port + 1) not in self.clients
-            self.clients[port] = Client(port=port, broadcast_port=port + 1)
+            assert broadcast_port not in self.clients
+            self.clients[port] = Client(port=port, broadcast_port=broadcast_port)
         return self.clients[port]
 
 
@@ -371,7 +371,9 @@ def create_alternatives_providers(alternatives_ratio: AlternativesRatio,
         providers.append(ShortestPathsAlternatives())
     if alternatives_ratio.plateau_fastest > 0 or plateu_default_route:
         port = int(os.environ['port']) if 'port' in os.environ else 5555
-        providers.append(ZeroMQDistributedAlternatives(client=zmq_ctx.get_or_create_client(port=port)))
+        brodcast_port = int(os.environ['broadcast_port']) if 'broadcast_port' in os.environ else 5556
+        providers.append(ZeroMQDistributedAlternatives(
+            client=zmq_ctx.get_or_create_client(port=port, broadcast_port=brodcast_port)))
     return providers
 
 
@@ -384,7 +386,7 @@ def create_route_selection_providers(route_selection_ratio: RouteSelectionRatio,
     if route_selection_ratio.random > 0:
         providers.append(RandomRouteSelection(seed))
     if route_selection_ratio.ptdr > 0:
-        providers.append(ZeroMQDistributedPTDRRouteSelection(client=zeromq_ctx.get_or_create_client(5555)))
+        providers.append(ZeroMQDistributedPTDRRouteSelection(client=zeromq_ctx.get_or_create_client(5555, 5556)))
 
     return providers
 
