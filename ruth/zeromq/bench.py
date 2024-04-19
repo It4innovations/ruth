@@ -31,14 +31,16 @@ def find_free_port() -> int:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return s.getsockname()[1]
 
+
 def is_port_open(port):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(2)
     try:
-        s.connect(("", port)) 
+        s.connect(("", port))
         return True
     except:
         return False
+
 
 def is_running(pid):
     """ Check For the existence of a unix pid. """
@@ -59,13 +61,14 @@ class RunResult:
 
 def run(workers: int,
         hosts: List[str],
+        WORK_DIR,
         WORKER_DIR,
         CONFIG_FILE: str,
         EVKIT_PATH: str,
         MODULES: List[str],
         ENV_PATH,
-        try_to_kill:bool,
-        spawn_workers_at_main_node:bool):
+        try_to_kill: bool,
+        spawn_workers_at_main_node: bool):
     """
     Run the workers in a distributed fashion by spawning them on multiple host(s), nodes.
     workers                     = amount of workers
@@ -115,7 +118,7 @@ def run(workers: int,
         starting_node = 0
     else:
         starting_node = 1
-        
+
     try:
         cluster_data = Cluster(str(WORK_DIR))
         print(f"Saving to: {WORKER_DIR}")
@@ -156,13 +159,13 @@ def run(workers: int,
         main_dir = output / f"main"
         main_dir.mkdir(parents=True, exist_ok=True)
         main_process = start_process(
-           commands=[f"ruth-simulator-conf --config-file={CONFIG_FILE} run"],
-           workdir=str(main_dir),
-           pyenv=str(ENV_PATH),
-           env={"port": port, "broadcast_port": management_port},
-           modules=MODULES,
-           hostname=CLIENT_ADDRESS,
-           name=f"main"
+            commands=[f"ruth-simulator-conf --config-file={CONFIG_FILE} run"],
+            workdir=str(main_dir),
+            pyenv=str(ENV_PATH),
+            env={"port": port, "broadcast_port": management_port},
+            modules=MODULES,
+            hostname=CLIENT_ADDRESS,
+            name=f"main"
         )
         cluster_data.add(main_process)
 
@@ -195,9 +198,9 @@ def bench(workers: List[int],
           EVKIT_PATH: str,
           MODULES: List[str],
           ENV_PATH,
-          try_to_kill:bool,
-          spawn_workers_at_main_node:bool,
-          repeats:int) -> RunResult:
+          try_to_kill: bool,
+          spawn_workers_at_main_node: bool,
+          repeats: int) -> RunResult:
     """
     Run the benchmark on multiple host(s), nodes.
     workers                     = amount of workers
@@ -220,8 +223,8 @@ def bench(workers: List[int],
 
     # Preprocess workers based on if we try to kill them
     if try_to_kill is False:
-        active_workers = workers[0] # 1
-        updated_workers = [workers[0]] # [1]
+        active_workers = workers[0]  # 1
+        updated_workers = [workers[0]]  # [1]
         for idx in range(1, len(workers)):
             w = workers[idx]
             new_workers = w - active_workers
@@ -235,9 +238,11 @@ def bench(workers: List[int],
         management_port = port + 1
 
         for w in workers:
+            WORK_DIR = OUTPUT_DIR / str(r)
             WORKER_DIR = OUTPUT_DIR / str(r) / str(w)
             try:
-                result = run(w, hosts, WORKER_DIR, CONFIG_FILE, EVKIT_PATH, MODULES, ENV_PATH, try_to_kill, spawn_workers_at_main_node)
+                result = run(w, hosts, WORK_DIR, WORKER_DIR, CONFIG_FILE, EVKIT_PATH, MODULES, ENV_PATH, try_to_kill,
+                             spawn_workers_at_main_node)
                 results.append(result)
                 time.sleep(10)
 
@@ -250,3 +255,44 @@ def bench(workers: List[int],
     df.to_csv(f"{OUTPUT_DIR}/results.csv", index=False)
 
     return results
+
+
+if __name__ == "__main__":
+    WORK_DIR = Path(os.getcwd()).absolute()
+    WORKER_DIR = WORK_DIR / str(sys.argv[1])
+    ENV_PATH = os.environ["VIRTUAL_ENV"]
+    MODULES = [
+        "Python/3.10.8-GCCcore-12.2.0",
+        "GCC/12.2.0",
+        "SQLite/3.39.4-GCCcore-12.2.0",
+        "HDF5/1.14.0-gompi-2022b",
+        "CMake/3.24.3-GCCcore-12.2.0",
+        "Boost/1.81.0-GCC-12.2.0"
+    ]
+    # CHANGE PATHS
+    CONFIG_FILE = ""
+    EVKIT_PATH = ""
+    hosts = get_slurm_nodes()
+    workers = 32
+    try_to_kill = False
+    spawn_workers_at_main_node = False
+
+    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(module)s:%(levelname)s %(message)s")
+
+    result = run(
+        workers=workers,
+        hosts=hosts,
+        WORK_DIR=WORK_DIR,
+        WORKER_DIR=WORKER_DIR,
+        CONFIG_FILE=CONFIG_FILE,
+        EVKIT_PATH=EVKIT_PATH,
+        MODULES=MODULES,
+        ENV_PATH=ENV_PATH,
+        try_to_kill=try_to_kill,
+        spawn_workers_at_main_node=spawn_workers_at_main_node
+    )
+
+    # Save
+    json_data = json.dumps(result)
+    df = pd.read_json(json_data)
+    df.to_csv(f"{WORKER_DIR}/results.csv", index=False)

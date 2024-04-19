@@ -35,6 +35,7 @@ def distributed(experiment_name, evkit_path, config_file, workers, spawn_workers
     result = run(
         workers=workers,
         hosts=hosts,
+        WORK_DIR=work_dir,
         WORKER_DIR=worker_dir,
         CONFIG_FILE=config_file,
         EVKIT_PATH=evkit_path,
@@ -43,7 +44,6 @@ def distributed(experiment_name, evkit_path, config_file, workers, spawn_workers
         try_to_kill=try_to_kill,
         spawn_workers_at_main_node=spawn_workers_at_main_node
     )
-    # result = bench(nodes, WORKER_DIR)
 
     # Save
     json_data = json.dumps(result)
