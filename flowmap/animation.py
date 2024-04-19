@@ -124,11 +124,15 @@ class SimulationAnimator(ABC):
         for seg in preprocessed_data.timed_segments:
             self.timed_seg_dict[seg.timestamp].append(seg)
 
-        self.computation_by_simulation_time = calculate_computation_by_simulation_time(self.sim.steps_info_to_dataframe(),
-                                                                                       self.sim.setting.departure_time,
-                                                                                       max_timestamp,
-                                                                                       self.speed,
-                                                                                       self.fps)
+        self.computation_by_simulation_time = None
+        si_df = self.sim.steps_info_to_dataframe()
+        if 'simulation_offset' in si_df.columns and 'duration' in si_df.columns:
+            self.computation_by_simulation_time = \
+                calculate_computation_by_simulation_time(si_df,
+                                                         self.sim.setting.departure_time,
+                                                         max_timestamp,
+                                                         self.speed,
+                                                         self.fps)
 
     def _set_ax_settings_if_zoom(self):
         if self.zoom:
@@ -139,11 +143,13 @@ class SimulationAnimator(ABC):
     def _get_stats_text(self, timestamp: int):
         simulation_time_formatted = round_timedelta(self.total_simulation_time_in_time_s[timestamp])
         total_km_driven = round(self.total_meters_driven_in_time[timestamp] / 1000, 2)
-        computation_time = timedelta(milliseconds=self.computation_by_simulation_time[timestamp])
+        text = f"Total driving time (sum of all cars): {simulation_time_formatted}\n" \
+               f"Total KMs driven: {total_km_driven} km\n"
+        if self.computation_by_simulation_time is not None:
+            computation_time = timedelta(milliseconds=self.computation_by_simulation_time[timestamp])
+            text += f"Computation time: {computation_time}\n"
 
-        return f"Total driving time (sum of all cars): {simulation_time_formatted}\n" \
-               f"Total KMs driven: {total_km_driven} km\n" \
-               f"Computation time: {computation_time}\n"
+        return text
 
     def _get_finished_vehicles_text(self, timestamp: int):
         return \
