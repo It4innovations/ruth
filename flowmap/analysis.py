@@ -27,7 +27,7 @@ class SimulationLog:
     def __init__(self, simulation: Simulation, time_interval_minutes: int):
         self.simulation = simulation
         self.time_interval_minutes = time_interval_minutes
-        self.df = prepare_dataframe(simulation.history.to_dataframe(), 1)
+        self.df = prepare_dataframe(simulation.history.to_dataframe(), 1, 1)
         self.df = add_is_first_column(self.df)
         self.df = sort_df_by_timestamp(self.df)
         self.vehicle_alternatives = {}
