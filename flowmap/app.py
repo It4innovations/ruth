@@ -44,6 +44,7 @@ def click_animation_options(function):
                             show_default=True)(function)
     function = click.option('--plot-cars', '-c', is_flag=True, help="Visualize cars on the map.")(function)
     function = click.option('--zoom', '-z', is_flag=True, help="Choose zoom manually.")(function)
+    function = click.option('--gif', is_flag=True, help="Generate as a gif instead of mp4.")(function)
     return function
 
 

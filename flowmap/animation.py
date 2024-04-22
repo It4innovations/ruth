@@ -49,7 +49,7 @@ def load_description(path):
 
 class SimulationAnimator(ABC):
     def __init__(self, simulation_path, fps, save_path, frame_start, frames_len,
-                 width_modif, title, description_path, speed, divide, max_width_count, plot_cars, zoom):
+                 width_modif, title, description_path, speed, divide, max_width_count, plot_cars, zoom, gif):
         self.simulation_path = simulation_path
         self.fps = fps
         self.save_path = save_path
@@ -63,6 +63,7 @@ class SimulationAnimator(ABC):
         self.max_width_count = max_width_count
         self.plot_cars = plot_cars
         self.zoom = zoom
+        self.generate_gif = gif
         self.ts = TimerSet()
 
     @property
@@ -215,7 +216,8 @@ class SimulationAnimator(ABC):
         )
 
         timestamp = round(time() * 1000)
-        anim.save(path.join(self.save_path, str(timestamp) + '-rt.gif'), writer='ffmpeg', fps=self.fps)
+        filetype = 'gif' if self.generate_gif else 'mp4'
+        anim.save(path.join(self.save_path, f'{str(timestamp)}-rt.{filetype}'), writer='ffmpeg', fps=self.fps)
 
     def _animate(self):
         car_coordinates = []
