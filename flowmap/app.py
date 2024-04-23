@@ -37,6 +37,7 @@ animation_options = {
     'max_width_count': {'default': None, 'type': int, 'help': "Number of vehicles that corresponds to the maximum width of the segment. If not specified, it will be set dynamically according to the data.", 'show_default': True},
     'plot_cars': {'is_flag': True, 'help': "Visualize cars on the map."},
     'zoom': {'is_flag': True, 'help': "Choose zoom manually."},
+    'gif': {'is_flag': True, 'help': 'Generate as a gif instead of mp4.'}
 }
 
 
