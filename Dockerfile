@@ -1,16 +1,6 @@
 FROM python:3.11-slim-buster
 
-ENV VEHICLES_FILENAME="INPUT-od-matrix-10-vehicles-town-resolution.parquet"
-ENV PROB_PROFILE_FILENAME="prob-profile-for-2021-06-20T23-59-00+02-00--2021-06-27T23-59-00+02-00.mem"
-
-ENV DEPARTURE_TIME="2021-06-16T07:00:00"
-ENV K_ALTERNATIVES="4"
-ENV NPROC="8"
-ENV SEED="7"
-ENV WALLTIME_S="600"
-ENV NEAR_DISTANCE="70"
-ENV N_SAMPLES="500"
-
+ENV CONFIG_FILENAME="config.json"
 
 ENV RUSTUP_HOME="/usr/local/bin/rustup"
 ENV CARGO_HOME="/usr/local/bin/cargo"
@@ -41,4 +31,4 @@ RUN mkdir -p inputs
 RUN mkdir -p outputs
 
 # ENTRYPOINT ["/bin/bash"]
-ENTRYPOINT ruth-simulator --walltime-s=${WALLTIME_S} --departure-time=${DEPARTURE_TIME} --k-alternatives=${K_ALTERNATIVES} --nproc=${NPROC} --out=/app/outputs/simulation_record.pickle --seed=${SEED} rank-by-prob-delay /app/inputs/${VEHICLES_FILENAME} --prob_profile_path /app/inputs/${PROB_PROFILE_FILENAME} ${NEAR_DISTANCE} ${N_SAMPLES}
+ENTRYPOINT ruth-simulator-conf --config-file=${CONFIG_FILENAME} run
