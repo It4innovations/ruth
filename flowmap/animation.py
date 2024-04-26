@@ -51,6 +51,7 @@ class SimulationAnimator(ABC):
     def __init__(self, simulation_path, fps, save_path, frame_start, frames_len, width_modif, title, description,
                  description_path, length, divide, max_width_count, plot_cars, zoom, gif):
         self.simulation_path = simulation_path
+        self.simulation = None
         self.fps = fps
         self.save_path = save_path
         self.frame_start = frame_start
@@ -76,6 +77,9 @@ class SimulationAnimator(ABC):
     @property
     def interval(self):
         return self.speed / self.fps
+
+    def set_simulation(self, simulation):
+        self.simulation = simulation
 
     def run(self):
         with self.ts.get("data loading"):
@@ -105,11 +109,12 @@ class SimulationAnimator(ABC):
             print(f'{k}: {v} ms')
 
     def _load_data(self):
-        self.sim = Simulation.load(self.simulation_path)
-        self.g = self.sim.routing_map.network
-        self.sim_history = self.sim.history.to_dataframe()
+        if self.simulation is None:
+            self.simulation = Simulation.load(self.simulation_path)
+        self.g = self.simulation.routing_map.network
+        self.sim_history = self.simulation.history.to_dataframe()
 
-        simulation_length = self.sim.get_length()
+        simulation_length = self.simulation.get_length()
         simulation_seconds = simulation_length.total_seconds()
         self.speed = int(simulation_seconds / self.length)
 
@@ -137,11 +142,11 @@ class SimulationAnimator(ABC):
             self.timed_seg_dict[seg.timestamp].append(seg)
 
         self.computation_by_simulation_time = None
-        si_df = self.sim.steps_info_to_dataframe()
+        si_df = self.simulation.steps_info_to_dataframe()
         if 'simulation_offset' in si_df.columns and 'duration' in si_df.columns:
             self.computation_by_simulation_time = \
                 calculate_computation_by_simulation_time(si_df,
-                                                         self.sim.setting.departure_time,
+                                                         self.simulation.setting.departure_time,
                                                          max_timestamp,
                                                          self.speed,
                                                          self.fps)
