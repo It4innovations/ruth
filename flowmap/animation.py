@@ -48,8 +48,8 @@ def load_description(path):
 
 
 class SimulationAnimator(ABC):
-    def __init__(self, simulation_path, fps, save_path, frame_start, frames_len,
-                 width_modif, title, description_path, speed, divide, max_width_count, plot_cars, zoom, gif):
+    def __init__(self, simulation_path, fps, save_path, frame_start, frames_len, width_modif, title, description,
+                 description_path, speed, divide, max_width_count, plot_cars, zoom, gif):
         self.simulation_path = simulation_path
         self.fps = fps
         self.save_path = save_path
@@ -57,13 +57,19 @@ class SimulationAnimator(ABC):
         self.frames_len = frames_len
         self.width_modif = width_modif
         self.title = title
-        self.description = load_description(description_path) if description_path else None
         self.speed = speed
         self.divide = divide
         self.max_width_count = max_width_count
         self.plot_cars = plot_cars
         self.zoom = zoom
         self.generate_gif = gif
+
+        self.description = None
+        if description:
+            self.description = description
+        elif description_path:
+            self.description = load_description(description_path)
+
         self.ts = TimerSet()
 
     @property

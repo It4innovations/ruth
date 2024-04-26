@@ -31,10 +31,17 @@ animation_options = {
     'width_modif': {'default': 10, 'type': click.IntRange(2, 200, clamp=True), 'show_default': True,
                     'help': "Adjust width."},
     'title': {'default': '', 'help': "Set video title"},
-    'description_path': {'default': '', 'help': "Path to the file with description to be added to the video."},
+    'description': {'default': '',
+                    'help': 'Description to be added to the video. Overrides `description_path` option.'},
+    'description_path': {'default': '', 'help': "Path to the file with description to be added to the video. Only "
+                                                "used if `description` option is not set"},
     'speed': {'type': int, 'help': "Set video speed."},
-    'divide': {'default': 2, 'type': int, 'help': "Into how many parts will each segment be split.", 'show_default': True},
-    'max_width_count': {'default': None, 'type': int, 'help': "Number of vehicles that corresponds to the maximum width of the segment. If not specified, it will be set dynamically according to the data.", 'show_default': True},
+    'divide': {'default': 2, 'type': int, 'help': "Into how many parts will each segment be split.",
+               'show_default': True},
+    'max_width_count': {'default': None, 'type': int, 'help': "Number of vehicles that corresponds to the maximum "
+                                                              "width of the segment. If not specified, it will be set"
+                                                              " dynamically according to the data.",
+                        'show_default': True},
     'plot_cars': {'is_flag': True, 'help': "Visualize cars on the map."},
     'zoom': {'is_flag': True, 'help': "Choose zoom manually."},
     'gif': {'is_flag': True, 'help': 'Generate as a gif instead of mp4.'}
