@@ -29,5 +29,8 @@
     "first": 1.0,
     "random": 0.0,
     "ptdr": 0.0
+  },
+  "animation" : {
+    "length": 10
   }
 }
