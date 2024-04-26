@@ -147,7 +147,7 @@ def run(ctx):
     alternatives_ratio = ctx.obj["alternatives-ratio"]
     route_selection_ratio = ctx.obj["route-selection-ratio"]
     p = Path(run_args.vehicles_path) if run_args.vehicles_path is not None else None
-    ctx.obj['simulation_finished'] = run_inner(common_args, p, alternatives_ratio, route_selection_ratio)
+    ctx.obj['simulation'] = run_inner(common_args, p, alternatives_ratio, route_selection_ratio)
 
 
 @single_node_simulator_conf.command()
