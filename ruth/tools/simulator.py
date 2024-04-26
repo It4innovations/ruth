@@ -425,16 +425,11 @@ def run(ctx,
         ptdr=selection_ptdr
     )
 
-    ctx.obj['simulation_finished'] = run_inner(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+    ctx.obj['simulation'] = run_inner(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
 
 
 def run_inner(common_args: CommonArgs, vehicles_path: Path,
-              alternatives_ratio, route_selection_ratio) -> bool:
-    """
-    Create simulation with given parameters.
-
-    :return: True if the simulation finished, False otherwise.
-    """
+              alternatives_ratio, route_selection_ratio) -> Simulation:
     out = common_args.out
     walltime = common_args.walltime
     saving_interval = common_args.saving_interval
@@ -469,20 +464,23 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
     )
     simulation = simulator.state
     simulation.store(out)
-    return simulation.finished()
+    return simulation
 
 
 def animate(ctx, animator: Type[animation.SimulationAnimator], **kwargs):
     # check if simulation has been run and whether it finished
-    if not ctx.obj.get('simulation_finished'):
+    if not ctx.obj.get('simulation'):
         raise click.ClickException("The 'animation' command can only be used after 'run' command.")
 
-    simulation_finished = ctx.obj['simulation_finished']
+    simulation = ctx.obj['simulation']
+    simulation_finished = simulation.finished()
 
     if not simulation_finished:
         logging.warning("Creating animation of an unfinished simulation.")
 
-    animator(simulation_path=ctx.obj['common-args'].out, **kwargs).run()
+    animation_creator = animator(simulation_path=ctx.obj['common-args'].out, **kwargs)
+    animation_creator.set_simulation(simulation)
+    animation_creator.run()
 
 
 @single_node_simulator.command()
