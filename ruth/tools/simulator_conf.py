@@ -1,17 +1,37 @@
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, make_dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
 import click
+import flowmap as flowmap
+from click import IntRange
+from flowmap.app import animation_options
 from serde import serde, field, Strict
 from serde.json import from_json
 
 from ..simulator import Simulation
 from ..tools.simulator import (run_inner, AlternativesRatio as AlternativesRatioInner, CommonArgs as CommonArgsInner,
-                               RouteSelectionRatio as RouteSelectionRatioInner)
+                               RouteSelectionRatio as RouteSelectionRatioInner, animate)
+
+
+def make_animation_args_dataclass(options_dict):
+    fields = []
+    for key, value in options_dict.items():
+        field_type = value.get('type', None)
+        default_value = value.get('default', None)
+        if 'is_flag' in value:
+            default_value = False
+            field_type = bool
+
+        if isinstance(field_type, IntRange):
+            field_type = int
+
+        fields.append((key, field_type, default_value))
+
+    return make_dataclass("AnimationArgs", fields)
 
 
 @serde(rename_all="kebabcase", type_check=Strict)
@@ -80,6 +100,9 @@ class RouteSelectionRatio(RouteSelectionRatioInner):
     ptdr: float = 0.0
 
 
+AnimationArgs = make_animation_args_dataclass(animation_options)
+
+
 @serde(rename_all="kebabcase")
 @dataclass
 class Args:
@@ -87,9 +110,10 @@ class Args:
     run: RunArgs = field(rename="run")
     alternatives_ratio: AlternativesRatio = field(rename="alternatives")
     route_selection_ratio: RouteSelectionRatio = field(rename="route-selection")
+    animation: AnimationArgs = field(rename="animation")
 
 
-@click.group()
+@click.group(chain=True)
 @click.option('--config-file', default='config.json')
 @click.option('--debug/--no-debug', default=False)
 @click.pass_context
@@ -105,13 +129,14 @@ def single_node_simulator_conf(ctx,
             config_data = f.read()
             args = from_json(Args, config_data)
     else:
-        args = Args(CommonArgs(), RunArgs(), AlternativesRatio(), RouteSelectionRatio())
+        args = Args(CommonArgs(), RunArgs(), AlternativesRatio(), RouteSelectionRatio(), AnimationArgs())
 
     ctx.obj['DEBUG'] = debug
     ctx.obj['common-args'] = args.common
     ctx.obj['run-args'] = args.run
     ctx.obj['alternatives-ratio'] = args.alternatives_ratio
     ctx.obj['route-selection-ratio'] = args.route_selection_ratio
+    ctx.obj['animation'] = args.animation
 
 
 @single_node_simulator_conf.command()
@@ -122,7 +147,19 @@ def run(ctx):
     alternatives_ratio = ctx.obj["alternatives-ratio"]
     route_selection_ratio = ctx.obj["route-selection-ratio"]
     p = Path(run_args.vehicles_path) if run_args.vehicles_path is not None else None
-    run_inner(common_args, p, alternatives_ratio, route_selection_ratio)
+    ctx.obj['simulation_finished'] = run_inner(common_args, p, alternatives_ratio, route_selection_ratio)
+
+
+@single_node_simulator_conf.command()
+@click.pass_context
+def volume_animation(ctx):
+    animate(ctx, flowmap.animation.SimulationVolumeAnimator, **ctx.obj["animation"].__dict__)
+
+
+@single_node_simulator_conf.command()
+@click.pass_context
+def speed_animation(ctx):
+    animate(ctx, flowmap.animation.SimulationSpeedsAnimator, **ctx.obj["animation"].__dict__)
 
 
 def main():
