@@ -49,7 +49,7 @@ def load_description(path):
 
 class SimulationAnimator(ABC):
     def __init__(self, simulation_path, fps, save_path, frame_start, frames_len, width_modif, title, description,
-                 description_path, speed, divide, max_width_count, plot_cars, zoom, gif):
+                 description_path, length, divide, max_width_count, plot_cars, zoom, gif):
         self.simulation_path = simulation_path
         self.fps = fps
         self.save_path = save_path
@@ -57,7 +57,8 @@ class SimulationAnimator(ABC):
         self.frames_len = frames_len
         self.width_modif = width_modif
         self.title = title
-        self.speed = speed
+        self.length = length
+        self.speed = None
         self.divide = divide
         self.max_width_count = max_width_count
         self.plot_cars = plot_cars
@@ -107,6 +108,10 @@ class SimulationAnimator(ABC):
         self.sim = Simulation.load(self.simulation_path)
         self.g = self.sim.routing_map.network
         self.sim_history = self.sim.history.to_dataframe()
+
+        simulation_length = self.sim.get_length()
+        simulation_seconds = simulation_length.total_seconds()
+        self.speed = int(simulation_seconds / self.length)
 
     def _preprocess_data(self):
         df = prepare_dataframe(self.sim_history, self.speed, self.fps)
@@ -284,7 +289,7 @@ class SimulationAnimator(ABC):
 
 class SimulationVolumeAnimator(SimulationAnimator):
     def __init__(self, simulation_path, fps, save_path, frame_start, frames_len, width_style,
-                 width_modif, title, speed, divide, max_width_count, plot_cars, zoom):
+                 width_modif, title, length, divide, max_width_count, plot_cars, zoom):
         super().__init__(
             simulation_path,
             fps,
@@ -293,7 +298,7 @@ class SimulationVolumeAnimator(SimulationAnimator):
             frames_len,
             width_modif,
             title,
-            speed,
+            length,
             divide,
             max_width_count,
             plot_cars,
