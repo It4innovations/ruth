@@ -1,4 +1,3 @@
-import enum
 import logging
 import os
 import shutil
@@ -6,10 +5,12 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Type
 
 import click
 from probduration import HistoryHandler
+import flowmap.app as flowmap
+import flowmap.animation as animation
 
 from ..vehicle import set_vehicle_behavior
 from ..losdb import FreeFlowDb, ProbProfileDb
@@ -178,7 +179,7 @@ def start_zeromq_cluster(
     return cluster
 
 
-@click.group()
+@click.group(chain=True)
 @click.option('--debug/--no-debug', default=False)  # TODO: maybe move to top-level group
 @click.option("--task-id", type=str,
               help="A string to differentiate result outputs when two or more simulations are simultaneously running.")
@@ -469,6 +470,33 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
     simulation = simulator.state
     simulation.store(out)
     return simulation.finished()
+
+
+def animate(ctx, animator: Type[animation.SimulationAnimator], **kwargs):
+    # check if simulation has been run and whether it finished
+    if not ctx.obj.get('simulation_finished'):
+        raise click.ClickException("The 'animation' command can only be used after 'run' command.")
+
+    simulation_finished = ctx.obj['simulation_finished']
+
+    if not simulation_finished:
+        logging.warning("Creating animation of an unfinished simulation.")
+
+    animator(simulation_path=ctx.obj['common-args'].out, **kwargs).run()
+
+
+@single_node_simulator.command()
+@flowmap.click_animation_options
+@click.pass_context
+def volume_animation(ctx, **kwargs):
+    animate(ctx, animation.SimulationVolumeAnimator, **kwargs)
+
+
+@single_node_simulator.command()
+@flowmap.click_animation_options
+@click.pass_context
+def speed_animation(ctx, **kwargs):
+    animate(ctx, animation.SimulationSpeedsAnimator, **kwargs)
 
 
 def main():
