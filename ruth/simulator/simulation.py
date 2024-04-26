@@ -148,6 +148,7 @@ class Simulation:
 
     def save_step_info(self, simulation_offset, step, n_active, duration, parts, need_new_route):
         self.steps_info.append(StepInfo(simulation_offset, step, n_active, duration, parts, need_new_route))
+
     def steps_info_to_dataframe(self):
         if not self.steps_info:
             raise Exception("Empty steps info cannot be converted to DataFrame.")
@@ -157,6 +158,9 @@ class Simulation:
             [(si.simulation_offset, si.step, si.n_active, si.duration / timedelta(milliseconds=1), *si.parts.values())
              for si in self.steps_info],
             columns=["simulation_offset", "step", "n_active", "duration"] + list(first.parts.keys()))
+
+    def get_length(self):
+        return self.history.fcd_history[-1].datetime - self.history.fcd_history[0].datetime
 
     @property
     def last_step(self):
