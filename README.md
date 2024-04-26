@@ -139,9 +139,61 @@ that have to pass before the simulation is terminated.
 The detection is based on all vehicles being in the same position for the whole time no temporary max speeds are to be updated.
 If the parameter is **set to 0**, the detection is **disabled**.
 
+### Animation
+To create animation of the simulation after the run, `FFmpeg` needs to be installed. Using option `--gif` to generate 
+gif instead of mp4 does not require `FFmpeg`.
+
+There are two types of animation:
+- **Traffic volume animation** - Both color and width of route segments are based on the number of vehicles.
+- **Traffic speed animation** - Color is based on the current speed on the segment. Width is based on the number of vehicles.
+
+To create the speed animation using the configuration file, run:
+``` sh
+ruth-simulator-conf --config-file="config.json" run speed-animation
+```
+for the volume animation, run:
+``` sh
+ruth-simulator-conf --config-file="config.json" run volume-animation
+```
+Animation can be generated only after `run` command. 
+To create an animation of an existing simulation, use [flowmap package](https://code.it4i.cz/mic0427/traffic-flow-map).
+
+Animation options can be set in configuration file, for example:
+``` json
+{
+  ...
+  "animation":
+  {
+    "length": 60,
+    "gif": true,
+    "fps": 20,
+    "title": "Traffic speed animation"
+  }
+}
+```
+
+#### Animation options
+- **fps** - frames per second (default 25)
+- **save_path** - path to the folder for the output video (default current directory)
+- **frame_start** - number of frames to skip (default 0)
+- **frames_len** - number of frames to plot (default all)
+- **width_modif** - adjust width of the segments (default 10, select values in range 2 - 200)
+- **title** - video title (default empty)
+- **description** - description to be added to the video, overrides `description_path` option (default empty)
+- **description_path** - path to the file with description to be added to the video, only used if `description` option is not set
+- **length** - video length in seconds (default 30)
+- **divide** - into how many parts will each segment be split (default 2)
+- **max_width_count** - number of vehicles that corresponds to the maximum width of the segment, if not specified, it will be set dynamically according to the data
+  - important to set when creating multiple animations to compare
+- **plot_cars** - visualize cars on the map
+- **zoom** - choose zoom manually
+- **gif** - generate as a gif instead of mp4, does not require `FFmpeg`
+
+
 
 # Acknowledgement
 
 * This project has received funding from the European Union’s Horizon 2020 research and innovation programme under grant agreement No 957269. 
 
 * Everest project web page: https://everest-h2020.eu
+
