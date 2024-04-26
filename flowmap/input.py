@@ -343,4 +343,6 @@ def calculate_computation_by_simulation_time(steps_info, sim_start_time, max_rou
 
 def calculate_active_vehicles_in_time(df):
     df = df.groupby('timestamp')['vehicle_id'].count()
+    all_timestamps = set(range(df.index.min(), df.index.max() + 1))
+    df = df.reindex(all_timestamps, fill_value=0)
     return df.to_dict()
