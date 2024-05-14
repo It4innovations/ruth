@@ -31,6 +31,8 @@
     "ptdr": 0.0
   },
   "animation" : {
-    "length": 10
+    "length": 10,
+    "title": "",
+    "gif": false
   }
 }

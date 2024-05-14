@@ -110,7 +110,7 @@ class Args:
     run: RunArgs = field(rename="run")
     alternatives_ratio: AlternativesRatio = field(rename="alternatives")
     route_selection_ratio: RouteSelectionRatio = field(rename="route-selection")
-    animation: AnimationArgs = field(rename="animation")
+    animation: AnimationArgs = field(rename="animation", default=None)
 
 
 @click.group(chain=True)
