@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def move_on_segment(
         vehicle: Vehicle,
-        driving_route: List[Segment],
+        driving_route_part: List[Segment],
         current_time: datetime,
         gv_db: GlobalView,
         routing_map: Map,
@@ -27,19 +27,19 @@ def move_on_segment(
     """
     segment_position = vehicle.segment_position
     start_position = segment_position.position
-    current_segment = driving_route[segment_position.index]
+    current_segment = driving_route_part[0]
     assert segment_position.position <= current_segment.length
 
-    if vehicle.segment_position.index < len(driving_route) and start_position == current_segment.length:
+    if start_position == current_segment.length:
         # if the vehicle is at the end of a segment and there are more segments in the route
         if vehicle.has_next_segment_closed(routing_map):
             return current_time + vehicle.frequency, vehicle.segment_position, SpeedMps(0.0)
         # if the vehicle can move to the next segment, work with the next segment
         start_position = LengthMeters(0.0)
         segment_position = SegmentPosition(segment_position.index + 1, start_position)
-        current_segment = driving_route[segment_position.index]
+        current_segment = driving_route_part[1]
 
-    if segment_position.index == len(driving_route) and start_position == current_segment.length:
+    if segment_position.index == (len(vehicle.osm_route) - 1) and start_position == current_segment.length:
         # the end of the driving route
         level_of_service = 1.0
     else:
@@ -86,11 +86,12 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
     current_time = departure_time + vehicle.time_offset
     fcds = []
 
-    osm_route = vehicle.osm_route
-    driving_route = routing_map.osm_route_to_py_segments(osm_route)
+    current_vehicle_index = vehicle.start_index
+    osm_route_part = vehicle.osm_route[current_vehicle_index:current_vehicle_index + 3]
+    driving_route_part = routing_map.osm_route_to_py_segments(osm_route_part)
 
     vehicle_end_time, segment_pos, assigned_speed_mps = move_on_segment(
-        vehicle, driving_route, current_time, gv_db, routing_map, los_vehicles_tolerance
+        vehicle, driving_route_part, current_time, gv_db, routing_map, los_vehicles_tolerance
     )
 
     segment_pos_old = vehicle.segment_position
@@ -105,8 +106,8 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
     # logger.info(f"\n{dt} {vehicle.id} ({vehicle.start_distance_offset}) {segment.id} ({segment.length}) step: {step_m}")
     # logger.info(fcds)
 
-    segment = driving_route[segment_pos.index]
-    segment_old = driving_route[segment_pos_old.index]
+    segment = driving_route_part[segment_pos.index - segment_pos_old.index]
+    segment_old = driving_route_part[0]
 
     # fill in and out of the queues
     if (segment_pos_old.position == segment_old.length
@@ -126,19 +127,19 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
             queues_manager.add_to_queue(vehicle)
 
     # NOTE: the segment position index may end out of segments
-    if segment_pos.index < len(driving_route):
+    if segment_pos.index < (len(vehicle.osm_route) - 1):
         fcds = generate_fcds(current_time, vehicle_end_time, segment_pos_old, segment_pos, assigned_speed_mps, vehicle,
-                             driving_route, remains_active=vehicle.active)
+                             driving_route_part, remains_active=vehicle.active)
 
     return fcds
 
 
 def advance_waiting_vehicle(vehicle: Vehicle, routing_map: Map, departure_time: datetime) -> List[FCDRecord]:
     current_time = departure_time + vehicle.time_offset
-    osm_route = vehicle.osm_route
 
-    driving_route = routing_map.osm_route_to_py_segments(osm_route)
-    segment_pos_old = vehicle.segment_position
+    current_vehicle_index = vehicle.start_index
+    osm_route_part = vehicle.osm_route[current_vehicle_index:current_vehicle_index + 3]
+    driving_route_part = routing_map.osm_route_to_py_segments(osm_route_part)
 
     # in case the vehicle is not moving, move the time and keep the previous position
     vehicle_end_time = current_time + vehicle.frequency
@@ -148,14 +149,14 @@ def advance_waiting_vehicle(vehicle: Vehicle, routing_map: Map, departure_time: 
     # update the vehicle
     vehicle.time_offset += vehicle_end_time - current_time
 
-    fcds = generate_fcds(current_time, vehicle_end_time, segment_pos_old, segment_pos, assigned_speed_mps, vehicle,
-                         driving_route, remains_active=True)
+    fcds = generate_fcds(current_time, vehicle_end_time, segment_pos, segment_pos, assigned_speed_mps, vehicle,
+                         driving_route_part, remains_active=True)
     return fcds
 
 
 def generate_fcds(start_time: datetime, end_time: datetime, start_segment_position: SegmentPosition,
                   end_segment_position: SegmentPosition, speed: SpeedMps, vehicle: Vehicle,
-                  driving_route: List[Segment], remains_active: bool) -> List[FCDRecord]:
+                  driving_route_part: List[Segment], remains_active: bool) -> List[FCDRecord]:
     fcds = []
 
     step_m = speed * (vehicle.fcd_sampling_period / timedelta(seconds=1))
@@ -163,11 +164,11 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
     # when both start and end positions are on the same segment
     current_position = start_segment_position.position
     current_time = start_time
-    current_segment = driving_route[start_segment_position.index]
+    current_segment = driving_route_part[0]
 
     if current_position == current_segment.length and start_segment_position.index != end_segment_position.index:
         # when the vehicle finished the segment in the previous round, we will jump to the next segment
-        current_segment = driving_route[end_segment_position.index]
+        current_segment = driving_route_part[1]
         current_position = 0
 
     while current_time + vehicle.fcd_sampling_period < end_time and \
