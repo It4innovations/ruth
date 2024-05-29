@@ -141,7 +141,18 @@ class Map:
         return travel_time_s
 
     def get_path_travel_time(self, path: List[int]):
-        return nx.path_weight(self.current_network, path, weight='current_travel_time')
+        total_time = 0
+        for node_from, node_to in zip(path[:-1], path[1:]):
+            total_time += self.current_network[node_from][node_to]['current_travel_time']
+        return total_time
+
+    def check_if_travel_time_is_faster(self, path: List[int], time_limit: float):
+        total_time = 0
+        for node_from, node_to in zip(path[:-1], path[1:]):
+            total_time += self.current_network[node_from][node_to]['current_travel_time']
+            if total_time >= time_limit:
+                return False
+        return True
 
     def init_current_speeds(self):
         speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')
