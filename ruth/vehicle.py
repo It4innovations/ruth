@@ -241,11 +241,10 @@ class Vehicle:
             self.osm_route = first_part + suggested_route
             return
 
-        suggested_route_travel_time = routing_map.get_path_travel_time(suggested_route)
         current_route_travel_time = routing_map.get_path_travel_time(current_route)
         travel_time_limit = current_route_travel_time * (1 - travel_time_limit_perc)
 
-        if suggested_route_travel_time < travel_time_limit:
+        if routing_map.check_if_travel_time_is_faster(suggested_route, travel_time_limit):
             self.osm_route = first_part + suggested_route
 
     @property
