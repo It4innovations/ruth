@@ -152,7 +152,7 @@ class Vehicle:
         self.__dict__.update(state)
         self.__post_init__()
 
-    def __eq__(self, other):
+    def __eq__(self, other: 'Vehicle'):
         return self.id == other.id
 
     @property

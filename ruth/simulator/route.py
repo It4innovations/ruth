@@ -204,33 +204,34 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
     fcds = []
 
     vehicles_moved = False
-    vehicles_in_queues = []
+    vehicles_in_queues = dict()
     for vehicle in vehicles_to_be_moved:
         queue = queues_manager.queues[(vehicle.current_node, vehicle.next_node)]
-        if vehicle not in queue:
+        if vehicle.id not in queue:
             new_fcds = advance_vehicle(vehicle, departure_time, gv_db, routing_map, queues_manager,
                                        los_vehicles_tolerance)
             fcds.extend(new_fcds)
             vehicles_moved = True
         else:
-            vehicles_in_queues.append(vehicle)
+            vehicles_in_queues[vehicle.id] = vehicle
 
-    for key, queue in queues_manager.queues.copy().items():
-        for vehicle in queue.copy():
-            try:
-                vehicles_in_queues.remove(vehicle)
-            except ValueError:
+    for _, queue in queues_manager.queues.copy().items():
+        queue_copy = list(queue)
+        for vehicle_id in queue_copy:
+            if vehicle_id not in vehicles_in_queues:
                 break
 
+            vehicle = vehicles_in_queues[vehicle_id]
+            del vehicles_in_queues[vehicle_id]
             new_fcds = advance_vehicle(vehicle, departure_time, gv_db, routing_map, queues_manager,
                                        los_vehicles_tolerance)
             fcds.extend(new_fcds)
-            was_moved = len(queue) == 0 or (vehicle != queue[0])
+            was_moved = len(queue) == 0 or (vehicle_id != queue[0])
             vehicles_moved = vehicles_moved or was_moved
             if not was_moved:
                 break
 
-    for vehicle in vehicles_in_queues:
+    for _, vehicle in vehicles_in_queues.items():
         new_fcds = advance_waiting_vehicle(vehicle, routing_map, departure_time)
         fcds.extend(new_fcds)
 
