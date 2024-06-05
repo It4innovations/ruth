@@ -138,3 +138,10 @@ Parameter `stuck-detection` defines the number of round-frequency-s long rounds 
 that have to pass before the simulation is terminated.  
 The detection is based on all vehicles being in the same position for the whole time no temporary max speeds are to be updated.
 If the parameter is **set to 0**, the detection is **disabled**.
+
+
+# Acknowledgement
+
+* This project has received funding from the European Union’s Horizon 2020 research and innovation programme under grant agreement No 957269. 
+
+* Everest project web page: https://everest-h2020.eu
