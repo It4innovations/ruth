@@ -115,8 +115,8 @@ csv file with aggregated information about speeds during simulation
   OSM172512T300107261;2023-11-13 00:00;74.59;46.7;46.7
   OSM172512T300107261;2023-11-20 00:00;74.59;46.7;12.97
   ``` 
-- the use [this code](https://code.it4i.cz/mic0427/ptdr/) to calculate probability profiles
-  (json representation of msqpack file below)
+- then, use [this code](https://code.it4i.cz/mic0427/ptdr/) (a currently private repository - access may be granted upon request) to calculate probability profiles (json representation of msqpack file below):
+  
   ``` json
   [
     { "id": "OSM172512T300107261",
