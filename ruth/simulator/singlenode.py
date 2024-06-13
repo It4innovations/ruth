@@ -204,7 +204,6 @@ def compute_alternatives(routing_map: Map,
         combined_vehicles.extend(selected_vehicles)
         combined_alts.extend(alts)
 
-    combined_alts = remove_infinity_alternatives(combined_alts, routing_map)
     return combined_vehicles, combined_alts
 
 
