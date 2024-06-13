@@ -50,6 +50,8 @@ class Simulator:
         for v in self.sim.vehicles:
             v.frequency = timedelta(seconds=5)
 
+        self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
+
         for alternatives_provider in alternatives_providers:
             alternatives_provider.load_map(self.sim.routing_map)
 
@@ -60,6 +62,7 @@ class Simulator:
         step = self.sim.number_of_steps
         last_map_update = self.current_offset
         last_time_moved = self.current_offset
+        updated_speeds = {}
 
         while self.current_offset is not None:
             step_start_dt = datetime.now()
@@ -76,13 +79,20 @@ class Simulator:
                     break
 
             with timer_set.get("update_map_speeds"):
-                self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
+                # Get segments where max speeds changed
+                updated_speeds.update(self.sim.routing_map.update_temporary_max_speeds(
+                    self.sim.setting.departure_time + self.current_offset))
+
                 if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
-                    updated_speeds = self.sim.global_view.take_segment_speeds()
-                    self.sim.routing_map.update_current_speeds(updated_speeds)
+                    # Update speeds based on the global view
+                    updated_speeds_gv = self.sim.global_view.take_segment_speeds()
+                    self.sim.routing_map.update_current_speeds(updated_speeds_gv)
+                    updated_speeds.update(updated_speeds_gv)
+
                     for alternatives_provider in alternatives_providers:
                         alternatives_provider.update_map(self.sim.routing_map, updated_speeds)
 
+                    updated_speeds.clear()
                     last_map_update = self.current_offset
 
             with timer_set.get("allowed_vehicles"):

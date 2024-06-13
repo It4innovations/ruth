@@ -165,7 +165,7 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
     current_time = start_time
     current_segment = driving_route[start_segment_position.index]
 
-    if current_position == current_segment.length:
+    if current_position == current_segment.length and start_segment_position.index != end_segment_position.index:
         # when the vehicle finished the segment in the previous round, we will jump to the next segment
         current_segment = driving_route[end_segment_position.index]
         current_position = 0

@@ -318,10 +318,12 @@ class Map:
         ts_to_remove = []
         for ts in self.temporary_speeds:
             if timestamp > ts.timestamp_to:
+                # the temporary speed is no longer valid, restore original speed
                 new_max_speeds[(ts.node_from, ts.node_to)] = ts.original_max_speed
                 ts_to_remove.append(ts)
                 check_segments.append((ts.node_from, ts.node_to))
             elif ts.timestamp_from <= timestamp <= ts.timestamp_to and not ts.active:
+                # the temporary speed is valid, apply it
                 new_max_speeds[(ts.node_from, ts.node_to)] = ts.temporary_speed
                 ts.active = True
                 check_segments.append((ts.node_from, ts.node_to))
@@ -342,6 +344,8 @@ class Map:
 
         nx.set_edge_attributes(self.current_network, values=new_current_speeds, name='current_speed')
         nx.set_edge_attributes(self.current_network, values=new_travel_times, name='current_travel_time')
+
+        return new_current_speeds
 
     def has_temporary_speeds_planned(self):
         return len(self.temporary_speeds) > 0

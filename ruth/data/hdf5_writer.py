@@ -105,9 +105,6 @@ def save_graph_to_hdf5(g, file_path):
     edge_data_index = 0
     for row_id, (id_from, id_to, edge_data) in enumerate(g.edges(data=True)):
         speed = get_speed_from_data(edge_data)
-        if speed <= 0:
-            # NOTE: filter out edges with zero speed to avoid infinite travel time
-            continue
 
         func_class = 7
         lanes = edge_data.get('lanes', 1)
