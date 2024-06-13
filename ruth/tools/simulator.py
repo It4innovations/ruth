@@ -105,7 +105,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
 
         simulation = Simulation(vehicles, ss, bbox, download_date)
         if speeds_path is not None:
-            vehicles[0].routing_map.init_temporary_max_speeds(speeds_path)
+            simulation.routing_map.init_temporary_max_speeds(speeds_path)
     else:
         simulation = sim_state
 
