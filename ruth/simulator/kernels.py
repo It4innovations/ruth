@@ -4,12 +4,15 @@ from typing import Dict, List, Optional, Tuple
 
 from .ptdr import PTDRInfo
 from ..data.map import Map, osm_routes_to_segment_ids
-from ..data.segment import Route, SegmentId, SpeedMps
+from ..data.segment import Route, SegmentId, SpeedMps, RouteWithTime
 from ..utils import is_root_debug_logging
 from ..vehicle import Vehicle, VehicleAlternatives, VehicleRouteSelection
 from ..zeromq.src.client import Message
 
-AlternativeRoutes = List[Route]
+AlternativeRoutes = List[RouteWithTime]
+
+VehicleWithPlans = Tuple[Vehicle, AlternativeRoutes]
+VehicleWithRoute = Tuple[Vehicle, RouteWithTime]
 
 
 # Alternatives
@@ -47,7 +50,8 @@ class FastestPathsAlternatives(AlternativesProvider):
 
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
-        return [vehicle.k_fastest_paths(k, self.routing_map) for vehicle in vehicles]
+        return [[(route, None) for route in vehicle.k_fastest_paths(k, self.routing_map)]
+                for vehicle in vehicles]
 
 
 class ShortestPathsAlternatives(AlternativesProvider):
@@ -57,7 +61,8 @@ class ShortestPathsAlternatives(AlternativesProvider):
 
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
-        return [vehicle.k_shortest_paths(k, self.routing_map) for vehicle in vehicles]
+        return [[(route, None) for route in vehicle.k_shortest_paths(k, self.routing_map)]
+                for vehicle in vehicles]
 
 
 class ZeroMQDistributedAlternatives(AlternativesProvider):
@@ -102,16 +107,20 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
 
         if is_root_debug_logging():
             logging.debug(f"Response from worker: {results}")
-        remapped_routes = [
-            [[self.routing_map.hdf5_to_osm_id(node_id) for node_id in route] for route in
-             result["routes"]]
-            for result in results
-        ]
+
+        if results and "times" in results[0]:
+            remapped_routes = [
+                [([self.routing_map.hdf5_to_osm_id(node_id) for node_id in route], time) for route, time in
+                 zip(result["routes"], result["times"])]
+                for result in results
+            ]
+        else:
+            remapped_routes = [
+                [([self.routing_map.hdf5_to_osm_id(node_id) for node_id in route], None) for route in
+                 result["routes"]]
+                for result in results
+            ]
         return remapped_routes
-
-
-VehicleWithPlans = Tuple[Vehicle, AlternativeRoutes]
-VehicleWithRoute = Tuple[Vehicle, Route]
 
 
 # Route selection
@@ -176,7 +185,7 @@ class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
 
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
         messages = [Message(kind="monte-carlo", data={
-            "routes": osm_routes_to_segment_ids(routes),
+            "routes": osm_routes_to_segment_ids(routes[0]),
             "frequency": vehicle.frequency.total_seconds(),
             "departure_time": self.ptdr_info.get_time_from_start_of_interval(vehicle.time_offset),
         }) for (vehicle, routes) in route_possibilities]

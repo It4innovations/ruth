@@ -11,7 +11,7 @@ import pandas as pd
 from networkx.exception import NodeNotFound
 
 from .data.map import Map
-from .data.segment import Route, SegmentPosition, LengthMeters
+from .data.segment import Route, SegmentPosition, LengthMeters, RouteWithTime
 from .utils import round_timedelta
 
 
@@ -225,10 +225,11 @@ class Vehicle:
         max_speed_on_next_segment = routing_map.get_current_max_speed(next_segment_from, next_segment_to)
         return max_speed_on_next_segment == 0.0
 
-    def update_followup_route(self, suggested_route: Route, routing_map: Map, travel_time_limit_perc: float = None):
+    def update_followup_route(self, suggested_route_with_time: RouteWithTime, routing_map: Map, travel_time_limit_perc: float = None):
         """
         Updates the route from the current node to the destination node.
         """
+        suggested_route, suggested_route_travel_time = suggested_route_with_time
         assert suggested_route[-1] == self.dest_node
         node_index = self.next_routing_start.index
         first_part = self.osm_route[:node_index]
@@ -244,8 +245,14 @@ class Vehicle:
         current_route_travel_time = routing_map.get_path_travel_time(current_route)
         travel_time_limit = current_route_travel_time * (1 - travel_time_limit_perc)
 
-        if routing_map.check_if_travel_time_is_faster(suggested_route, travel_time_limit):
+        if suggested_route_travel_time is None:
+            if routing_map.check_if_travel_time_is_faster(suggested_route, travel_time_limit):
+                self.osm_route = first_part + suggested_route
+            return
+
+        elif suggested_route_travel_time < travel_time_limit:
             self.osm_route = first_part + suggested_route
+
 
     @property
     def segment_position(self) -> SegmentPosition:
