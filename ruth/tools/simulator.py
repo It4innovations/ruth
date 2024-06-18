@@ -8,13 +8,11 @@ from pathlib import Path
 from typing import List, Optional, Type
 
 import click
-from probduration import HistoryHandler
 import flowmap.app as flowmap
 import flowmap.animation as animation
 
 from ..vehicle import set_vehicle_behavior
-from ..losdb import FreeFlowDb, ProbProfileDb
-from ..simulator import RouteRankingAlgorithms, SimSetting, Simulation, SingleNodeSimulator, \
+from ..simulator import SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
 from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, FirstRouteSelection, \
     RandomRouteSelection, RouteSelectionProvider, ShortestPathsAlternatives, \
@@ -253,101 +251,6 @@ def single_node_simulator(ctx,
         stuck_detection=stuck_detection,
         plateau_default_route=plateau_default_route,
     )
-
-
-@single_node_simulator.command()
-@click.argument("vehicles_path", type=click.Path(exists=True))
-@click.pass_context
-def rank_by_duration(ctx,
-                     vehicles_path):
-    raise NotImplementedError
-    common_args = ctx.obj['common-args']
-    out = common_args.out
-    walltime = common_args.walltime
-    task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
-
-    simulator = prepare_simulator(common_args, vehicles_path)
-    alg = RouteRankingAlgorithms.DURATION.value
-    end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
-    simulator.simulate(alg.rank_route, rr_fn_args=(simulator.state.global_view_db,),
-                       end_step_fn=end_step_fn,
-                       es_fn_args=(walltime, f"rank_by_duration{task_id}"))
-    simulator.state.store(out)
-
-
-@single_node_simulator.command()
-@click.argument("vehicles_path", type=click.Path(exists=True))
-@click.argument("near_distance", type=float)
-@click.argument("n_samples", type=int)
-@click.option("--prob_profile_path", type=click.Path(exists=True),
-              help="A path to probability profile [Default: no limit prob. profile]")
-@click.pass_context
-def rank_by_prob_delay(ctx,
-                       vehicles_path,
-                       near_distance,
-                       n_samples,
-                       prob_profile_path):
-    """Perform the simulation on a cluster's single node. The simulation use for ranking alternative routes
-    _probable delay_ on a route at a departure time. To compute the probable delay Monte Carlo Simulation is performed
-    with N_SAMPLES iterations and the average delay is used. During the Monte Carlo simulation the speed on segments
-    is changing according to probability profiles (PROB_PROFILE_PATH). The probability profile contains a distribution
-    of _level of service_ at each segment which is valid for certain period (e.g., for 15minutes periods).
-    NEAR_DISTANCE is used to compute the delay on route based on global view only. This can be seen as a distance
-    "driver is seeing in front of her/him".
-    """
-
-    raise NotImplementedError
-    common_args = ctx.obj['common-args']
-    out = common_args.out
-    walltime = common_args.walltime
-    task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
-
-    data_loading_start = datetime.now()
-    simulator = prepare_simulator(ctx.obj['common-args'], vehicles_path)
-    alg = RouteRankingAlgorithms.PROBABLE_DELAY.value
-    ff_db = FreeFlowDb()
-    if prob_profile_path == None:
-        pp_db = ProbProfileDb(HistoryHandler.no_limit())
-    else:
-        pp_db = ProbProfileDb(HistoryHandler.open(prob_profile_path))
-    simulation = simulator.state
-    time_for_data_loading = datetime.now() - data_loading_start
-    end_step_fn = store_simulation_at_walltime() if walltime is not None else lambda *_: None
-    walltime = walltime - time_for_data_loading if walltime is not None else None
-
-    zeromq = False
-    if zeromq:
-        # TODO: refactor this, remove singleton from Map
-        map_path = Path(simulation.routing_map.file_path).absolute()
-        server_port = 5559
-        cluster = start_zeromq_cluster(
-            worker_nodes=["localhost"],
-            worker_per_node=4,
-            map_path=map_path,
-            server_host="127.0.0.1",
-            port=server_port
-        )
-        kernel_provider = ZeroMQDistributedAlternatives(port=server_port)
-    else:
-        kernel_provider = ShortestPathsAlternatives()
-
-    try:
-        simulator.simulate(alg.rank_route,
-                           alternatives_provider=kernel_provider,
-                           extend_plans_fn=alg.prepare_data,
-                           ep_fn_args=(simulation.global_view_db,
-                                       near_distance,
-                                       ff_db,
-                                       pp_db,
-                                       n_samples,
-                                       simulation.setting.rnd_gen),
-                           end_step_fn=end_step_fn,
-                           es_fn_args=(walltime, f"rank-by-prob-profile{task_id}"))
-
-        simulation.store(out)
-    finally:
-        if zeromq:
-            cluster.kill()
 
 
 class ZeroMqContext:
