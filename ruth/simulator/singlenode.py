@@ -230,7 +230,7 @@ def remove_infinity_alternatives(alternatives: List[AlternativeRoutes], routing_
         for_vehicle = []
         for alternative in alternatives_for_vehicle:
             # calculate travel time for alternative
-            if not routing_map.is_route_closed(alternative):
+            if not routing_map.is_route_closed(alternative[0]):
                 for_vehicle.append(alternative)
         filtered_alternatives.append(for_vehicle)
     return filtered_alternatives
