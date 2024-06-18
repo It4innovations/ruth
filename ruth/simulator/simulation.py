@@ -11,7 +11,6 @@ from ..data.map import BBox, Map
 from ..data.segment import LengthMeters, Segment, SpeedMps
 from ..fcd_history import FCDHistory
 from ..globalview import GlobalView
-from ..losdb import GlobalViewDb
 from ..utils import round_timedelta
 from ..vehicle import Vehicle
 
@@ -121,10 +120,6 @@ class Simulation:
     @property
     def random(self):
         return self.setting.rnd_gen()
-
-    @property
-    def global_view_db(self):
-        return GlobalViewDb(self.global_view)
 
     def is_vehicle_within_offset(self, vehicle: Vehicle, offset):
         return vehicle.active and offset == self.round_time_offset(vehicle.time_offset)

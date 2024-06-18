@@ -2,27 +2,6 @@ import logging
 import time
 from datetime import datetime, timedelta
 
-from .data.border import Border, BorderType, PolygonBorderDef
-from .data.map import Map
-
-
-def get_map(polygon: str,
-            kind: BorderType,
-            download_date: str = None,
-            name=None,
-            on_disk=False,
-            with_speeds=False,
-            data_dir="./data",
-            load_from_cache=True):
-    """Get map based on polygon."""
-    border_def = PolygonBorderDef(polygon, on_disk=on_disk)
-    border_kind = BorderType.parse(kind)
-    name_ = name if name is not None else f"custom_{border_def.md5()}_{border_kind.name.lower()}"
-    download_date = download_date if download_date is not None else datetime.now().strftime("%Y-%m-%d")
-    border = Border(name_, border_def, border_kind, data_dir, load_from_cache)
-
-    return Map(border, download_date=download_date, with_speeds=with_speeds)
-
 
 def round_timedelta(td: timedelta, freq: timedelta):
     return freq * round(td / freq)

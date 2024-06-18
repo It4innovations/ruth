@@ -1,7 +1,7 @@
-
 import math
 from dataclasses import dataclass
 from datetime import timedelta
+
 
 @dataclass
 class StepInfo:
@@ -35,5 +35,4 @@ class StepInfo:
                f"{time_for_advance};{time_for_gv_shift}"
 
     def __str__(self):
-        sec = timedelta(seconds=1)
         return f"StepInfo(step={self.step}, active={self.n_active}, gv_size={self.gv_size})"
