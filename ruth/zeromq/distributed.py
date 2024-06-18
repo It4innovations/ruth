@@ -16,7 +16,7 @@ from ..zeromq.bench import get_slurm_nodes, run
 @click.option("--workers", type=int, default=32, help="Number of workers. Default 32.")
 @click.option("--spawn-workers-at-main-node", is_flag=True, help="Spawn workers at main node.")
 @click.option("--try-to-kill", is_flag=True, help="Try to kill workers after simulation is computed.")
-def distributed(experiment_name, evkit_path, config_file, workers, spawn_workers_at_main_node, try_to_kill):
+def distributed(experiment_name, evkit_dir_path, config_file, workers, spawn_workers_at_main_node, try_to_kill):
     work_dir = Path(os.getcwd()).absolute()
     worker_dir = work_dir / experiment_name
     env_path = os.environ["VIRTUAL_ENV"]
@@ -38,7 +38,7 @@ def distributed(experiment_name, evkit_path, config_file, workers, spawn_workers
         WORK_DIR=work_dir,
         WORKER_DIR=worker_dir,
         CONFIG_FILE=config_file,
-        EVKIT_PATH=evkit_path,
+        EVKIT_PATH=evkit_dir_path,
         MODULES=modules,
         ENV_PATH=env_path,
         try_to_kill=try_to_kill,

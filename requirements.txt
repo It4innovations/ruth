@@ -1,4 +1,3 @@
-py-probduration @ git+https://project_1143_bot:glpat-QdQC3BdsxSKr7zZnQ2vt@code.it4i.cz/everest/py-probduration.git
 osmnx==1.9.1
 lazy-object-proxy==1.10.0
 click==8.0.1

@@ -7,7 +7,7 @@ from .queues import QueuesManager
 from ..data.map import Map
 from ..data.segment import Segment, SegmentPosition, SpeedMps, LengthMeters, speed_kph_to_mps
 from .simulation import FCDRecord
-from ..losdb import GlobalViewDb
+from ..globalview import GlobalView
 from ..vehicle import Vehicle
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ def move_on_segment(
         vehicle: Vehicle,
         driving_route: List[Segment],
         current_time: datetime,
-        gv_db: GlobalViewDb,
+        gv_db: GlobalView,
         routing_map: Map,
         los_vehicles_tolerance: timedelta = timedelta(seconds=0)
 ) -> Tuple[datetime, SegmentPosition, SpeedMps]:
@@ -43,7 +43,7 @@ def move_on_segment(
         # the end of the driving route
         level_of_service = 1.0
     else:
-        level_of_service = gv_db.gv.level_of_service_in_front_of_vehicle(current_time, current_segment, vehicle.id,
+        level_of_service = gv_db.level_of_service_in_front_of_vehicle(current_time, current_segment, vehicle.id,
                                                                          start_position, los_vehicles_tolerance)
 
     # if car is stuck in traffic jam, it will not move and its speed will be 0
@@ -79,7 +79,7 @@ def move_on_segment(
 
 
 def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
-                    gv_db: GlobalViewDb, routing_map: Map, queues_manager: QueuesManager,
+                    gv_db: GlobalView, routing_map: Map, queues_manager: QueuesManager,
                     los_vehicles_tolerance: timedelta = timedelta(seconds=0)) -> List[FCDRecord]:
     """Advance a vehicle on a route."""
 
@@ -198,8 +198,8 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
 
 
 def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_time: datetime,
-                                   gv_db: GlobalViewDb, routing_map: Map, queues_manager: QueuesManager,
-                                   los_vehicles_tolerance) -> Tuple[List[FCDRecord], bool]:
+                                 gv_db: GlobalView, routing_map: Map, queues_manager: QueuesManager,
+                                 los_vehicles_tolerance) -> Tuple[List[FCDRecord], bool]:
     fcds = []
 
     vehicles_moved = False

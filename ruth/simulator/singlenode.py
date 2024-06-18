@@ -7,7 +7,6 @@ from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithPl
 from .route import advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
 from ..data.map import Map
-from ..losdb import GlobalViewDb
 from ..utils import TimerSet
 from ..vehicle import Vehicle, VehicleAlternatives
 
@@ -152,7 +151,7 @@ class Simulator:
         for vehicle in vehicles:
             assert vehicle.is_active(current_offset, self.sim.setting.round_freq)
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
-                                            GlobalViewDb(self.sim.global_view),
+                                            self.sim.global_view,
                                             self.sim.routing_map,
                                             self.sim.queues_manager,
                                             self.sim.setting.los_vehicles_tolerance)
