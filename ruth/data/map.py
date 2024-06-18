@@ -176,6 +176,7 @@ class Map:
         """
         max_speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')
 
+        new_current_speeds = {}
         for ((node_from, node_to), speed) in segments_to_update.items():
             edge = self.current_network[node_from][node_to]
             max_speed = max_speeds[(node_from, node_to)]
@@ -183,6 +184,9 @@ class Map:
             speed = min(speed, max_speed)
             edge["current_speed"] = speed
             edge["current_travel_time"] = self.get_travel_time(node_from, node_to, speed)
+            new_current_speeds[(node_from, node_to)] = speed
+
+        return new_current_speeds
 
     def get_current_max_speed(self, node_from: int, node_to: int):
         return self.current_network[node_from][node_to]['speed_kph']

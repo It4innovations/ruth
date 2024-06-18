@@ -85,8 +85,7 @@ class Simulator:
                 if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
                     # Update speeds based on the global view
                     updated_speeds_gv = self.sim.global_view.take_segment_speeds()
-                    self.sim.routing_map.update_current_speeds(updated_speeds_gv)
-                    updated_speeds.update(updated_speeds_gv)
+                    updated_speeds.update(self.sim.routing_map.update_current_speeds(updated_speeds_gv))
 
                     for alternatives_provider in alternatives_providers:
                         alternatives_provider.update_map(self.sim.routing_map, updated_speeds)
