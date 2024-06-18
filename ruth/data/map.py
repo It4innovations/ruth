@@ -16,7 +16,7 @@ import osmnx.settings
 from osmnx import load_graphml, save_graphml, graph_from_bbox
 from networkx.exception import NetworkXNoPath
 
-from .hdf5_writer import get_osmid_from_data, save_graph_to_hdf5
+from .hdf5_writer import get_edge_id_from_data, save_graph_to_hdf5
 from ..log import console_logger as cl
 from ..data.segment import Route, Segment, SegmentId, SpeedKph
 
@@ -87,8 +87,15 @@ class Map:
             self.network = ox.add_edge_speeds(self.network)
 
         self.original_network = ox.get_digraph(self.network)
+
+        self.segment_lengths = {}
+        for i, (node_from, node_to) in enumerate(self.original_network.edges()):
+            edge = self.original_network[node_from][node_to]
+            edge['routing_id'] = i + 1
+            edge['length'] = int(edge['length'] + 0.5)
+            self.segment_lengths[(node_from, node_to)] = edge['length']
+
         self.current_network = self.original_network.copy()
-        self.segment_lengths = nx.get_edge_attributes(self.current_network, name='length')
 
         if with_speeds:
             self.init_current_speeds()
@@ -363,7 +370,7 @@ class Map:
 
     def get_hdf5_edge_id(self, segment_id: SegmentId) -> int:
         (node_from, node_to) = segment_id
-        return get_osmid_from_data(self.current_network[node_from][node_to])
+        return get_edge_id_from_data(self.current_network[node_from][node_to])
 
 
 def admin_level_to_road_filter(admin_level):  # TODO: where to put it?
