@@ -107,8 +107,7 @@ def save_graph_to_hdf5(g, file_path):
         speed = get_speed_from_data(edge_data)
 
         func_class = 7
-        lanes = edge_data.get('lanes', 1)
-        lanes = int(lanes[0]) if type(lanes) is list else lanes
+        lanes = 0
         vehicle_access = edge_data.get('vehicleAccess', 1)
         #         NoneVeh = 0,
         #         Regular = 1,
