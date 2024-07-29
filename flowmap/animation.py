@@ -13,8 +13,10 @@ from collections import defaultdict
 
 from flowmap.flowmapframe.zoom import plot_graph_with_zoom
 from flowmap.flowmapframe.plot import get_node_coordinates, WidthStyle
-from flowmap.flowmapframe.speeds import plot_routes as plot_routes_speeds
-from flowmap.flowmapframe.plot import plot_routes as plot_routes_densities
+from flowmap.flowmapframe.speeds import (plot_routes as plot_routes_speeds,
+                                         get_color_bar_info as get_color_bar_info_speeds)
+from flowmap.flowmapframe.plot import (plot_routes as plot_routes_densities,
+                                       get_color_bar_info as get_color_bar_info_densities)
 
 from ruth.utils import TimerSet
 from ruth.simulator import Simulation
@@ -77,6 +79,21 @@ class SimulationAnimator(ABC):
     @property
     def interval(self):
         return self.speed / self.fps
+
+    @property
+    @abstractmethod
+    def colorbar_title(self):
+        pass
+
+    def plot_cbar(self):
+        cmap, norm = self.get_color_bar_info()
+        cbar = plt.colorbar(mappable=mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=self.ax_map,
+                            shrink=0.4, label=self.colorbar_title(), pad=0.0)
+        ticklabs = cbar.ax.get_yticklabels()
+        cbar.ax.set_yticklabels(ticklabs, fontsize=15)
+        label = cbar.ax.yaxis.label
+        label.set_fontsize(15)
+        return cbar
 
     def set_simulation(self, simulation):
         self.simulation = simulation
@@ -219,6 +236,8 @@ class SimulationAnimator(ABC):
             0.03,
             self._get_stats_text(self.timestamp_from))
 
+        self.plot_cbar()
+
         self.ax_traffic = self.ax_map.twinx()
         self.ax_map_settings = AxSettings(self.ax_map)
 
@@ -281,6 +300,10 @@ class SimulationAnimator(ABC):
     def _plot_routes(self, timestamp):
         pass
 
+    @abstractmethod
+    def get_color_bar_info(self):
+        pass
+
     def get_cars_xy(self, node_from, node_to, offsets):
         x, y = get_node_coordinates(self.g, node_from, node_to)
 
@@ -293,8 +316,8 @@ class SimulationAnimator(ABC):
 
 
 class SimulationVolumeAnimator(SimulationAnimator):
-    def __init__(self, simulation_path, fps, save_path, frame_start, frames_len, width_style,
-                 width_modif, title, length, divide, max_width_count, plot_cars, zoom):
+    def __init__(self, simulation_path, fps, save_path, frame_start, frames_len, width_modif, title, description,
+                 description_path, length, divide, max_width_count, plot_cars, zoom, gif, width_style):
         super().__init__(
             simulation_path,
             fps,
@@ -303,11 +326,14 @@ class SimulationVolumeAnimator(SimulationAnimator):
             frames_len,
             width_modif,
             title,
+            description,
+            description_path,
             length,
             divide,
             max_width_count,
             plot_cars,
-            zoom
+            zoom,
+            gif
         )
         self.width_style = WidthStyle[width_style]
 
@@ -328,6 +354,12 @@ class SimulationVolumeAnimator(SimulationAnimator):
             width_style=self.width_style
         )
         return segments
+
+    def get_color_bar_info(self):
+        return get_color_bar_info_densities(0, self.max_width_count)
+
+    def colorbar_title(self):
+        return "Number of vehicles"
 
 
 class SimulationSpeedsAnimator(SimulationAnimator):
@@ -352,3 +384,16 @@ class SimulationSpeedsAnimator(SimulationAnimator):
             width_modifier=self.width_modif
         )
         return segments
+
+    def get_color_bar_info(self):
+        return get_color_bar_info_speeds()
+
+    def colorbar_title(self):
+        return "Speed (kph)"
+
+    def plot_cbar(self):
+        cbar = super().plot_cbar()
+        ticklabs = cbar.ax.get_yticklabels()
+        ticklabs[-1] = ""
+        cbar.ax.set_yticklabels(ticklabs)
+        return cbar

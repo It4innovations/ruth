@@ -134,8 +134,8 @@ def plot_routes(g: nx.MultiDiGraph,
     # create collection
     lines.extend(zoomed_lines)
     lines = np.vstack(lines)
-    norm = plt.Normalize(min_density, max_density)
-    coll = LineCollection(lines, cmap=get_cmap(), norm=norm)
+    cmap, norm = get_color_bar_info(min_density, max_density)
+    coll = LineCollection(lines, cmap=cmap, norm=norm)
 
     coll.set_linewidth(line_widths)
     coll.set_array(color_scalars)
@@ -231,3 +231,10 @@ def get_cmap():
     cmap = plt.get_cmap('autumn_r', 512)
     newcmp = ListedColormap(cmap(np.linspace(0.25, 1, 256)))
     return newcmp
+
+@cache
+def get_color_bar_info(min_density: int, max_density: int):
+    cmap = get_cmap()
+    norm = plt.Normalize(min_density, max_density)
+    return cmap, norm
+

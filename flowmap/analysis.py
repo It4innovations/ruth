@@ -8,7 +8,7 @@ from ruth.vehicle import VehicleAlternatives, VehicleRouteSelection
 from tqdm import tqdm
 
 from flowmap.input import prepare_dataframe
-from flowmap.flowmapframe.speeds import segment_speed_thresholds
+from flowmap.flowmapframe.speeds import segment_speed_thresholds_mps as segment_speed_thresholds
 
 
 def sort_df_by_timestamp(df):

@@ -15,8 +15,8 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 from .plot import reshape, get_node_coordinates, WidthStyle
 from .zoom import get_zoom_level, ZoomLevel
 
-
-segment_speed_thresholds = [0, 20 / 3.6, 40 / 3.6, 60 / 3.6]
+segment_speed_thresholds_kph = [0, 20, 40, 60]
+segment_speed_thresholds_mps = [speed / 3.6 for speed in segment_speed_thresholds_kph]
 
 
 def plot_routes(g: nx.MultiDiGraph,
@@ -62,11 +62,11 @@ def plot_routes(g: nx.MultiDiGraph,
         speeds = densities
 
     if speeds_thresholds is None:
-        speeds_thresholds = segment_speed_thresholds
+        speeds_thresholds = segment_speed_thresholds_mps
 
     if len(speeds_thresholds) != 4:
         logging.error("Please provide 4 speed thresholds")
-        speeds_thresholds = segment_speed_thresholds
+        speeds_thresholds = segment_speed_thresholds_mps
 
     lines = []
     color_scalars = []
@@ -128,8 +128,7 @@ def plot_routes(g: nx.MultiDiGraph,
     # create collection
     lines.extend(zoomed_lines)
     lines = np.vstack(lines)
-    cmap = get_cmap_speeds()
-    norm = BoundaryNorm(speeds_thresholds, cmap.N)
+    cmap, norm = get_color_bar_info(speeds_thresholds)
     coll = LineCollection(lines, cmap=cmap, norm=norm)
 
     coll.set_linewidth(line_widths)
@@ -181,3 +180,11 @@ def plot_route(g: nx.MultiDiGraph,
 @cache
 def get_cmap_speeds():
     return ListedColormap(['red', 'orange', 'green'])
+
+
+def get_color_bar_info(speeds_thresholds: list[float] = None):
+    if speeds_thresholds is None:
+        speeds_thresholds = segment_speed_thresholds_kph
+    cmap = ListedColormap(['red', 'orange', 'green', 'green'])
+    norm = BoundaryNorm(speeds_thresholds, cmap.N, extend='max')
+    return cmap, norm
