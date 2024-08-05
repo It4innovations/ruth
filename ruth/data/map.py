@@ -55,6 +55,16 @@ def osm_routes_to_segment_ids(routes: List[Route]) -> List[List[str]]:
     return [osm_route_to_segment_ids(route) for route in routes]
 
 
+highway_types = ["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary",
+                 "secondary_link", "tertiary", "tertiary_link", "unclassified", "residential", "living_street",
+                 "service", "track", "road", "path", "footway", "steps", "cycleway", "bridleway", "pedestrian",
+                 "construction", "proposed", "bus_guideway", "escape", "raceway", "services", "rest_area", "platform",
+                 "crossing", "elevator", "corridor", "abandoned", "planned", "no", "disused", "razed", "historic:",
+                 "busway"]
+
+highway_dict = {highway: i for i, highway in enumerate(highway_types)}
+
+
 class BBox:
     def __init__(self, north, west, south, east):
         self.north = north
@@ -83,6 +93,11 @@ class Map:
         self.data_dir = data_dir
         self.network, fresh_data = self._load()
         self.temporary_speeds = []
+
+        if fresh_data:
+            for u, v, k, data in self.network.edges(keys=True, data=True):
+                if 'highway' in data and type(data['highway']) is list:
+                    self.network[u][v][k]['highway'] = sorted(data['highway'], key=lambda x: highway_dict[x])
 
         if with_speeds:
             self.network = ox.add_edge_speeds(self.network)
