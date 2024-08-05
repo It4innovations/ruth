@@ -72,6 +72,8 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         super().__init__()
         self.vehicle_behaviour = VehicleAlternatives.PLATEAU_FASTEST
         self.client = client
+        self.routing_map = None
+        self.map_id = None
 
     def load_map(self, routing_map: Map):
         """
@@ -80,20 +82,28 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         map_path = routing_map.save_hdf()
         self.client.broadcast(Message(kind="load-map", data=map_path))
         self.routing_map = routing_map
+        self.map_id = 0
 
     def update_map(self, map: Map, segments: Dict[SegmentId, Optional[SpeedMps]]):
         """
         Update speeds of the passed segments in a previously passed map.
         """
-        self.client.broadcast(Message(kind="update-map", data=[{
+        self.map_id = self.map_id + 1
+        inner_data = [{
             "edge_id": map.get_hdf5_edge_id(segment_id),
             "speed": speed if speed is not None else map.get_current_max_speed(segment_id[0],
                                                                                segment_id[1])
-        } for (segment_id, speed) in segments.items()]))
+        } for (segment_id, speed) in segments.items()]
+        data = {
+            "map_id": self.map_id,
+            "segments_data": inner_data
+        }
+        self.client.broadcast(Message(kind="update-map", data=data))
 
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
         messages = [Message(kind="alternatives", data={
+            "map_id": self.map_id,
             "start": self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
             "destination": self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[1]),
             "max_routes": k
