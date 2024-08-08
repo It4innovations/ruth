@@ -3,6 +3,7 @@ from dataclasses import InitVar, dataclass
 from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
 from typing import Dict, List
+from collections import defaultdict
 
 import pandas as pd
 
@@ -114,8 +115,10 @@ class Simulation:
             current_offset = self.setting.departure_time + current_offset
             fcds = [fcd for fcd in self.history.fcd_history if fcd.datetime >= current_offset]
             self.global_view = GlobalView()
+            self.history.fcd_by_segment = defaultdict(list)
             for fcd in fcds:
                 self.global_view.add(fcd)
+                self.history.fcd_by_segment[fcd.segment.id].append(fcd)
 
     @property
     def random(self):
