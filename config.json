@@ -21,9 +21,9 @@
     "vehicles-path": "benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet"
   },
   "alternatives" : {
-    "dijkstra-fastest": 0.0,
+    "dijkstra-fastest": 1.0,
     "dijkstra-shortest": 0.0,
-    "plateau-fastest": 1.0
+    "plateau-fastest": 0.0
   },
   "route-selection" : {
     "first": 1.0,
