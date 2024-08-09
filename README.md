@@ -84,6 +84,7 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
     ``` sh
     ruth-simulator --departure-time="2021-06-16 07:00:00" --k-alternatives=4 --out=simulation_record.pickle --seed=7 run INPUT-od-matrix-10-vehicles-town-resolution.parquet  --alt-dijkstra-fastest=0.3 --alt-plateau-fastest=0.0 --selection-first=0.3 --selection-random=0.0 --selection-ptdr=0.0
     ```
+* input data for 10K-300K vehicle simulations can be found in this [dataset](https://doi.org/10.5281/zenodo.13285293).
 ### Distributed run
 More information about distributed run can be found in **ruth/zeromq/README.md**.
 
