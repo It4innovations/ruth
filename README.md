@@ -65,7 +65,7 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
     },
     "run" :
     {
-      "vehicles-path": "benchmarks/od-matrices/INPUT-od-matrix-10-vehicles-town-resolution.parquet"
+      "vehicles-path": "benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet"
     },
     "alternatives" : 
     {
