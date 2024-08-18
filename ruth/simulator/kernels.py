@@ -1,6 +1,7 @@
 import logging
 import random
 from typing import Dict, List, Optional, Tuple
+import numpy
 
 from .ptdr import PTDRInfo
 from ..data.map import Map, osm_routes_to_segment_ids
@@ -109,14 +110,16 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         } for (segment_id, speed) in segments.items()]
         data = {
             "map_id": self.map_id,
+            "request_name": "update-speeds",
             "segments_data": inner_data
         }
         self.client.broadcast(Message(kind="update-map", data=data))
 
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
-        messages = [Message(kind="alternatives", data={
+        messages = [Message(kind="compute", data={
             "map_id": self.map_id,
+            "request_name": "alternatives",
             "start": self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
             "destination": self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[1]),
             "max_routes": k
@@ -146,9 +149,23 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         return remapped_routes
 
     def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
-        # TODO: change to cpp
-        travel_times = [self.routing_map.get_path_travel_time(route) for route in routes]
-        return travel_times
+        messages = [Message(kind="compute", data={
+            "map_id": self.map_id,
+            "request_name": "travel-times",
+            "node_ids": [self.routing_map.osm_to_hdf5_id(node_id) for node_id in route]
+        }) for route in routes]
+
+        results = self.client.compute(messages)
+
+        times = []
+        for result in results:
+            assert result["success"], f"Failed to compute travel time: {result}"
+            if "travel_time" in result:
+                times.append(result["travel_time"] if result["travel_time"] is not None else numpy.inf)
+            else:
+                times.append(None)
+
+        return times
 
 
 # Route selection

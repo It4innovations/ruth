@@ -242,9 +242,8 @@ class Vehicle:
                                                      start_segment_index=self.start_index + 1)
 
     def get_travel_time_limit(self, map_id: int, travel_time_limit_perc: float) -> Optional[float]:
-        if self.current_travel_time is None:
-            return None
-        assert self.current_travel_time.map_id == map_id
+        assert self.current_travel_time
+        assert self.current_travel_time.map_id == map_id, "The map_id must be the same as the current map_id."
         return self.current_travel_time.travel_time * (1 - travel_time_limit_perc)
 
     def get_followup_route(self) -> Optional[List[int]]:
