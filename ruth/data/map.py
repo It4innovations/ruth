@@ -45,6 +45,10 @@ def get_osm_segment_id(node_from: int, node_to: int):
     return f"OSM{node_from}T{node_to}"
 
 
+def round_speed(speed: float) -> int:
+    return int(speed + 0.5)
+
+
 def osm_route_to_segment_ids(route: Route) -> List[str]:
     """Turn routes made of osm node_ids to osm numerical segment ids."""
     return [get_osm_segment_id(node_from, node_to) for node_from, node_to in zip(route[:-1], route[1:])]
@@ -109,6 +113,8 @@ class Map:
             edge = self.original_network[node_from][node_to]
             edge['routing_id'] = i + 1
             edge['length'] = int(edge['length'] + 0.5)
+            edge['speed_kph'] = round_speed(edge['speed_kph'])
+            edge['maxspeed'] = edge['speed_kph']
             self.segment_lengths[(node_from, node_to)] = edge['length']
 
         self.current_network = self.original_network.copy()
@@ -200,6 +206,7 @@ class Map:
             max_speed = max_speeds[(node_from, node_to)]
             speed = max_speed if speed is None else speed
             speed = min(speed, max_speed)
+            speed = round_speed(speed)
             edge["current_speed"] = speed
             edge["current_travel_time"] = self.get_travel_time(node_from, node_to, speed)
             new_current_speeds[(node_from, node_to)] = speed
@@ -340,6 +347,7 @@ class Map:
             next(reader, None)
             for row in reader:
                 node_from, node_to, speed = int(row[0]), int(row[1]), float(row[2])
+                speed = round_speed(speed)
                 timestamp_from = datetime.strptime(row[3], timestamp_format)
                 timestamp_to = datetime.strptime(row[4], timestamp_format)
 
