@@ -79,9 +79,21 @@ def create_records(sim_path, round_freq_s, out):
 
 @click.command()
 @click.argument("sim_path", type=click.Path(exists=True))
-@click.option("--round-freq-s", type=int, default=300, help="How to round date times. [Default: 300 (5 min)]")
-@click.option("--out", type=str, default="out.csv")
+@click.option("--round-freq-s", type=int, default=300, help="Frequency of aggregation [Default: 300 s (5 min)]")
+@click.option("--out", type=str, default="out.csv", help="Output file [Default: out.csv]")
 def aggregate_speed_profiles(sim_path, round_freq_s, out):
+    """
+    Script for aggregation of records from RUTH simulation.
+    Only records for timestamps and segments which are present in the simulation are considered
+    (segments with no vehicles are not present in the output).
+
+    The output is a CSV file with the following columns:
+    date,
+    road_id (an id of OSM segment in format `OSM<from_node_id>T<to_node_id>)
+    time_in_minutes_from (record start time in minutes from midnight of the day in the `date` column)
+    time_in_minutes_to (record end time in minutes from midnight of the day in the `date` column)
+    speed_kph (average speed in km/h)
+    """
     with open(out, "w") as csv:
         csv.write("date;road_id;time_in_minutes_from;time_in_minutes_to;speed_kph\n")
 

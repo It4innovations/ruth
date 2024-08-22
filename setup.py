@@ -28,6 +28,7 @@ setup(
             "ruth-data-preprocessing = ruth.tools.preprocessbenchmarkdata:main",
             "ruth-traffic-flow-to-od-matrix = ruth.tools.trafficflow2odmatrix:convert",
             "ruth-aggregate-fcd = ruth.tools.globalview2aggregatedfcd:aggregate_cmd",
+            "ruth-speed-profiles = ruth.tools.speed_profiles:aggregate_speed_profiles",
             "ruth-od-matrix-to-simulator-input = ruth.tools.odmatrix2simulatorinput:convert",
             "ruth-combine-od-matrix = ruth.tools.combineodmatrix:combine_odmatrix",
             "ruth-distributed = ruth.zeromq.distributed:distributed",
