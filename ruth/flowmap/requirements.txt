@@ -1,0 +1,10 @@
+matplotlib
+osmnx
+numpy
+shapely
+pandas
+networkx
+setuptools
+click
+fastparquet
+tqdm
