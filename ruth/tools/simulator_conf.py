@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Optional
 
 import click
-import flowmap as flowmap
 from click import IntRange
-from flowmap.app import animation_options
 from serde import serde, field, Strict
 from serde.json import from_json
 
+from ..flowmap import animation
+from ..flowmap.app import animation_options
 from ..simulator import Simulation
 from ..tools.simulator import (run_inner, AlternativesRatio as AlternativesRatioInner, CommonArgs as CommonArgsInner,
                                RouteSelectionRatio as RouteSelectionRatioInner, animate)
@@ -153,13 +153,13 @@ def run(ctx):
 @single_node_simulator_conf.command()
 @click.pass_context
 def volume_animation(ctx):
-    animate(ctx, flowmap.animation.SimulationVolumeAnimator, **ctx.obj["animation"].__dict__)
+    animate(ctx, animation.SimulationVolumeAnimator, **ctx.obj["animation"].__dict__)
 
 
 @single_node_simulator_conf.command()
 @click.pass_context
 def speed_animation(ctx):
-    animate(ctx, flowmap.animation.SimulationSpeedsAnimator, **ctx.obj["animation"].__dict__)
+    animate(ctx, animation.SimulationSpeedsAnimator, **ctx.obj["animation"].__dict__)
 
 
 def main():

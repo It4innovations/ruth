@@ -19,4 +19,3 @@ cluster @ git+https://code.it4i.cz/def/cluster.git#e47b756e1bcb91c0244e1cede58c8
 h5py==3.10.0
 pyserde==0.13.2
 msgpack==1.0.7
-flowmap @ git+https://code.it4i.cz/mic0427/traffic-flow-map.git#cff9ad05f833e7d314e333e49c50960f3b4cca12

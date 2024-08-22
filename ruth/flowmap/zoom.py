@@ -1,8 +1,8 @@
 from matplotlib import pyplot as plt
 
-from flowmap.flowmapframe.zoom import plot_graph_with_zoom
-from flowmap.flowmapframe.speeds import plot_routes
-from flowmap.ax_settings import AxSettings
+from .flowmapframe.zoom import plot_graph_with_zoom
+from .flowmapframe.speeds import plot_routes
+from .ax_settings import AxSettings
 
 
 def get_zoom(g, segments):

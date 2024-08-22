@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import List, Optional, Type
 
 import click
-import flowmap.app as flowmap
-import flowmap.animation as animation
+
+from ..flowmap.app import click_animation_options
+from ..flowmap import animation
 
 from ..vehicle import set_vehicle_behavior
 from ..simulator import SimSetting, Simulation, SingleNodeSimulator, \
@@ -387,14 +388,14 @@ def animate(ctx, animator: Type[animation.SimulationAnimator], **kwargs):
 
 
 @single_node_simulator.command()
-@flowmap.click_animation_options
+@click_animation_options
 @click.pass_context
 def volume_animation(ctx, **kwargs):
     animate(ctx, animation.SimulationVolumeAnimator, **kwargs)
 
 
 @single_node_simulator.command()
-@flowmap.click_animation_options
+@click_animation_options
 @click.pass_context
 def speed_animation(ctx, **kwargs):
     animate(ctx, animation.SimulationSpeedsAnimator, **kwargs)

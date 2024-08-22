@@ -11,19 +11,19 @@ from shapely import LineString
 from tqdm import tqdm
 from collections import defaultdict
 
-from flowmap.flowmapframe.zoom import plot_graph_with_zoom
-from flowmap.flowmapframe.plot import get_node_coordinates, WidthStyle
-from flowmap.flowmapframe.speeds import (plot_routes as plot_routes_speeds,
-                                         get_color_bar_info as get_color_bar_info_speeds)
-from flowmap.flowmapframe.plot import (plot_routes as plot_routes_densities,
-                                       get_color_bar_info as get_color_bar_info_densities)
+from .flowmapframe.zoom import plot_graph_with_zoom
+from .flowmapframe.plot import get_node_coordinates, WidthStyle
+from .flowmapframe.speeds import (plot_routes as plot_routes_speeds,
+                                  get_color_bar_info as get_color_bar_info_speeds)
+from .flowmapframe.plot import (plot_routes as plot_routes_densities,
+                                get_color_bar_info as get_color_bar_info_densities)
 
 from ruth.utils import TimerSet
 from ruth.simulator import Simulation
 
-from flowmap.ax_settings import AxSettings
-from flowmap.zoom import get_zoom
-from flowmap.input import preprocess_data, calculate_computation_by_simulation_time, prepare_dataframe, \
+from .ax_settings import AxSettings
+from .zoom import get_zoom
+from .input import preprocess_data, calculate_computation_by_simulation_time, prepare_dataframe, \
     calculate_active_vehicles_in_time
 
 
@@ -317,7 +317,7 @@ class SimulationAnimator(ABC):
 
 class SimulationVolumeAnimator(SimulationAnimator):
     def __init__(self, simulation_path, fps, save_path, frame_start, frames_len, width_modif, title, description,
-                 description_path, length, divide, max_width_count, plot_cars, zoom, gif, width_style):
+                 description_path, length, divide, max_width_count, plot_cars, zoom, gif, width_style="BOXED"):
         super().__init__(
             simulation_path,
             fps,

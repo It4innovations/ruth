@@ -3,11 +3,11 @@ import click
 import pathlib
 import platform
 from ruth.simulator import Simulation
-from flowmap.flowmapframe.plot import WidthStyle
-from flowmap.analysis import create_simulations_comparison
-from flowmap.time_unit import TimeUnit
-from flowmap.animation import SimulationVolumeAnimator, SimulationSpeedsAnimator
-from flowmap.info import SimulationInfo, get_real_time
+from .flowmapframe.plot import WidthStyle
+from .analysis import create_simulations_comparison
+from .time_unit import TimeUnit
+from .animation import SimulationVolumeAnimator, SimulationSpeedsAnimator
+from .info import SimulationInfo, get_real_time
 
 
 def set_path():
@@ -82,6 +82,13 @@ def generate_speeds_animation(**kwargs):
 
 @cli.command()
 @click.argument('simulation-path', type=click.Path(exists=True))
+@click.option(
+    '--time-unit',
+    type=click.Choice([el.name for el in TimeUnit]),
+    default='seconds',
+    help="Choose time unit for the output",
+    show_default=True
+)
 @click.option(
     '--minute',
     type=int,

@@ -3,11 +3,10 @@ import pandas as pd
 import itertools as itertools
 from dataclasses import dataclass, field
 from operator import attrgetter
-from collections import namedtuple
 
 from ruth.simulator import Simulation
-from flowmap.input import dataframe_to_sorted_records, Record
-from flowmap.time_unit import TimeUnit
+from .input import dataframe_to_sorted_records, Record
+from .time_unit import TimeUnit
 
 
 def get_real_time(simulation, time_unit: TimeUnit):

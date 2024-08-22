@@ -1,6 +1,6 @@
 # FlowMapVideo
 
-FlowMapVideo is a tool for visualizing the evolution of traffic flow over time. The output is a video with a map showing the traffic flow intensities at each time interval. The animation is generated using the [FlowMapFrame](flowmap/flowmapframe) library to render individual frames based on the output of the [Ruth](https://github.com/It4innovations/ruth) traffic simulator. It is designed for linux systems.
+FlowMapVideo is a tool for visualizing the evolution of traffic flow over time. The output is a video with a map showing the traffic flow intensities at each time interval. The animation is generated using the [FlowMapFrame](flowmapframe) library to render individual frames based on the output of the [Ruth](https://github.com/It4innovations/ruth) traffic simulator. It is designed for linux systems.
 
 ![Traffic Flow](./images/traffic-flow.png)
 
@@ -17,12 +17,7 @@ FlowMapVideo is a tool for visualizing the evolution of traffic flow over time. 
 
 ### Install
 
-1. Activate the virtual environment where Ruth is installed
-
-2. Install via pip
-```
-python3 -m pip install git+https://code.it4i.cz/mic0427/traffic-flow-map.git
-```
+Activate the virtual environment where Ruth is installed.
 
 ## Run
 ```
@@ -76,10 +71,10 @@ For fixed number of vehicles that will be depicted with maximum line width, use 
     ```
 ### Generate CSV file with simulation progress
 * generate CSV file with data calculated for every n minutes of the simulation
-* use `get_comparison_csv` to generate CSV file with simulation progress for 5 minute intervals
+* use `get-comparison-csv` to generate CSV file with simulation progress for 5 minute intervals
     #### Example 
     ```
-    traffic-flow-map get_comparison_csv <PATH_TO_INPUT_DIR> --output-dir <PATH_TO_OUTPUT_CSV> --interval 5
+    traffic-flow-map get-comparison-csv <PATH_TO_INPUT_DIR> --output-dir <PATH_TO_OUTPUT_CSV> --interval 5
     ```
 * CSV columns contain:
     * time offset,

@@ -30,7 +30,8 @@ setup(
             "ruth-aggregate-fcd = ruth.tools.globalview2aggregatedfcd:aggregate_cmd",
             "ruth-od-matrix-to-simulator-input = ruth.tools.odmatrix2simulatorinput:convert",
             "ruth-combine-od-matrix = ruth.tools.combineodmatrix:combine_odmatrix",
-            "ruth-distributed = ruth.zeromq.distributed:distributed"
+            "ruth-distributed = ruth.zeromq.distributed:distributed",
+            "traffic-flow-map-2 = ruth.flowmap.app:main",
         ]
     }
 )
