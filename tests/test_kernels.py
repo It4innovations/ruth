@@ -91,36 +91,29 @@ def test_compute_alternatives(setup_vehicle, setup_simulator, distributed_alt_pr
     distributed_alt_provider.load_map(routing_map)
     fastest_alt_provider.load_map(routing_map)
 
-    cpp_alternatives = distributed_alt_provider.compute_alternatives(vehicles, k)
     py_alternatives = fastest_alt_provider.compute_alternatives(vehicles, k)
+    cpp_alternatives = distributed_alt_provider.compute_alternatives(vehicles, k)
 
-    # one vehicle
-    assert len(cpp_alternatives) == 1
+    # one vehicle - 3 alternatives
     assert len(py_alternatives) == 1
-
-    # three alternatives
-    assert len(cpp_alternatives[0]) == 3
     assert len(py_alternatives[0]) == 3
-
-    # one same route
-    assert cpp_alternatives[0][0][0] == expected_alt
     assert py_alternatives[0][0][0] == expected_alt
+    py_travel_time = routing_map.get_path_travel_time(py_alternatives[0][0][0])
+    assert round(py_travel_time) == expected_travel_time
+
+    assert len(cpp_alternatives) == 1
+    assert len(cpp_alternatives[0]) == 3
+    assert cpp_alternatives[0][0][0] == expected_alt
+
+    cpp_travel_time_p = routing_map.get_path_travel_time(cpp_alternatives[0][0][0])
+    assert round(cpp_travel_time_p) == expected_travel_time
 
     cpp_travel_time = cpp_alternatives[0][0][1]
     if cpp_travel_time:
         assert round(cpp_alternatives[0][0][1]) == expected_travel_time
 
-    cpp_travel_time = routing_map.get_path_travel_time(cpp_alternatives[0][0][0])
-    assert round(cpp_travel_time) == expected_travel_time
-    py_travel_time = routing_map.get_path_travel_time(py_alternatives[0][0][0])
-    assert round(py_travel_time) == expected_travel_time
-
 
 def test_compute_alt_with_map_update(setup_vehicle, setup_simulator, distributed_alt_provider, fastest_alt_provider):
-    """
-    TODO: This test is failing sometimes, because the map update is not being processed in time.
-    After resolving the issue, we should remove the sleep(3) call.
-    """
     # do the same as before but with a map update
     vehicles = [setup_vehicle]
     routing_map = setup_simulator.sim.routing_map
