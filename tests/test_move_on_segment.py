@@ -171,7 +171,7 @@ def test_vehicle_is_at_the_end_of_route(setup_vehicle, setup_driving_route, mock
     vehicle_frequency = setup_vehicle.frequency
 
     # expect index error because the vehicle is at the end of the route
-    with pytest.raises(IndexError):
+    with pytest.raises(AssertionError):
         result_time, result_position, result_speed = move_on_segment(
             vehicle=setup_vehicle,
             driving_route_part=setup_driving_route[1:],

@@ -221,6 +221,7 @@ class Vehicle:
             return None
 
     def has_next_segment_closed(self, routing_map: Map) -> bool:
+        assert self.start_index + 2 < len(self.osm_route)  # 2 more nodes ahead to make a segment
         next_segment_from, next_segment_to = self.osm_route[self.start_index + 1], self.osm_route[self.start_index + 2]
         max_speed_on_next_segment = routing_map.get_current_max_speed(next_segment_from, next_segment_to)
         return max_speed_on_next_segment == 0.0

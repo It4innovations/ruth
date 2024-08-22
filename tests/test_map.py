@@ -47,7 +47,7 @@ def setup_segment():
 
 def test_init_temporary_max_speeds(routing_map, setup_segment):
     csv_content = f"""node_from;node_to;speed;timestamp_from;timestamp_to
-    {setup_segment[0].node_from};{setup_segment[0].node_to};0;2023-07-30 00:00:00;2023-07-30 00:05:00,
+    {setup_segment[0].node_from};{setup_segment[0].node_to};0;2023-07-30 00:00:00;2023-07-30 00:05:00;
     {setup_segment[1].node_from};{setup_segment[1].node_to};60;2023-07-30 00:00:00;2023-07-30 00:05:00
     """
 
