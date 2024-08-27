@@ -78,20 +78,8 @@ class Simulator:
                     break
 
             with timer_set.get("update_map_speeds"):
-                # Get segments where max speeds changed
-                updated_speeds.update(self.sim.routing_map.update_temporary_max_speeds(
-                    self.sim.setting.departure_time + self.current_offset))
-
-                if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
-                    # Update speeds based on the global view
-                    updated_speeds_gv = self.sim.global_view.take_segment_speeds()
-                    updated_speeds.update(self.sim.routing_map.update_current_speeds(updated_speeds_gv))
-
-                    for alternatives_provider in alternatives_providers:
-                        alternatives_provider.update_map(self.sim.routing_map, updated_speeds)
-
-                    updated_speeds.clear()
-                    last_map_update = self.current_offset
+                last_map_update, updated_speeds = self.update_map_speeds(updated_speeds, last_map_update,
+                                                                         alternatives_providers)
 
             with timer_set.get("allowed_vehicles"):
                 vehicles_to_be_moved = [v for v in self.sim.vehicles
@@ -102,7 +90,7 @@ class Simulator:
                                   vehicle.is_at_the_end_of_segment(self.sim.routing_map)
                                   and vehicle.alternatives != VehicleAlternatives.DEFAULT]
 
-                computed_vehicles, alts = compute_alternatives(self.sim.routing_map, alternatives_providers,
+                computed_vehicles, alts = compute_alternatives(alternatives_providers,
                                                                need_new_route, self.sim.setting.k_alternatives)
                 assert len(computed_vehicles) == len(alts) == len(need_new_route)
 
@@ -157,8 +145,6 @@ class Simulator:
     def advance_vehicles(self, vehicles: List[Vehicle], current_offset) -> Tuple[List[FCDRecord], bool]:
         """Move the vehicles on its route and generate FCD records"""
 
-        for vehicle in vehicles:
-            assert vehicle.is_active(current_offset, self.sim.setting.round_freq)
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             self.sim.global_view,
                                             self.sim.routing_map,
@@ -184,9 +170,27 @@ class Simulator:
                 vehicle.active = False
                 vehicle.status = "no plateau route"
 
+    def update_map_speeds(self, updated_speeds: dict, last_map_update: int,
+                          alternatives_providers: List[AlternativesProvider]):
+        # Get segments where max speeds changed
+        updated_speeds.update(self.sim.routing_map.update_temporary_max_speeds(
+            self.sim.setting.departure_time + self.current_offset))
 
-def compute_alternatives(routing_map: Map,
-                         alternatives_providers: List[AlternativesProvider],
+        if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
+            # Update speeds based on the global view
+            updated_speeds_gv = self.sim.global_view.take_segment_speeds()
+            updated_speeds.update(self.sim.routing_map.update_current_speeds(updated_speeds_gv))
+
+            for alternatives_provider in alternatives_providers:
+                alternatives_provider.update_map(updated_speeds)
+
+            updated_speeds.clear()
+            last_map_update = self.current_offset
+
+        return last_map_update, updated_speeds
+
+
+def compute_alternatives(alternatives_providers: List[AlternativesProvider],
                          vehicles: List[Vehicle],
                          k_alternatives: int) -> Tuple[List[Vehicle], List[AlternativeRoutes]]:
     if not vehicles:
