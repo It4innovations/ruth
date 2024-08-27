@@ -4,14 +4,14 @@ from dataclasses import asdict, dataclass, field
 from datetime import timedelta
 from enum import Enum, auto
 from math import isclose
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import random
 import pandas as pd
 from networkx.exception import NodeNotFound
 
 from .data.map import Map
-from .data.segment import Route, SegmentPosition, LengthMeters, RouteWithTime
+from .data.segment import SegmentPosition, LengthMeters, RouteWithTime
 from .utils import round_timedelta
 
 
@@ -113,6 +113,12 @@ def set_vehicle_behavior(vehicles: List['Vehicle'],
 
 
 @dataclass
+class CurrentTravelTime:
+    travel_time: float
+    map_id: int
+
+
+@dataclass
 class Vehicle:
     """Vehicle."""
 
@@ -130,8 +136,7 @@ class Vehicle:
     status: str = set_numpy_type("string")
     alternatives: VehicleAlternatives = VehicleAlternatives.DEFAULT
     route_selection: VehicleRouteSelection = VehicleRouteSelection.NO_ALTERNATIVE
-    # Kept for backwards compatibility with old input files
-    leap_history: Any = None
+    current_travel_time: Optional[CurrentTravelTime] = None
 
     def __post_init__(self):
         # We want to normalize these values to datetime.timedelta, because performing operations
@@ -229,6 +234,15 @@ class Vehicle:
         next_segment_from, next_segment_to = self.osm_route[self.start_index + 1], self.osm_route[self.start_index + 2]
         max_speed_on_next_segment = routing_map.get_current_max_speed(next_segment_from, next_segment_to)
         return max_speed_on_next_segment == 0.0
+
+    def set_current_travel_time(self, travel_time: float, map_id: int):
+        self.current_travel_time = CurrentTravelTime(travel_time=travel_time, map_id=map_id)
+
+    def get_travel_time_limit(self, map_id: int, travel_time_limit_perc: float) -> Optional[float]:
+        if self.current_travel_time is None:
+            return None
+        assert self.current_travel_time.map_id == map_id
+        return self.current_travel_time.travel_time * (1 - travel_time_limit_perc)
 
     def update_followup_route(self, suggested_route_with_time: RouteWithTime, routing_map: Map, travel_time_limit_perc: float = None):
         """

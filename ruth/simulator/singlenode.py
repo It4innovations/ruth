@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from typing import Callable, List, Optional, Tuple
 
 from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithPlans, AlternativeRoutes, \
-    ZeroMQDistributedAlternatives
+    ZeroMQDistributedAlternatives, VehicleWithRoute
 from .route import advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
 from ..data.map import Map
@@ -104,6 +104,10 @@ class Simulator:
             with timer_set.get("selected_routes"):
                 selected_plans = select_routes(route_selection_providers, new_vehicle_routes)
                 assert len(selected_plans) == len(new_vehicle_routes)
+
+                check_travel_times(self.sim.routing_map, alternatives_providers, selected_plans)
+
+                current_map_id = self.sim.routing_map.map_id
                 for (vehicle, route) in selected_plans:
                     vehicle.update_followup_route(route, self.sim.routing_map, self.sim.setting.travel_time_limit_perc)
 
@@ -224,7 +228,23 @@ def select_routes(route_selection_providers: List[RouteSelectionProvider], vehic
     return combined_routes
 
 
-def remove_infinity_alternatives(alternatives: List[AlternativeRoutes], routing_map: Map)\
+def check_travel_times(routing_map: Map, alternatives_providers: List[AlternativesProvider],
+                       vehicles_with_routes: List[VehicleWithRoute]):
+
+    current_map_id = routing_map.map_id
+    vehicles_to_update = [v_r[0] for v_r in vehicles_with_routes if v_r[0].map_id != current_map_id
+                          and v_r[0].alternatives not in [VehicleAlternatives.DEFAULT,
+                                                          VehicleAlternatives.DIJKSTRA_SHORTEST]]
+
+    for provider in alternatives_providers:
+        current_routes = [v.osm_route for v in vehicles_to_update if v.alternatives == provider.vehicle_behaviour]
+        travel_times = provider.get_routes_travel_times(current_routes)
+        for vehicle, travel_time in zip(vehicles_to_update, travel_times):
+            if travel_time is not None:
+                vehicle.set_current_travel_time(travel_time, current_map_id)
+
+
+def remove_infinity_alternatives(alternatives: List[AlternativeRoutes], routing_map: Map) \
         -> List[AlternativeRoutes]:
     """
     Removes alternatives that contain infinity.
