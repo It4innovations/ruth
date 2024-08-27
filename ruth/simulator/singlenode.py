@@ -107,7 +107,6 @@ class Simulator:
 
                 check_travel_times(self.sim.routing_map, alternatives_providers, selected_plans)
 
-                current_map_id = self.sim.routing_map.map_id
                 for (vehicle, route) in selected_plans:
                     vehicle.update_followup_route(route, self.sim.routing_map, self.sim.setting.travel_time_limit_perc)
 
@@ -230,14 +229,20 @@ def select_routes(route_selection_providers: List[RouteSelectionProvider], vehic
 
 def check_travel_times(routing_map: Map, alternatives_providers: List[AlternativesProvider],
                        vehicles_with_routes: List[VehicleWithRoute]):
-
+    """
+    Recomputes travel times for vehicles if map has changed.
+    Note: Travel time when finishing a segment is changed in update_followup_route
+    """
     current_map_id = routing_map.map_id
     vehicles_to_update = [v_r[0] for v_r in vehicles_with_routes if v_r[0].map_id != current_map_id
                           and v_r[0].alternatives not in [VehicleAlternatives.DEFAULT,
                                                           VehicleAlternatives.DIJKSTRA_SHORTEST]]
+    if not vehicles_to_update:
+        return
 
     for provider in alternatives_providers:
-        current_routes = [v.osm_route for v in vehicles_to_update if v.alternatives == provider.vehicle_behaviour]
+        current_routes = [v.get_followup_route() for v in vehicles_to_update
+                          if v.alternatives == provider.vehicle_behaviour]
         travel_times = provider.get_routes_travel_times(current_routes)
         for vehicle, travel_time in zip(vehicles_to_update, travel_times):
             if travel_time is not None:
