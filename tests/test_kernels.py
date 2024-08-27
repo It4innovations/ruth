@@ -135,7 +135,7 @@ def test_compute_alt_with_map_update(setup_vehicle, setup_simulator, distributed
     # Update speeds
     updated_speeds = {(27349583, 27350859): new_speed}
     new_speeds = routing_map.update_current_speeds(updated_speeds)
-    distributed_alt_provider.update_map(routing_map, new_speeds)
+    distributed_alt_provider.update_map(new_speeds)
 
     new_travel_time = routing_map.get_path_travel_time([27349583, 27350859])
     assert isclose(new_travel_time, current_travel_time + expected_travel_time_change, abs_tol=1)

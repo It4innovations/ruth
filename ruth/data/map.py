@@ -92,6 +92,7 @@ class Map:
         Initialize a map via the border.
         If `data_dir` provided, the map is loaded from locally stored maps preferably.
         """
+        self.map_id = 0
         self.bbox = bbox
         self.download_date = download_date
         self.data_dir = data_dir
@@ -131,6 +132,9 @@ class Map:
             hdf5_file_name = f"map_{round(time() * 1000)}_{os.getpid()}.hdf5"
             self.hdf5_file_path = str((Path(self.data_dir) / hdf5_file_name).absolute())
             self.save_hdf()
+
+    def get_map_id(self):
+        return self.map_id
 
     def save_hdf(self) -> str:
         temp_path = str((Path(self.data_dir) / f"map_{round(time() * 1000)}_{os.getpid()}_temp.hdf5").absolute())
@@ -186,6 +190,7 @@ class Map:
         return True
 
     def init_current_speeds(self):
+        self.map_id = 0
         speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')
         travel_times = {}
         for (node_from, node_to), speed in speeds.items():
@@ -198,6 +203,7 @@ class Map:
         This methods updates the current speeds and travel times for segments
         passed in `segments_to_update`.
         """
+        self.map_id = self.map_id + 1
         max_speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')
 
         new_current_speeds = {}
@@ -346,6 +352,8 @@ class Map:
             reader = csv.reader(f, delimiter=';')
             next(reader, None)
             for row in reader:
+                if len(row) < 5:
+                    continue
                 node_from, node_to, speed = int(row[0]), int(row[1]), float(row[2])
                 speed = round_speed(speed)
                 timestamp_from = datetime.strptime(row[3], timestamp_format)
@@ -360,7 +368,11 @@ class Map:
         self.temporary_speeds.sort(key=lambda x: x.timestamp_from)
 
     def update_temporary_max_speeds(self, timestamp: datetime):
-        """Update max speeds according to the temporary speeds."""
+        """
+        Update max speeds according to the temporary speeds.
+        When the temporary speed is no longer valid, the original max speed is restored.
+        Current speed is updated only if max speed is lower than the current speed.
+        """
         new_max_speeds = {}
         check_segments = []
         ts_to_remove = []

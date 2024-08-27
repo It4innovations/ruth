@@ -28,7 +28,7 @@ class AlternativesProvider:
         """
         self.routing_map = routing_map
 
-    def update_map(self, map: Map, segments: Dict[SegmentId, Optional[SpeedMps]]):
+    def update_map(self, segments: Dict[SegmentId, Optional[SpeedMps]]):
         """
         Update speeds of the passed segments in a previously passed map.
         """
@@ -39,6 +39,12 @@ class AlternativesProvider:
         """
         Provides implementation of computing alternatives.
         For a given list of vehicles and parameter `k`, computes a list of routes for each vehicle.
+        """
+        raise NotImplementedError
+
+    def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
+        """
+        Returns the travel times for the given routes.
         """
         raise NotImplementedError
 
@@ -53,6 +59,10 @@ class FastestPathsAlternatives(AlternativesProvider):
         return [[(route, None) for route in vehicle.k_fastest_paths(k, self.routing_map)]
                 for vehicle in vehicles]
 
+    def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
+        travel_times = [self.routing_map.get_path_travel_time(route) for route in routes]
+        return travel_times
+
 
 class ShortestPathsAlternatives(AlternativesProvider):
 
@@ -63,6 +73,9 @@ class ShortestPathsAlternatives(AlternativesProvider):
         Optional[AlternativeRoutes]]:
         return [[(route, None) for route in vehicle.k_shortest_paths(k, self.routing_map)]
                 for vehicle in vehicles]
+
+    def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
+        return len(routes) * [None]
 
 
 class ZeroMQDistributedAlternatives(AlternativesProvider):
@@ -84,15 +97,15 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         self.routing_map = routing_map
         self.map_id = 0
 
-    def update_map(self, map: Map, segments: Dict[SegmentId, Optional[SpeedMps]]):
+    def update_map(self, segments: Dict[SegmentId, Optional[SpeedMps]]):
         """
         Update speeds of the passed segments in a previously passed map.
         """
-        self.map_id = self.map_id + 1
+        self.map_id = self.routing_map.get_map_id()
         inner_data = [{
-            "edge_id": map.get_hdf5_edge_id(segment_id),
-            "speed": speed if speed is not None else map.get_current_max_speed(segment_id[0],
-                                                                               segment_id[1])
+            "edge_id": self.routing_map.get_hdf5_edge_id(segment_id),
+            "speed": speed if speed is not None else self.routing_map.get_current_max_speed(segment_id[0],
+                                                                                            segment_id[1])
         } for (segment_id, speed) in segments.items()]
         data = {
             "map_id": self.map_id,
@@ -131,6 +144,11 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
                 for result in results
             ]
         return remapped_routes
+
+    def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
+        # TODO: change to cpp
+        travel_times = [self.routing_map.get_path_travel_time(route) for route in routes]
+        return travel_times
 
 
 # Route selection

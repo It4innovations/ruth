@@ -184,6 +184,10 @@ class Vehicle:
         """Return the end node of segment in processing."""
         return self.osm_route[self.start_index + 1]
 
+    @property
+    def map_id(self) -> int:
+        return self.current_travel_time.map_id if self.current_travel_time is not None else -1
+
     def shortest_path(self, routing_map: Map) -> Optional[List[int]]:
         """Compute the shortest path from the current position to the end."""
         current_starting_node = self.next_routing_start.node
