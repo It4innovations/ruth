@@ -242,7 +242,7 @@ class Map:
             node_from=node_from,
             node_to=node_to,
             length=data["length"],
-            max_allowed_speed_kph=data["speed_kph"],
+            max_allowed_speed_kph=data["speed_kph"]
         )
 
     def osm_route_to_py_segments(self, osm_route: Route) -> List[Segment]:

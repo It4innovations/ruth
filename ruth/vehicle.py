@@ -116,6 +116,7 @@ def set_vehicle_behavior(vehicles: List['Vehicle'],
 class CurrentTravelTime:
     travel_time: float
     map_id: int
+    start_segment_index: int
 
 
 @dataclass
@@ -236,13 +237,22 @@ class Vehicle:
         return max_speed_on_next_segment == 0.0
 
     def set_current_travel_time(self, travel_time: float, map_id: int):
-        self.current_travel_time = CurrentTravelTime(travel_time=travel_time, map_id=map_id)
+        self.current_travel_time = CurrentTravelTime(travel_time=travel_time,
+                                                     map_id=map_id,
+                                                     start_segment_index=self.start_index + 1)
 
     def get_travel_time_limit(self, map_id: int, travel_time_limit_perc: float) -> Optional[float]:
         if self.current_travel_time is None:
             return None
         assert self.current_travel_time.map_id == map_id
         return self.current_travel_time.travel_time * (1 - travel_time_limit_perc)
+
+    def get_followup_route(self) -> Optional[List[int]]:
+        return self.osm_route[self.next_routing_start.index:]
+
+    def subtract_from_travel_time(self, travel_time: float, node_from):
+        self.current_travel_time.travel_time -= travel_time
+        self.current_travel_time.start_segment_index = node_from
 
     def update_followup_route(self, suggested_route_with_time: RouteWithTime, routing_map: Map, travel_time_limit_perc: float = None):
         """
@@ -255,22 +265,24 @@ class Vehicle:
         if len(first_part) > 0:
             assert first_part[-1] != suggested_route[0]
 
-        current_route = self.osm_route[node_index:]
-
         if travel_time_limit_perc is None or self.alternatives == VehicleAlternatives.DIJKSTRA_SHORTEST:
             self.osm_route = first_part + suggested_route
             return
 
-        current_route_travel_time = routing_map.get_path_travel_time(current_route)
-        travel_time_limit = current_route_travel_time * (1 - travel_time_limit_perc)
+        tt_index = self.current_travel_time.start_segment_index
+        if tt_index != node_index:
+            passed_route = self.osm_route[tt_index:tt_index + 2]
+            passed_travel_time = routing_map.get_path_travel_time(passed_route)
+            self.subtract_from_travel_time(passed_travel_time, node_index)
 
         if suggested_route_travel_time is None:
-            if routing_map.check_if_travel_time_is_faster(suggested_route, travel_time_limit):
-                self.osm_route = first_part + suggested_route
-            return
+            suggested_route_travel_time = routing_map.get_path_travel_time(suggested_route)
 
-        elif suggested_route_travel_time < travel_time_limit:
+        travel_time_limit = self.current_travel_time.travel_time * (1 - travel_time_limit_perc)
+
+        if suggested_route_travel_time < travel_time_limit:
             self.osm_route = first_part + suggested_route
+            self.set_current_travel_time(suggested_route_travel_time, routing_map.get_map_id())
 
 
     @property
