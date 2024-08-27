@@ -190,7 +190,8 @@ Animation options can be set in configuration file, for example:
 - **zoom** - choose zoom manually
 - **gif** - generate as a gif instead of mp4, does not require `FFmpeg`
 
-
+### Tools
+Other tools can be found in the `ruth/tools` directory. For more information, see **ruth/tools/README.md**.
 
 # Acknowledgement
 
