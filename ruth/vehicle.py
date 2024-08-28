@@ -270,8 +270,8 @@ class Vehicle:
 
         tt_index = self.current_travel_time.start_segment_index
         if tt_index != node_index:
-            passed_route = self.osm_route[tt_index:tt_index + 2]
-            passed_travel_time = routing_map.get_path_travel_time(passed_route)
+            passed_travel_time = routing_map.get_segment_travel_time(self.osm_route[tt_index],
+                                                                     self.osm_route[tt_index + 1])
             self.subtract_from_travel_time(passed_travel_time, node_index)
 
         if suggested_route_travel_time is None:

@@ -167,13 +167,16 @@ class Map:
     def edges(self):
         return self.current_network.edges()
 
-    def get_travel_time(self, node_from: int, node_to: int, speed_kph: SpeedKph) -> float:
+    def get_travel_time_from_speed(self, node_from: int, node_to: int, speed_kph: SpeedKph) -> float:
         if speed_kph == 0:
             return float('inf')
         segment_length_m = float(self.segment_lengths[(node_from, node_to)])
         speed_mps = float(speed_kph) / 3.6
         travel_time_s = segment_length_m / speed_mps
         return travel_time_s
+
+    def get_segment_travel_time(self, node_from: int, node_to: int) -> float:
+        return self.current_network[node_from][node_to]['current_travel_time']
 
     def get_path_travel_time(self, path: List[int]):
         total_time = 0
@@ -194,7 +197,7 @@ class Map:
         speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')
         travel_times = {}
         for (node_from, node_to), speed in speeds.items():
-            travel_times[(node_from, node_to)] = self.get_travel_time(node_from, node_to, speed)
+            travel_times[(node_from, node_to)] = self.get_travel_time_from_speed(node_from, node_to, speed)
         nx.set_edge_attributes(self.current_network, values=speeds, name="current_speed")
         nx.set_edge_attributes(self.current_network, values=travel_times, name="current_travel_time")
 
@@ -214,7 +217,7 @@ class Map:
             speed = min(speed, max_speed)
             speed = round_speed(speed)
             edge["current_speed"] = speed
-            edge["current_travel_time"] = self.get_travel_time(node_from, node_to, speed)
+            edge["current_travel_time"] = self.get_travel_time_from_speed(node_from, node_to, speed)
             new_current_speeds[(node_from, node_to)] = speed
 
         return new_current_speeds
@@ -400,7 +403,7 @@ class Map:
             current_speed = data['current_speed']
             current_speed = current_speed if current_speed < max_speed else max_speed
             new_current_speeds[(node_from, node_to)] = current_speed
-            new_travel_times[(node_from, node_to)] = self.get_travel_time(node_from, node_to, current_speed)
+            new_travel_times[(node_from, node_to)] = self.get_travel_time_from_speed(node_from, node_to, current_speed)
 
         nx.set_edge_attributes(self.current_network, values=new_current_speeds, name='current_speed')
         nx.set_edge_attributes(self.current_network, values=new_travel_times, name='current_travel_time')
