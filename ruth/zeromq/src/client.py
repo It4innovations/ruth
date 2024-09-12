@@ -42,7 +42,7 @@ class Client:
         # Give subscribers a chance to join
         time.sleep(1)
 
-    def compute(self, messages: List[Message], timeout_s=30) -> List[Any]:
+    def compute(self, messages: List[Message], timeout_s=40) -> List[Any]:
         self.poller.register(self.socket, zmq.POLLIN | zmq.POLLOUT)
 
         msg_send = 0
