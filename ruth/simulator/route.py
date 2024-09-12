@@ -208,10 +208,11 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
     for vehicle in vehicles_to_be_moved:
         queue = queues_manager.queues[(vehicle.current_node, vehicle.next_node)]
         if vehicle.id not in queue:
+            prev_pos = vehicle.segment_position
             new_fcds = advance_vehicle(vehicle, departure_time, gv_db, routing_map, queues_manager,
                                        los_vehicles_tolerance)
             fcds.extend(new_fcds)
-            vehicles_moved = True
+            vehicles_moved = vehicles_moved or prev_pos != vehicle.segment_position
         else:
             vehicles_in_queues[vehicle.id] = vehicle
 
