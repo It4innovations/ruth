@@ -19,7 +19,7 @@ Consider config file as defined in ```config.json```:
   },
   "run" :
   {
-    "vehicles-path": "/mnt/proj1/dd-23-154/bbox_parquets/250K_19022024.parquet"
+    "vehicles-path": "input.parquet"
   },
   "alternatives" : {
     "dijkstra-fastest": 0.0,
@@ -35,7 +35,7 @@ Consider config file as defined in ```config.json```:
 ```
 
 Where we set the map and k-alternatives accordingly, together with plateau-fastest in order to use ZeroMQ for 
-distributed spawning of workers accross nodes.
+distributed spawning of workers across nodes.
 
 In order to run the simulation in distributed fashion we can use ```bench.py```, specifically function ```run```.
 For correct incorporation of nodes spawned and configuration this function has to be used inside ```ruth```, otherwise 
@@ -52,8 +52,8 @@ MODULES = [
     "CMake/3.24.3-GCCcore-12.2.0",
     "Boost/1.81.0-GCC-12.2.0"
 ]
-CONFIG_FILE = "/mnt/proj2/open-27-41/simulator/ruth/config.json"
-EVKIT_PATH = "/mnt/proj2/open-27-41/simulator/evkit"
+CONFIG_FILE = "config.json"
+EVKIT_PATH = "evkit_dir_path"
 hosts = get_slurm_nodes()
 workers = 32
 try_to_kill = False
@@ -98,8 +98,8 @@ MODULES = [
     "CMake/3.24.3-GCCcore-12.2.0",
     "Boost/1.81.0-GCC-12.2.0"
 ]
-CONFIG_FILE = "/mnt/proj2/open-27-41/simulator/ruth/config.json"
-EVKIT_PATH = "/mnt/proj2/open-27-41/simulator/evkit"
+CONFIG_FILE = "config.json"
+EVKIT_PATH = "evkit_path"
 hosts = get_slurm_nodes()
 workers = [1, 2]
 try_to_kill = False
