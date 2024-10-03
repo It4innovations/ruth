@@ -30,14 +30,25 @@ Consider config file as defined in ```config.json```:
     "first": 1.0,
     "random": 0.0,
     "ptdr": 0.0
+  },
+  "distibution": {
+    "number-of-workers": 1,
+    "evkit-dir-path": "evkit",
+    "spawn-workers-at-main-node": true,
+    "try-to-kill": false
   }
 }
 ```
-
 Where we set the map and k-alternatives accordingly, together with plateau-fastest in order to use ZeroMQ for 
 distributed spawning of workers across nodes.
 
-In order to run the simulation in distributed fashion we can use ```bench.py```, specifically function ```run```.
+In section ```distribution``` we set the number of workers, path to evkit and other parameters that are used for a distributed run.
+Then we can run the simulation with:
+```
+ruth-distributed --config-file="config.json"
+```
+
+We can also directly use ```bench.py```, specifically function ```run```.
 For correct incorporation of nodes spawned and configuration this function has to be used inside ```ruth```, otherwise 
 we may simply use ```bench.py``` and edit it's parameters since it spawns the ```run``` with following parameters:
 ```
@@ -60,10 +71,6 @@ try_to_kill = False
 
 run(...)
 ```
-Or run the command:
-```
-ruth-distributed EXPERIMENT_NAME EVKIT_DIR_PATH --config-file="config.json" --workers=32
-```
 
 ## Submitting a job
 In order to submit a job to a cluster, for example SLURM, we may use:
@@ -80,7 +87,7 @@ ml CMake/3.24.3-GCCcore-12.2.0
 ml Boost/1.81.0-GCC-12.2.0
 
 source VENV_PATH
-python3 bench.py EXPERIMENT_NAME
+ruth-distributed --config-file="config.json"
 ```
 
 ## Running benchmark

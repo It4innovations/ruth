@@ -6,17 +6,31 @@ import json
 import os
 from pathlib import Path
 
+from serde.json import from_json
+
+from ..tools.simulator_conf import Args
 from ..zeromq.bench import get_slurm_nodes, run
 
 
 @click.command()
-@click.argument("experiment-name", type=str)
-@click.argument("evkit-dir-path", type=click.Path(exists=True))
-@click.option("--config-file", type=click.Path(exists=True), help="Path to simulation config.", default="config.json")
-@click.option("--workers", type=int, default=32, help="Number of workers. Default 32.")
-@click.option("--spawn-workers-at-main-node", is_flag=True, help="Spawn workers at main node.")
-@click.option("--try-to-kill", is_flag=True, help="Try to kill workers after simulation is computed.")
-def distributed(experiment_name, evkit_dir_path, config_file, workers, spawn_workers_at_main_node, try_to_kill):
+@click.option("--config-file", type=click.Path(exists=True), help="Path to simulation config.",
+              default="./inputs/config.json")
+def distributed(config_file):
+    if os.path.isfile(config_file):
+        logging.info(f"Settings taken from config file {config_file}.")
+        with open(config_file, 'r') as f:
+            config_data = f.read()
+            args = from_json(Args, config_data)
+    else:
+        logging.error(f"Config file {config_file} does not exist.")
+        return
+
+    experiment_name = args.common.task_id if args.common.task_id else 'run'
+    evkit_dir_path = args.distributed.evkit_dir_path
+    workers = args.distributed.number_of_workers
+    spawn_workers_at_main_node = args.distributed.spawn_workers_at_main_node
+    try_to_kill = args.distributed.try_to_kill
+
     work_dir = Path(os.getcwd()).absolute()
     worker_dir = work_dir / experiment_name
     env_path = os.environ["VIRTUAL_ENV"]
