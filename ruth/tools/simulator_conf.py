@@ -83,6 +83,14 @@ class RunArgs:
 
 
 @serde(rename_all="kebabcase")
+class DistributedArgs:
+    number_of_workers: int = 32
+    evkit_dir_path: str = "evkit"
+    spawn_workers_at_main_node: bool = True
+    try_to_kill: bool = False
+
+
+@serde(rename_all="kebabcase")
 @dataclass
 class AlternativesRatio(AlternativesRatioInner):
     default: float = 0.0
@@ -110,6 +118,7 @@ class Args:
     run: RunArgs = field(rename="run")
     alternatives_ratio: AlternativesRatio = field(rename="alternatives")
     route_selection_ratio: RouteSelectionRatio = field(rename="route-selection")
+    distributed: DistributedArgs = field(rename="distributed", default=None)
     animation: AnimationArgs = field(rename="animation", default=None)
 
 
