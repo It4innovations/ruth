@@ -311,13 +311,14 @@ if __name__ == "__main__":
     # ]
 
     # Karolina
+    #
     MODULES = [
         "Python/3.11.5-GCCcore-13.2.0",
-        "GCCcore/13.2.0",
-        "SQLite/3.43.1-GCCcore-13.2.0",
-        "HDF5/1.14.3-gompi-2023b",
-        "CMake/3.27.6-GCCcore-13.2.0",
-        "Boost/1.83.0-GCC-13.2.0"
+        "GCCcore/12.2.0",
+        "SQLite/3.39.4-GCCcore-12.2.0",
+        "HDF5/1.14.0-gompi-2023a",
+        "CMake/3.24.3-GCCcore-12.2.0",
+        "Boost/1.81.0-GCC-12.2.0"
     ]
 
     # CHANGE PATHS

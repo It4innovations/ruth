@@ -42,12 +42,7 @@ def distributed(config_file):
     worker_dir = work_dir / experiment_name
     env_path = os.environ["VIRTUAL_ENV"]
     modules = [
-        "Python/3.10.8-GCCcore-12.2.0",
-        "GCC/12.2.0",
-        "SQLite/3.39.4-GCCcore-12.2.0",
-        "HDF5/1.14.0-gompi-2022b",
-        "CMake/3.24.3-GCCcore-12.2.0",
-        "Boost/1.81.0-GCC-12.2.0"
+        "Python/3.11.5-GCCcore-13.2.0 GCCcore/12.2.0 SQLite/3.39.4-GCCcore-12.2.0 CMake/3.24.3-GCCcore-12.2.0 Boost/1.81.0-GCC-12.2.0 HDF5/1.14.0-gompi-2023a",
     ]
     hosts = get_slurm_nodes()
 
