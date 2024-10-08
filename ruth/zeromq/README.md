@@ -31,7 +31,7 @@ Consider config file as defined in ```config.json```:
     "random": 0.0,
     "ptdr": 0.0
   },
-  "distibution": {
+  "distribution": {
     "number-of-workers": 1,
     "evkit-dir-path": "evkit",
     "spawn-workers-at-main-node": true,

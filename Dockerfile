@@ -31,4 +31,4 @@ RUN mkdir -p inputs
 RUN mkdir -p outputs
 
 # ENTRYPOINT ["/bin/bash"]
-ENTRYPOINT ruth-simulator-conf --config-file=${CONFIG_FILENAME} run
+ENTRYPOINT ruth-distributed --config-file=${CONFIG_FILENAME}
