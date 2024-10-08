@@ -82,8 +82,6 @@ def worker_spawner(HOST_ADDRESS, CLIENT_ADDRESS, port, management_port, workers,
         result_queue.put(output / f"node_{n}" / f"worker_{i}" / f"worker_{i}.err")
         # time.sleep(1)
 
-    logger.info(f"Finished node {n} at host {HOST_ADDRESS}")
-
 
 def run(workers: int,
         hosts: List[str],
@@ -94,7 +92,8 @@ def run(workers: int,
         MODULES: List[str],
         ENV_PATH,
         try_to_kill: bool,
-        spawn_workers_at_main_node: bool):
+        spawn_workers_at_main_node: bool,
+        logger: logging.Logger = None):
     """
     Run the workers in a distributed fashion by spawning them on multiple host(s), nodes.
     workers                     = amount of workers
@@ -105,6 +104,7 @@ def run(workers: int,
     ENV_PATH                    = path to the environment
     try_to_kill                 = experimental, tries to kill workers after simulation is computed
     spawn_workers_at_main_node  = experimental, spawns workers at the same node where main process is located
+    logger                      = logger for the run
 
     Potential Issue:
     -   Killing workers may result in error due to rights (connected to cluster library)
@@ -178,7 +178,7 @@ def run(workers: int,
 
         empty = True
         wait_start = time.time()
-        wait_time_limit = 10
+        wait_time_limit = 30
         while empty:
             empty = any(os.stat(file_path).st_size == 0 for file_path in file_paths)
             if time.time() - wait_start > wait_time_limit:
@@ -348,7 +348,8 @@ if __name__ == "__main__":
         MODULES=MODULES,
         ENV_PATH=ENV_PATH,
         try_to_kill=try_to_kill,
-        spawn_workers_at_main_node=spawn_workers_at_main_node
+        spawn_workers_at_main_node=spawn_workers_at_main_node,
+        logger=logger
     )
 
     # Save
