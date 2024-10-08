@@ -15,10 +15,9 @@ from ..zeromq.bench import get_slurm_nodes, run
 
 @click.command()
 @click.option("--config-file", type=click.Path(exists=True), help="Path to simulation config.",
-              default="./inputs/config.json")
+              default="config.json")
 def distributed(config_file):
     if os.path.isfile(config_file):
-        logging.info(f"Settings taken from config file {config_file}.")
         with open(config_file, 'r') as f:
             config_data = f.read()
             args = from_json(Args, config_data)
@@ -46,7 +45,10 @@ def distributed(config_file):
     ]
     hosts = get_slurm_nodes()
 
-    logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(module)s:%(levelname)s %(message)s")
+    logger = logging.getLogger(__name__)
+    logging.basicConfig(filename=f'{worker_dir}/bench.log', level=logging.DEBUG,
+                        format="%(asctime)s %(module)s:%(levelname)s %(message)s")
+
 
     result = run(
         workers=workers,
@@ -58,13 +60,9 @@ def distributed(config_file):
         MODULES=modules,
         ENV_PATH=env_path,
         try_to_kill=try_to_kill,
-        spawn_workers_at_main_node=spawn_workers_at_main_node
+        spawn_workers_at_main_node=spawn_workers_at_main_node,
+        logger=logger
     )
-
-    # Save
-    json_data = json.dumps(result)
-    df = pd.read_json(json_data)
-    df.to_csv(f"{worker_dir}/results.csv", index=False)
 
 
 if __name__ == "__main__":

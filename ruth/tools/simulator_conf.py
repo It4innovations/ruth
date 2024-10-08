@@ -129,6 +129,7 @@ def fill_args(config_file, ctx=None, debug=False):
             config_data = f.read()
             args = from_json(Args, config_data)
     else:
+        logging.info(f"Config file not found.")
         args = Args(CommonArgs(), RunArgs(), AlternativesRatio(), RouteSelectionRatio(), AnimationArgs())
 
     p = Path(args.run.vehicles_path) if args.run.vehicles_path is not None else None
@@ -154,7 +155,7 @@ def single_node_simulator_conf(ctx,
                                debug):
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
     ctx.ensure_object(dict)
-    fill_args(ctx, config_file, debug)
+    fill_args(config_file, ctx, debug)
 
 
 @single_node_simulator_conf.command()
