@@ -8,7 +8,8 @@ from pathlib import Path
 
 from serde.json import from_json
 
-from ..tools.simulator_conf import Args
+from ..tools.simulator import run_inner
+from ..tools.simulator_conf import Args, fill_args
 from ..zeromq.bench import get_slurm_nodes, run
 
 
@@ -25,11 +26,17 @@ def distributed(config_file):
         logging.error(f"Config file {config_file} does not exist.")
         return
 
+    if args.distribution is None:
+        logging.error("Distributed settings are missing. Running single node simulation.")
+        args, path = fill_args(config_file)
+        run_inner(args.common, path, args.alternatives_ratio, args.route_selection_ratio)
+        return
+
     experiment_name = args.common.task_id if args.common.task_id else 'run'
-    evkit_dir_path = args.distributed.evkit_dir_path
-    workers = args.distributed.number_of_workers
-    spawn_workers_at_main_node = args.distributed.spawn_workers_at_main_node
-    try_to_kill = args.distributed.try_to_kill
+    evkit_dir_path = args.distribution.evkit_dir_path
+    workers = args.distribution.number_of_workers
+    spawn_workers_at_main_node = args.distribution.spawn_workers_at_main_node
+    try_to_kill = args.distribution.try_to_kill
 
     work_dir = Path(os.getcwd()).absolute()
     worker_dir = work_dir / experiment_name

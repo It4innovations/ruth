@@ -118,8 +118,31 @@ class Args:
     run: RunArgs = field(rename="run")
     alternatives_ratio: AlternativesRatio = field(rename="alternatives")
     route_selection_ratio: RouteSelectionRatio = field(rename="route-selection")
-    distributed: DistributedArgs = field(rename="distributed", default=None)
+    distribution: DistributedArgs = field(rename="distribution", default=None)
     animation: AnimationArgs = field(rename="animation", default=None)
+
+
+def fill_args(config_file, ctx=None, debug=False):
+    if os.path.isfile(config_file):
+        logging.info(f"Settings taken from config file {config_file}.")
+        with open(config_file, 'r') as f:
+            config_data = f.read()
+            args = from_json(Args, config_data)
+    else:
+        args = Args(CommonArgs(), RunArgs(), AlternativesRatio(), RouteSelectionRatio(), AnimationArgs())
+
+    p = Path(args.run.vehicles_path) if args.run.vehicles_path is not None else None
+
+    if ctx is not None:
+        ctx.obj['DEBUG'] = debug
+        ctx.obj['common-args'] = args.common
+        ctx.obj['run-args'] = args.run
+        ctx.obj['alternatives-ratio'] = args.alternatives_ratio
+        ctx.obj['route-selection-ratio'] = args.route_selection_ratio
+        ctx.obj['animation'] = args.animation
+        ctx.obj['path'] = p
+
+    return args, p
 
 
 @click.group(chain=True)
@@ -131,21 +154,7 @@ def single_node_simulator_conf(ctx,
                                debug):
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
     ctx.ensure_object(dict)
-
-    if os.path.isfile(config_file):
-        logging.info(f"Settings taken from config file {config_file}.")
-        with open(config_file, 'r') as f:
-            config_data = f.read()
-            args = from_json(Args, config_data)
-    else:
-        args = Args(CommonArgs(), RunArgs(), AlternativesRatio(), RouteSelectionRatio(), AnimationArgs())
-
-    ctx.obj['DEBUG'] = debug
-    ctx.obj['common-args'] = args.common
-    ctx.obj['run-args'] = args.run
-    ctx.obj['alternatives-ratio'] = args.alternatives_ratio
-    ctx.obj['route-selection-ratio'] = args.route_selection_ratio
-    ctx.obj['animation'] = args.animation
+    fill_args(ctx, config_file, debug)
 
 
 @single_node_simulator_conf.command()
@@ -155,7 +164,7 @@ def run(ctx):
     run_args = ctx.obj["run-args"]
     alternatives_ratio = ctx.obj["alternatives-ratio"]
     route_selection_ratio = ctx.obj["route-selection-ratio"]
-    p = Path(run_args.vehicles_path) if run_args.vehicles_path is not None else None
+    p = ctx.obj["path"]
     ctx.obj['simulation'] = run_inner(common_args, p, alternatives_ratio, route_selection_ratio)
 
 
