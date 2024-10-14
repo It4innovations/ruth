@@ -84,7 +84,7 @@ class RunArgs:
 
 @serde(rename_all="kebabcase")
 class DistributedArgs:
-    number_of_workers: int = 32
+    number_of_workers: int
     evkit_dir_path: str = "evkit"
     spawn_workers_at_main_node: bool = True
     try_to_kill: bool = False
