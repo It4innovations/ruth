@@ -1,10 +1,12 @@
 import logging
 import queue
+
 import pandas as pd
 import time
 import json
 import socket
 import subprocess
+import multiprocessing as mp
 import os
 import sys
 import dataclasses
@@ -26,6 +28,19 @@ def get_pbs_nodes() -> List[str]:
 def get_slurm_nodes() -> List[str]:
     output = subprocess.getoutput("scontrol show hostnames")
     return output.split('\n')
+
+
+def get_modules():
+    output = subprocess.getoutput("ml")
+    modules = output.split('\n')
+    return [
+        module.split(') ')[1].split(' ')[0]
+        for module in modules if ') ' in module
+    ]
+
+
+def get_cpu_count():
+    return mp.cpu_count()
 
 
 def find_free_port() -> int:
@@ -311,21 +326,17 @@ if __name__ == "__main__":
     # ]
 
     # Karolina
-    #
-    MODULES = [
-        "Python/3.11.5-GCCcore-13.2.0",
-        "GCCcore/12.2.0",
-        "SQLite/3.39.4-GCCcore-12.2.0",
-        "HDF5/1.14.0-gompi-2023a",
-        "CMake/3.24.3-GCCcore-12.2.0",
-        "Boost/1.81.0-GCC-12.2.0"
-    ]
+    MODULES = get_modules()
 
     # CHANGE PATHS
     CONFIG_FILE = str(sys.argv[2])
     EVKIT_PATH = str(sys.argv[4])
     hosts = get_slurm_nodes()
     workers = int(sys.argv[3])
+    max_workers = get_cpu_count()
+    if workers > max_workers:
+        workers = max_workers
+
     try_to_kill = False
     spawn_workers_at_main_node = True
 
