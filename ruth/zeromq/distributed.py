@@ -1,8 +1,6 @@
 import click
 import logging
 
-import pandas as pd
-import json
 import os
 from pathlib import Path
 
@@ -10,7 +8,7 @@ from serde.json import from_json
 
 from ..tools.simulator import run_inner
 from ..tools.simulator_conf import Args, fill_args
-from ..zeromq.bench import get_slurm_nodes, run
+from ..zeromq.bench import get_slurm_nodes, run, get_modules, get_cpu_count
 
 
 @click.command()
@@ -34,15 +32,17 @@ def distributed(config_file):
     experiment_name = args.common.task_id if args.common.task_id else 'run'
     evkit_dir_path = args.distribution.evkit_dir_path
     workers = args.distribution.number_of_workers
+    max_workers = get_cpu_count()
+    if workers > max_workers:
+        workers = max_workers
+
     spawn_workers_at_main_node = args.distribution.spawn_workers_at_main_node
     try_to_kill = args.distribution.try_to_kill
 
     work_dir = Path(os.getcwd()).absolute()
     worker_dir = work_dir / experiment_name
     env_path = os.environ["VIRTUAL_ENV"]
-    modules = [
-        "Python/3.11.5-GCCcore-13.2.0 GCCcore/12.2.0 SQLite/3.39.4-GCCcore-12.2.0 CMake/3.24.3-GCCcore-12.2.0 Boost/1.81.0-GCC-12.2.0 HDF5/1.14.0-gompi-2023a",
-    ]
+    modules = get_modules()
     hosts = get_slurm_nodes()
 
     logger = logging.getLogger(__name__)
