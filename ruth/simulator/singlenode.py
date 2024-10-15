@@ -49,6 +49,8 @@ class Simulator:
         for v in self.sim.vehicles:
             v.frequency = timedelta(seconds=5)
 
+        self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
+
         for alternatives_provider in alternatives_providers:
             alternatives_provider.load_map(self.sim.routing_map)
 
@@ -59,6 +61,7 @@ class Simulator:
         step = self.sim.number_of_steps
         last_map_update = self.current_offset
         last_time_moved = self.current_offset
+        updated_speeds = {}
 
         while self.current_offset is not None:
             step_start_dt = datetime.now()
@@ -75,13 +78,19 @@ class Simulator:
                     break
 
             with timer_set.get("update_map_speeds"):
-                self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
+                # Get segments where max speeds changed
+                updated_speeds.update(self.sim.routing_map.update_temporary_max_speeds(
+                    self.sim.setting.departure_time + self.current_offset))
+
                 if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
-                    updated_speeds = self.sim.global_view.take_segment_speeds()
-                    self.sim.routing_map.update_current_speeds(updated_speeds)
+                    # Update speeds based on the global view
+                    updated_speeds_gv = self.sim.global_view.take_segment_speeds()
+                    updated_speeds.update(self.sim.routing_map.update_current_speeds(updated_speeds_gv))
+
                     for alternatives_provider in alternatives_providers:
                         alternatives_provider.update_map(self.sim.routing_map, updated_speeds)
 
+                    updated_speeds.clear()
                     last_map_update = self.current_offset
 
             with timer_set.get("allowed_vehicles"):
@@ -194,7 +203,6 @@ def compute_alternatives(routing_map: Map,
         combined_vehicles.extend(selected_vehicles)
         combined_alts.extend(alts)
 
-    combined_alts = remove_infinity_alternatives(combined_alts, routing_map)
     return combined_vehicles, combined_alts
 
 
@@ -222,7 +230,7 @@ def remove_infinity_alternatives(alternatives: List[AlternativeRoutes], routing_
         for_vehicle = []
         for alternative in alternatives_for_vehicle:
             # calculate travel time for alternative
-            if not routing_map.is_route_closed(alternative):
+            if not routing_map.is_route_closed(alternative[0]):
                 for_vehicle.append(alternative)
         filtered_alternatives.append(for_vehicle)
     return filtered_alternatives

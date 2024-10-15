@@ -11,8 +11,8 @@ def coord_to_int(coord):
     return int(round(coord * pow(10, 6)))
 
 
-def get_osmid_from_data(data):
-    return data['osmid'][0] if type(data['osmid']) is list else data['osmid']
+def get_edge_id_from_data(data):
+    return data['routing_id']
 
 
 def get_speed_from_data(data):
@@ -33,7 +33,7 @@ def get_speed_from_data(data):
 def filter_by_edge_data(edges, edge_data_dict):
     edges_temp = []
     for id_from, id_to, edge_data in edges:
-        edge_id = get_osmid_from_data(edge_data)
+        edge_id = get_edge_id_from_data(edge_data)
         if edge_id in edge_data_dict:
             edges_temp.append((id_from, id_to, edge_data))
     return edges_temp
@@ -105,13 +105,9 @@ def save_graph_to_hdf5(g, file_path):
     edge_data_index = 0
     for row_id, (id_from, id_to, edge_data) in enumerate(g.edges(data=True)):
         speed = get_speed_from_data(edge_data)
-        if speed <= 0:
-            # NOTE: filter out edges with zero speed to avoid infinite travel time
-            continue
 
         func_class = 7
-        lanes = edge_data.get('lanes', 1)
-        lanes = int(lanes[0]) if type(lanes) is list else lanes
+        lanes = 0
         vehicle_access = edge_data.get('vehicleAccess', 1)
         #         NoneVeh = 0,
         #         Regular = 1,
@@ -150,10 +146,12 @@ def save_graph_to_hdf5(g, file_path):
             incline
         )
 
-        osm_id = get_osmid_from_data(edge_data)
+        osm_id = get_edge_id_from_data(edge_data)
         if osm_id not in edge_data_dict:
             edge_data_dict[osm_id] = edge_data_tuple
             edge_data_index += 1
+        else:
+            assert edge_data_dict[osm_id][1:] == edge_data_tuple[1:]
 
     for row_id, (node_id, node_data) in enumerate(g.nodes(data=True)):
         out_edges = g.out_edges(node_id, data=True)
@@ -171,7 +169,7 @@ def save_graph_to_hdf5(g, file_path):
 
         # set up edges from
         for id_from, id_to, edge_data in out_edges:
-            edge_id = get_osmid_from_data(edge_data)
+            edge_id = get_edge_id_from_data(edge_data)
             node_index = node_dict[osm_to_hdf_map_ids[id_to]][2]
             computer_speed = get_speed_from_data(edge_data)
             length = edge_data['length']

@@ -13,10 +13,11 @@ from time import time
 import networkx as nx
 import osmnx as ox
 import osmnx.settings
+from networkx import MultiDiGraph
 from osmnx import load_graphml, save_graphml, graph_from_bbox
 from networkx.exception import NetworkXNoPath
 
-from .hdf5_writer import get_osmid_from_data, save_graph_to_hdf5
+from .hdf5_writer import get_edge_id_from_data, save_graph_to_hdf5
 from ..log import console_logger as cl
 from ..data.segment import Route, Segment, SegmentId, SpeedKph
 
@@ -87,14 +88,23 @@ class Map:
             self.network = ox.add_edge_speeds(self.network)
 
         self.original_network = ox.get_digraph(self.network)
+
+        self.segment_lengths = {}
+        for i, (node_from, node_to) in enumerate(self.original_network.edges()):
+            edge = self.original_network[node_from][node_to]
+            edge['routing_id'] = i + 1
+            edge['length'] = int(edge['length'] + 0.5)
+            self.segment_lengths[(node_from, node_to)] = edge['length']
+
         self.current_network = self.original_network.copy()
-        self.segment_lengths = nx.get_edge_attributes(self.current_network, name='length')
 
         if with_speeds:
             self.init_current_speeds()
 
         if fresh_data:
             self._store()
+
+        self.network = MultiDiGraph(self.original_network)
 
         if save_hdf:
             hdf5_file_name = f"map_{round(time() * 1000)}_{os.getpid()}.hdf5"
@@ -141,7 +151,18 @@ class Map:
         return travel_time_s
 
     def get_path_travel_time(self, path: List[int]):
-        return nx.path_weight(self.current_network, path, weight='current_travel_time')
+        total_time = 0
+        for node_from, node_to in zip(path[:-1], path[1:]):
+            total_time += self.current_network[node_from][node_to]['current_travel_time']
+        return total_time
+
+    def check_if_travel_time_is_faster(self, path: List[int], time_limit: float):
+        total_time = 0
+        for node_from, node_to in zip(path[:-1], path[1:]):
+            total_time += self.current_network[node_from][node_to]['current_travel_time']
+            if total_time >= time_limit:
+                return False
+        return True
 
     def init_current_speeds(self):
         speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')
@@ -158,6 +179,7 @@ class Map:
         """
         max_speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')
 
+        new_current_speeds = {}
         for ((node_from, node_to), speed) in segments_to_update.items():
             edge = self.current_network[node_from][node_to]
             max_speed = max_speeds[(node_from, node_to)]
@@ -165,6 +187,9 @@ class Map:
             speed = min(speed, max_speed)
             edge["current_speed"] = speed
             edge["current_travel_time"] = self.get_travel_time(node_from, node_to, speed)
+            new_current_speeds[(node_from, node_to)] = speed
+
+        return new_current_speeds
 
     def get_current_max_speed(self, node_from: int, node_to: int):
         return self.current_network[node_from][node_to]['speed_kph']
@@ -318,10 +343,12 @@ class Map:
         ts_to_remove = []
         for ts in self.temporary_speeds:
             if timestamp > ts.timestamp_to:
+                # the temporary speed is no longer valid, restore original speed
                 new_max_speeds[(ts.node_from, ts.node_to)] = ts.original_max_speed
                 ts_to_remove.append(ts)
                 check_segments.append((ts.node_from, ts.node_to))
             elif ts.timestamp_from <= timestamp <= ts.timestamp_to and not ts.active:
+                # the temporary speed is valid, apply it
                 new_max_speeds[(ts.node_from, ts.node_to)] = ts.temporary_speed
                 ts.active = True
                 check_segments.append((ts.node_from, ts.node_to))
@@ -343,12 +370,14 @@ class Map:
         nx.set_edge_attributes(self.current_network, values=new_current_speeds, name='current_speed')
         nx.set_edge_attributes(self.current_network, values=new_travel_times, name='current_travel_time')
 
+        return new_current_speeds
+
     def has_temporary_speeds_planned(self):
         return len(self.temporary_speeds) > 0
 
     def get_hdf5_edge_id(self, segment_id: SegmentId) -> int:
         (node_from, node_to) = segment_id
-        return get_osmid_from_data(self.current_network[node_from][node_to])
+        return get_edge_id_from_data(self.current_network[node_from][node_to])
 
 
 def admin_level_to_road_filter(admin_level):  # TODO: where to put it?

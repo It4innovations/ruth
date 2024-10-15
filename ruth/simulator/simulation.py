@@ -146,7 +146,7 @@ class Simulation:
 
     def steps_info_to_dataframe(self):
         if not self.steps_info:
-            raise Exception("Empty steps info cannot be converted to DataFrame.")
+            return pd.DataFrame()
 
         first = self.steps_info[0]
         return pd.DataFrame(

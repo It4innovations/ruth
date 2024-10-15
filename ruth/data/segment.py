@@ -1,11 +1,13 @@
 import dataclasses
-from typing import List, NewType, Tuple
+from typing import List, NewType, Tuple, Optional
 
 SpeedKph = NewType("SpeedKph", float)
 SpeedMps = NewType("SpeedMps", float)
 LengthMeters = NewType("LengthMeters", float)
+TravelTime = NewType("TravelTime", float)
 
 Route = List[int]
+RouteWithTime = Tuple[Route, Optional[TravelTime]]
 
 
 @dataclasses.dataclass(frozen=True)

@@ -47,7 +47,7 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
   {
     "ruth-simulator":
     {
-      "departure-time" :"2021-08-3 00:00:00",
+      "departure-time" :"2024-10-03 00:00:00",
       "round-frequency-s" : 5,
       "k-alternatives": 1,
       "map-update-freq-s" : 1,
@@ -82,7 +82,7 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
   ```
 * or use command line arguments
     ``` sh
-    ruth-simulator --departure-time="2021-06-16 07:00:00" --k-alternatives=4 --out=simulation_record.pickle --seed=7 run --alt-dijkstra-fastest=0.3 --alt-plateau-fastest=0.0 --selection-first=0.3 --selection-random=0.0 --selection-ptdr=0.0 "INPUT-od-matrix-10-vehicles.parquet"
+    ruth-simulator --departure-time="2024-10-03 07:00:00" --k-alternatives=4 --out=simulation_record.pickle --seed=7 run --alt-dijkstra-fastest=0.3 --alt-plateau-fastest=0.0 --selection-first=0.3 --selection-random=0.0 --selection-ptdr=0.0 "INPUT-od-matrix-10-vehicles.parquet"
     ```
 * input data for 10K-300K vehicle simulations can be found in this [dataset](https://doi.org/10.5281/zenodo.13285293).
 ### Distributed run
@@ -105,7 +105,7 @@ For the Alternatives and Route selection, percentages of vehicles can be set for
 - path to csv file with temporary max speeds (example below)
     ``` csv
     node_from;node_to;speed;timestamp_from;timestamp_to
-    8400868548;10703818;0;2021-08-3 00:10:00;2021-08-3 00:25:00
+    8400868548;10703818;0;2024-08-03 00:10:00;2024-08-03 00:25:00
     ```
 #### PTDR path
 - path to msqpack file with probability speed profiles
