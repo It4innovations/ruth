@@ -13,6 +13,7 @@ from time import time
 import networkx as nx
 import osmnx as ox
 import osmnx.settings
+from networkx import MultiDiGraph
 from osmnx import load_graphml, save_graphml, graph_from_bbox
 from networkx.exception import NetworkXNoPath
 
@@ -102,6 +103,8 @@ class Map:
 
         if fresh_data:
             self._store()
+
+        self.network = MultiDiGraph(self.original_network)
 
         if save_hdf:
             hdf5_file_name = f"map_{round(time() * 1000)}_{os.getpid()}.hdf5"
