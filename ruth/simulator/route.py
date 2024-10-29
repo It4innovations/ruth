@@ -96,6 +96,12 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
 
     segment_pos_old = vehicle.segment_position
 
+    # check vehicle's first move
+    if segment_pos.index == 0 and segment_pos.position == 0.0:
+        # vehicle could not move on segment, skip this round and just advance the time
+        vehicle.time_offset += vehicle.frequency
+        return []
+
     # update the vehicle
     vehicle.time_offset += vehicle_end_time - current_time
     vehicle.set_position(segment_pos)
@@ -236,5 +242,5 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
         new_fcds = advance_waiting_vehicle(vehicle, routing_map, departure_time)
         fcds.extend(new_fcds)
 
-    assert len(fcds) == len(vehicles_to_be_moved)
+    # assert len(fcds) == len(vehicles_to_be_moved)
     return fcds, vehicles_moved
