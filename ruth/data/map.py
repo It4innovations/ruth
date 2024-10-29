@@ -84,6 +84,59 @@ class BBox:
         return f"{self.north}-{self.west}-{self.south}-{self.east}".replace('.', "_")
 
 
+def concat_nodes(main_node, next_nodes, roundabout_nodes, concated, network):
+    for next_node in next_nodes:
+        if main_node == next_node:
+            continue
+        if next_node in concated:
+            if concated[next_node] == concated.get(main_node, main_node):
+                continue
+            else:
+                next_node = concated[next_node]
+        try:
+            nx.contracted_nodes(network, main_node, next_node, self_loops=False, copy=False)
+            concated[next_node] = main_node
+        except nx.NetworkXError:
+            cl.info(f"Cannot contract nodes {main_node} and {next_node}.")
+
+        next_next_nodes = roundabout_nodes.pop(next_node, [])
+        if next_next_nodes:
+            concat_nodes(main_node, next_next_nodes, roundabout_nodes, concated, network)
+
+
+def remove_roundabouts(network):
+    roundabout_nodes = {}
+    for u, v, data in network.edges(data=True):
+        if 'junction' in data and data['junction'] == 'roundabout':
+            if u not in roundabout_nodes:
+                roundabout_nodes[u] = []
+            roundabout_nodes[u].append(v)
+
+    concated = {}
+    while len(roundabout_nodes) > 0:
+        main_node, next_nodes = roundabout_nodes.popitem()
+        while main_node in concated:
+            main_node = concated[main_node]
+        concat_nodes(main_node, next_nodes, roundabout_nodes, concated, network)
+
+    broken = True
+    i = 0
+    while broken and i < 30:
+        i += 1
+        broken = False
+        for key, node in concated.items():
+            if node in concated:
+                concated[key] = concated[node]
+                broken = True
+
+    if broken:
+        cl.error("There are still broken links in the concated nodes.")
+
+    cl.info(f"Removed {len(concated)} roundabout nodes.")
+
+    return concated
+
+
 class Map:
     """Routing map."""
 
@@ -109,7 +162,10 @@ class Map:
 
         self.original_network = ox.get_digraph(self.network)
 
+        self.remapped_nodes = remove_roundabouts(self.original_network)
+
         self.segment_lengths = {}
+        self.routing_id_to_node_ids = {}
         for i, (node_from, node_to) in enumerate(self.original_network.edges()):
             edge = self.original_network[node_from][node_to]
             edge['routing_id'] = i + 1
@@ -117,6 +173,7 @@ class Map:
             edge['speed_kph'] = round_speed(edge['speed_kph'])
             edge['maxspeed'] = edge['speed_kph']
             self.segment_lengths[(node_from, node_to)] = edge['length']
+            self.routing_id_to_node_ids[i + 1] = (node_from, node_to)
 
         self.current_network = self.original_network.copy()
 
@@ -132,6 +189,25 @@ class Map:
             hdf5_file_name = f"map_{round(time() * 1000)}_{os.getpid()}.hdf5"
             self.hdf5_file_path = str((Path(self.data_dir) / hdf5_file_name).absolute())
             self.save_hdf()
+
+        self.network = MultiDiGraph(self.current_network)
+
+    def fix_osm_routes(self, vehicles):
+        for v in vehicles:
+            if v.osm_route:
+                v.osm_route = [key for key, _ in itertools.groupby(
+                    [self.remapped_nodes.get(node, node) for node in v.osm_route])]
+
+                for node_from, node_to in zip(v.osm_route[:-1], v.osm_route[1:]):
+                    if not self.original_network.has_edge(node_from, node_to):
+                        cl.error(f"No link between {node_from} and {node_to} in the network.")
+                        v.osm_route = []
+                        v.active = False
+                        break
+
+                if v.osm_route:
+                    v.origin_node = v.osm_route[0]
+                    v.dest_node = v.osm_route[-1]
 
     def get_map_id(self):
         return self.map_id
@@ -241,6 +317,7 @@ class Map:
 
     def get_osm_segment(self, node_from: int, node_to: int):
         data = self.original_network.get_edge_data(node_from, node_to)
+        assert data is not None, f"Segment {node_from} -> {node_to} not found."
         return Segment(
             node_from=node_from,
             node_to=node_to,

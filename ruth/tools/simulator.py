@@ -103,6 +103,9 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
         set_vehicle_behavior(vehicles, alternatives_ratio.to_list(), route_selection_ratio.to_list())
 
         simulation = Simulation(vehicles, ss, bbox, download_date)
+
+        simulation.routing_map.fix_osm_routes(vehicles)
+
         if speeds_path is not None:
             simulation.routing_map.init_temporary_max_speeds(speeds_path)
     else:
