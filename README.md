@@ -34,7 +34,12 @@ python3 -m pip install -U pip setuptools wheel cython
 python3 -m pip install git+https://github.com/It4innovations/ruth.git
 ```
 
-## Test Run
+
+## Execution
+
+Information about multi-node execution can be found in **ruth/zeromq/README.md**.
+
+For single-node execution, consider the following steps:
 
 * activate virtual environment with `ruth` installed
 * use the files in `benchmarks/od-matrix/`
@@ -85,29 +90,28 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
     ruth-simulator --departure-time="2024-10-03 07:00:00" --k-alternatives=4 --out=simulation_record.pickle --seed=7 run --alt-dijkstra-fastest=0.3 --alt-plateau-fastest=0.0 --selection-first=0.3 --selection-random=0.0 --selection-ptdr=0.0 "INPUT-od-matrix-10-vehicles.parquet"
     ```
 * input data for 10K-300K vehicle simulations can be found in this [dataset](https://doi.org/10.5281/zenodo.13285293).
-### Distributed run
-More information about distributed run can be found in **ruth/zeromq/README.md**.
 
-### Options
+
+## Options
 For the Alternatives and Route selection, percentages of vehicles can be set for each type. The sum of percentages for Alternatives has to be equal to the sum for Route Selection. If the percentages don't add up to 1, no alternatives are calculated for the remaining vehicles and they stick to their original route that is in the input parquet file.
-#### Alternatives
+### Alternatives
 - shortest-paths networkx implementation of dijkstra algorithm using route length as weight
 - fastest-paths: networkx implementation of dijkstra algorithm using current-travel-time as weight
 - distributed: cpp implementation of Plateau algorithm
   - provided by [evkit](https://code.it4i.cz/everest/evkit)
   - ports either taken from the environment or set to 5555 and 5556.
   - **plateau-default-route**: flag to recalculate the default route with Plateau algorithm
-#### Route selection
+### Route selection
 - first: uses the first from found alternatives
 - random: uses random alternative
 - distributed: uses alternative selected by PTDR (ptdr_path needed)
-#### Speeds path
+### Speeds path
 - path to csv file with temporary max speeds (example below)
     ``` csv
     node_from;node_to;speed;timestamp_from;timestamp_to
     8400868548;10703818;0;2024-08-03 00:10:00;2024-08-03 00:25:00
     ```
-#### PTDR path
+### PTDR path
 - path to msqpack file with probability speed profiles
 - to generate PTDR file use first the `aggregate-globalview` or `aggregate-globalview-set` command generating
 csv file with aggregated information about speeds during simulation
@@ -134,13 +138,18 @@ csv file with aggregated information about speeds during simulation
     ...
   ]
   ```
-#### Stuck detection
+### Stuck detection
 Parameter `stuck-detection` defines the number of round-frequency-s long rounds with no vehicles movement
 that have to pass before the simulation is terminated.  
 The detection is based on all vehicles being in the same position for the whole time no temporary max speeds are to be updated.
 If the parameter is **set to 0**, the detection is **disabled**.
 
-### Animation
+## Tools
+Other tools can be found in the `ruth/tools` directory. 
+
+For more information, see **ruth/tools/README.md**.
+
+## Animation
 To create animation of the simulation after the run, `FFmpeg` needs to be installed. Using option `--gif` to generate 
 gif instead of mp4 does not require `FFmpeg`.
 
@@ -173,7 +182,7 @@ Animation options can be set in configuration file, for example:
 }
 ```
 
-#### Animation options
+### Animation options
 - **fps** - frames per second (default 25)
 - **save_path** - path to the folder for the output video (default current directory)
 - **frame_start** - number of frames to skip (default 0)
@@ -190,8 +199,7 @@ Animation options can be set in configuration file, for example:
 - **zoom** - choose zoom manually
 - **gif** - generate as a gif instead of mp4, does not require `FFmpeg`
 
-### Tools
-Other tools can be found in the `ruth/tools` directory. For more information, see **ruth/tools/README.md**.
+
 
 # Acknowledgement
 
