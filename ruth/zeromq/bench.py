@@ -119,7 +119,6 @@ def run(workers: int,
     ENV_PATH                    = path to the environment
     try_to_kill                 = experimental, tries to kill workers after simulation is computed
     spawn_workers_at_main_node  = experimental, spawns workers at the same node where main process is located
-    logger                      = logger for the run
 
     Potential Issue:
     -   Killing workers may result in error due to rights (connected to cluster library)
@@ -139,7 +138,7 @@ def run(workers: int,
     target_dir = Path(EVKIT_PATH)
     target_dir.mkdir(parents=True, exist_ok=True)
     build_process = start_process(
-        commands=[f"cargo build --release --features alternatives,rpath --manifest-path {EVKIT_PATH}/Cargo.toml"],
+        commands=[f"cargo build --release --features rpath --manifest-path {EVKIT_PATH}/Cargo.toml"],
         workdir=str(target_dir),
         env={"RUST_LOG": "debug"},
         pyenv=str(ENV_PATH),
