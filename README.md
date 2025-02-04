@@ -11,7 +11,7 @@ A python library for routing on OSM map based on [osmnx](https://github.com/gboe
 The detailed documentation is available at: https://it4innovations.github.io/ruth/
 
 ## Installation
-Required python version >= 3.9.6
+Required **Python** >= 3.9.6, <= 3.11
 ``` sh
 # requirements
 sudo apt-get update && sudo apt-get install -y --no-install-recommends \
