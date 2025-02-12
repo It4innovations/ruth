@@ -8,6 +8,7 @@ import socket
 import subprocess
 import multiprocessing as mp
 import os
+import re
 import sys
 import dataclasses
 import logging
@@ -32,11 +33,7 @@ def get_slurm_nodes() -> List[str]:
 
 def get_modules():
     output = subprocess.getoutput("ml")
-    modules = output.split('\n')
-    return [
-        module.split(') ')[1].split(' ')[0]
-        for module in modules if ') ' in module
-    ]
+    return re.findall(r'\d+\) ([^\s]+/\S+)', output)
 
 
 def get_cpu_count():
@@ -119,6 +116,7 @@ def run(workers: int,
     ENV_PATH                    = path to the environment
     try_to_kill                 = experimental, tries to kill workers after simulation is computed
     spawn_workers_at_main_node  = experimental, spawns workers at the same node where main process is located
+    logger                      = logger for the run
 
     Potential Issue:
     -   Killing workers may result in error due to rights (connected to cluster library)
