@@ -15,6 +15,8 @@ from ..zeromq.bench import get_slurm_nodes, run, get_modules, get_cpu_count
 @click.option("--config-file", type=click.Path(exists=True), help="Path to simulation config.",
               default="config.json")
 def distributed(config_file):
+    config_file = Path(config_file).absolute()
+
     if os.path.isfile(config_file):
         with open(config_file, 'r') as f:
             config_data = f.read()

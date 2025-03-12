@@ -208,7 +208,7 @@ def run(workers: int,
         main_dir = output / f"main"
         main_dir.mkdir(parents=True, exist_ok=True)
         main_process = start_process(
-            commands=[f"ruth-simulator-conf --config-file={CONFIG_FILE} run"],
+            commands=[f"ruth-simulator-conf --config-file={CONFIG_FILE} --workdir=../../../ run"],
             workdir=str(main_dir),
             pyenv=str(ENV_PATH),
             env={"port": port, "broadcast_port": management_port},

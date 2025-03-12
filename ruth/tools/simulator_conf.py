@@ -122,7 +122,7 @@ class Args:
     animation: AnimationArgs = field(rename="animation", default=None)
 
 
-def fill_args(config_file, ctx=None, debug=False):
+def fill_args(config_file, ctx=None, workdir=None, debug=False):
     if os.path.isfile(config_file):
         logging.info(f"Settings taken from config file {config_file}.")
         print(f"Settings taken from config file {config_file}.")
@@ -133,7 +133,19 @@ def fill_args(config_file, ctx=None, debug=False):
         logging.info(f"Config file not found.")
         args = Args(CommonArgs(), RunArgs(), AlternativesRatio(), RouteSelectionRatio(), AnimationArgs())
 
-    p = Path(args.run.vehicles_path) if args.run.vehicles_path is not None else None
+    p = args.run.vehicles_path if args.run.vehicles_path is not None else None
+    if p is None:
+        raise ValueError(f"Vehicles path not set. Config file: {Path(config_file).absolute()}")
+
+    if workdir is not None:
+        # p is relative to the workdir
+        p = Path(workdir) / p
+    else:
+        p = Path(p)
+
+    # check if vehicles path is valid
+    if not p.exists():
+        raise ValueError(f"Vehicles path {p.absolute()} does not exist.")
 
     if ctx is not None:
         ctx.obj['DEBUG'] = debug
@@ -149,14 +161,16 @@ def fill_args(config_file, ctx=None, debug=False):
 
 @click.group(chain=True)
 @click.option('--config-file', default='config.json')
+@click.option('--workdir', default=None)
 @click.option('--debug/--no-debug', default=False)
 @click.pass_context
 def single_node_simulator_conf(ctx,
                                config_file,
+                               workdir,
                                debug):
     # ensure that ctx.obj exists and is a dict (in case `cli()` is called by means other than the `if` block bellow)
     ctx.ensure_object(dict)
-    fill_args(config_file, ctx, debug)
+    fill_args(config_file, ctx, workdir, debug)
 
 
 @single_node_simulator_conf.command()
