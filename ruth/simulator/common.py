@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 def load_vehicles(input_path: str):
-    logger.info("Loading data ... %s", input_path)
+    logger.info("Loading data... %s", input_path)
+    print("Loading data... %s", input_path)
     df = pd.read_parquet(input_path, engine="fastparquet")
     vehicles = [Vehicle(
         id=row["id"],

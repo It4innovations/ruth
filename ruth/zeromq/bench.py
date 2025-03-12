@@ -163,7 +163,7 @@ def run(workers: int,
         logger.info(f"Saving to: {WORKER_DIR}")
         logger.info(f"Environment in: {ENV_PATH}")
         logger.info(f"Running client at: {CLIENT_ADDRESS}")
-        output = WORKER_DIR / f"workers_{workers}"
+        output = WORKER_DIR / f"workers"
 
         start_time = time.time()
         threads = []

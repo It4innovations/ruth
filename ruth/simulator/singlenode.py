@@ -132,6 +132,7 @@ class Simulator:
             step_dur = datetime.now() - step_start_dt
             logger.info(
                 f"{step}. active: {len(vehicles_to_be_moved)}, need_new_route: {len(need_new_route)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
+            print(f"Step: {step}. active: {len(vehicles_to_be_moved)}, need_new_route: {len(need_new_route)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
             self.sim.duration += step_dur
 
             if end_step_fns is not None:
@@ -144,6 +145,7 @@ class Simulator:
 
             step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
+        print(f"Simulation done in {self.sim.duration}.")
 
     def advance_vehicles(self, vehicles: List[Vehicle], current_offset) -> Tuple[List[FCDRecord], bool]:
         """Move the vehicles on its route and generate FCD records"""

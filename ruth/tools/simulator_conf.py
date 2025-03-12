@@ -125,6 +125,7 @@ class Args:
 def fill_args(config_file, ctx=None, debug=False):
     if os.path.isfile(config_file):
         logging.info(f"Settings taken from config file {config_file}.")
+        print(f"Settings taken from config file {config_file}.")
         with open(config_file, 'r') as f:
             config_data = f.read()
             args = from_json(Args, config_data)
