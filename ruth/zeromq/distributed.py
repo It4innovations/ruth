@@ -1,3 +1,5 @@
+import sys
+
 import click
 import logging
 
@@ -11,10 +13,25 @@ from ..tools.simulator_conf import Args, fill_args
 from ..zeromq.bench import get_slurm_nodes, run, get_modules, get_cpu_count
 
 
+def setup_log():
+    log_level = logging.INFO
+    log_level_env = os.environ.get("LOG_LEVEL", "")
+    if log_level_env.lower() == "debug":
+        log_level = logging.DEBUG
+
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s %(name)s:%(levelname)-4s %(message)s",
+        datefmt="%d-%m-%Y %H:%M:%S",
+        force=True,
+        stream = sys.stdout,
+    )
+
 @click.command()
 @click.option("--config-file", type=click.Path(exists=True), help="Path to simulation config.",
               default="config.json")
 def distributed(config_file):
+    setup_log()
     config_file = Path(config_file).absolute()
 
     if os.path.isfile(config_file):

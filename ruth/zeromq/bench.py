@@ -204,7 +204,6 @@ def run(workers: int,
         logger.info(f"Spawning of {workers} workers took: {total_time}")
 
         # Start main
-        start = time.time()
         main_dir = output / f"main"
         main_dir.mkdir(parents=True, exist_ok=True)
         main_process = start_process(
@@ -229,11 +228,7 @@ def run(workers: int,
         if try_to_kill == True:
             cluster_data.kill()
 
-        # Save to file and return info about run
         result = RunResult(repeat=0, output=str(output), duration=duration)
-        # json_data = json.dumps(dataclasses.asdict(result))
-        # df = pd.read_json(json_data)
-        # df.to_csv(f"{WORKER_DIR}/results.csv", index=False)
         return result
 
     except Exception as e:
@@ -342,11 +337,10 @@ if __name__ == "__main__":
         os.makedirs(WORKER_DIR)
 
     logger = logging.getLogger(__name__)
-    print("Creating logger")
     logging.basicConfig(filename=f'{WORKER_DIR}/bench.log', level=logging.DEBUG,
                         format="%(asctime)s %(module)s:%(levelname)s %(message)s")
 
-    result = run(
+    _ = run(
         workers=workers,
         hosts=hosts,
         WORK_DIR=WORK_DIR,
@@ -359,8 +353,3 @@ if __name__ == "__main__":
         spawn_workers_at_main_node=spawn_workers_at_main_node,
         logger=logger
     )
-
-    # Save
-    # json_data = json.dumps(result)
-    # df = pd.read_json(json_data)
-    # df.to_csv(f"{WORKER_DIR}/results.csv", index=False)

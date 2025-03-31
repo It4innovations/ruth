@@ -1,6 +1,7 @@
 """Routing map module."""
 import csv
 import itertools
+import logging
 import os
 import pickle
 import shutil
@@ -18,9 +19,10 @@ from osmnx import load_graphml, save_graphml, graph_from_bbox
 from networkx.exception import NetworkXNoPath
 
 from .hdf5_writer import get_edge_id_from_data, save_graph_to_hdf5
-from ..log import console_logger as cl
 from ..data.segment import Route, Segment, SegmentId, SpeedKph
 
+cl = logging.getLogger(__name__)
+cl.propagate = True
 
 @dataclass
 class TemporarySpeed:
@@ -133,7 +135,6 @@ def remove_roundabouts(network):
         cl.error("There are still broken links in the concated nodes.")
 
     cl.info(f"Removed {len(concated)} roundabout nodes.")
-    print(f"Removed {len(concated)} roundabout nodes.")
 
     return concated
 
@@ -399,14 +400,11 @@ class Map:
     def _load(self):
         if self.file_path is None:
             cl.info("Map loaded from memory object.")
-            print("Map loaded from memory object.")
         elif os.path.exists(self.file_path):
             cl.info(f"Loading network for '{self.name}' from local map.")
-            print(f"Loading network for '{self.name}' from local map.")
             return load_graphml(self.file_path), False
         else:
             cl.info(f"Loading map for {self.name} via OSM API...")
-            print(f"Loading map for {self.name} via OSM API...")
 
             osmnx.settings.overpass_settings = f"[out:json][timeout:{{timeout}}][date:'{self.download_date}']"
 
@@ -416,7 +414,6 @@ class Map:
                                       retain_all=False)
 
             cl.info(f"{self.name}'s map loaded.")
-            print(f"{self.name}'s map loaded.")
             return network, True
 
     def _store(self):

@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from dataclasses import dataclass, make_dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -125,7 +126,6 @@ class Args:
 def fill_args(config_file, ctx=None, workdir=None, debug=False):
     if os.path.isfile(config_file):
         logging.info(f"Settings taken from config file {config_file}.")
-        print(f"Settings taken from config file {config_file}.")
         with open(config_file, 'r') as f:
             config_data = f.read()
             args = from_json(Args, config_data)
@@ -197,11 +197,17 @@ def speed_animation(ctx):
 
 
 def main():
+    log_level = logging.INFO
+    log_level_env = os.environ.get("LOG_LEVEL", "")
+    if log_level_env.lower() == "debug":
+        log_level = logging.DEBUG
+
     logging.basicConfig(
-        level=logging.INFO,
+        level=log_level,
         format="%(asctime)s %(name)s:%(levelname)-4s %(message)s",
         datefmt="%d-%m-%Y %H:%M:%S",
-        force=True
+        force=True,
+        stream = sys.stdout,
     )
     single_node_simulator_conf(obj={})
 
