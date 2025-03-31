@@ -59,6 +59,7 @@ class Simulator:
                     self.change_baseline_alternatives(self.sim.vehicles, alternatives_provider)
 
         step = self.sim.number_of_steps
+        moved_last_step = True
         last_map_update = self.current_offset
         last_time_moved = self.current_offset
         updated_speeds = {}
@@ -73,9 +74,10 @@ class Simulator:
                 # check if the simulation is stuck
                 if ((self.current_offset - last_time_moved) >=
                         (self.sim.setting.round_freq * self.sim.setting.stuck_detection)):
-                    logger.error(
-                        f"The simulation is stuck at {self.current_offset}.")
-                    break
+                    if not moved_last_step:
+                        logger.error(
+                            f"The simulation is stuck at {self.current_offset}.")
+                        break
 
             with timer_set.get("update_map_speeds"):
                 last_map_update, updated_speeds = self.update_map_speeds(updated_speeds, last_map_update,
@@ -112,8 +114,10 @@ class Simulator:
 
             with timer_set.get("advance_vehicle"):
                 fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy(), offset)
+                moved_last_step = False
                 if has_moved or self.sim.routing_map.has_temporary_speeds_planned():
                     last_time_moved = self.current_offset
+                    moved_last_step = True
 
             with timer_set.get("update"):
                 self.sim.update(fcds)
