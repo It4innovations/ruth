@@ -8,3 +8,5 @@ venv/
 **/*.pyc
 **/*.pickle
 **/*.csv
+simulation_output.h5
+.DS_Store

@@ -429,8 +429,7 @@ def main():
         level=log_level,
         format="%(asctime)s %(name)s:%(levelname)-4s %(message)s",
         datefmt="%d-%m-%Y %H:%M:%S",
-        force=True,
-        stream = sys.stdout
+        force=True
     )
     single_node_simulator(obj={})
 

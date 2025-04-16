@@ -3,7 +3,6 @@ from dataclasses import InitVar, dataclass
 from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
 from typing import Dict, List
-from collections import defaultdict
 
 import pandas as pd
 
@@ -89,10 +88,10 @@ class Simulation:
             setting: SimSetting
         """
 
-        self.history = FCDHistory()
+        self.setting = setting 
+        self.history = FCDHistory(h5_path=self.setting.speeds_path or "simulation_output.h5", buffer_size=0, data_shape=(9,))
         self.global_view = GlobalView()  # active global view
         self.vehicles = vehicles
-        self.setting = setting
         self.steps_info = []
         self.duration = timedelta(seconds=0)
         self.queues_manager = QueuesManager()
@@ -116,10 +115,8 @@ class Simulation:
             current_offset = self.setting.departure_time + current_offset
             fcds = [fcd for fcd in self.history.fcd_history if fcd.datetime >= current_offset]
             self.global_view = GlobalView()
-            self.history.fcd_by_segment = defaultdict(list)
             for fcd in fcds:
                 self.global_view.add(fcd)
-                self.history.fcd_by_segment[fcd.segment.id].append(fcd)
 
     @property
     def routing_map(self):
