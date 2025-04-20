@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Type
 
 import click
+import signal
 
 from ..flowmap.app import click_animation_options
 from ..flowmap import animation
@@ -363,11 +364,27 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
             route_selection_provider.update_segment_profiles(ptdr_info)
             break
 
-    simulator.simulate(
-        alternatives_providers=alternatives_providers,
-        route_selection_providers=route_selection_providers,
-        end_step_fns=end_step_fns,
-    )
+    def handle_save_only(signum, frame):
+        print("Received SIGUSR1: Saving simulation state...")
+        simulator.state.store("break.pickle")
+
+    def handle_save_and_exit(signum, frame):
+        print("Received SIGUSR2: Saving and shutting down...")
+        simulator.state.store("break.pickle")
+        sys.exit(0)
+
+    signal.signal(signal.SIGUSR1, handle_save_only)
+    signal.signal(signal.SIGUSR2, handle_save_and_exit)
+
+    try:
+        simulator.simulate(
+            alternatives_providers=alternatives_providers,
+            route_selection_providers=route_selection_providers,
+            end_step_fns=end_step_fns,
+        )
+    except Exception as error:
+        print(f"An error occurred: {error}")
+
     simulation = simulator.state
     simulation.store(out)
     return simulation
