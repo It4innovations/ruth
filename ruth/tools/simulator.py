@@ -36,7 +36,7 @@ class CommonArgs:
     seed: Optional[int] = None
     walltime: Optional[timedelta] = None
     saving_interval: Optional[timedelta] = None
-    continue_from: Optional[Simulation] = None
+    continue_from: str = ''
     stuck_detection: int = 0
     plateau_default_route: bool = False
 
@@ -86,12 +86,14 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     travel_time_limit_perc = common_args.travel_time_limit_perc
     seed = common_args.seed
     speeds_path = common_args.speeds_path
-    sim_state = common_args.continue_from
+    continue_from = common_args.continue_from
     stuck_detection = common_args.stuck_detection
     plateau_default_route = common_args.plateau_default_route
 
+    simulation = Simulation.load(continue_from) if continue_from != '' else None
+
     # TODO: solve the debug symbol
-    if sim_state is None:
+    if simulation is None:
         if vehicles_path is None:
             raise ValueError("Either vehicles_path or continue_from must be specified.")
         ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
@@ -108,8 +110,6 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
 
         if speeds_path is not None:
             simulation.routing_map.init_temporary_max_speeds(speeds_path)
-    else:
-        simulation = sim_state
 
     return SingleNodeSimulator(simulation)
 
@@ -236,7 +236,6 @@ def single_node_simulator(ctx,
     walltime = timedelta(seconds=walltime_s) if walltime_s is not None else None
     saving_interval = timedelta(
         seconds=saving_interval_s) if saving_interval_s is not None else None
-    sim_state = Simulation.load(continue_from) if continue_from is not None else None
 
     ctx.obj['common-args'] = CommonArgs(
         task_id=task_id,
@@ -251,7 +250,7 @@ def single_node_simulator(ctx,
         seed=seed,
         walltime=walltime,
         saving_interval=saving_interval,
-        continue_from=sim_state,
+        continue_from=continue_from,
         stuck_detection=stuck_detection,
         plateau_default_route=plateau_default_route,
     )

@@ -70,9 +70,7 @@ class CommonArgs(CommonArgsInner):
                                                  serializer=lambda x: x.total_seconds(),
                                                  deserializer=lambda x: timedelta(seconds=x),
                                                  default=None)
-    continue_from: Optional[Simulation] = field(serializer=lambda x: x.store("continue-from.pickle"),
-                                                deserializer=lambda x: None if x == "" else Simulation.load(x),
-                                                default=None)
+    continue_from: str = ""
     stuck_detection: int = 0
     plateau_default_route: bool = False
 

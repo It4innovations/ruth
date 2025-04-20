@@ -156,6 +156,7 @@ class Vehicle:
 
     def __setstate__(self, state):
         self.__dict__.update(state)
+        self.current_travel_time = None
         self.__post_init__()
 
     def __eq__(self, other: 'Vehicle'):
