@@ -112,12 +112,6 @@ class GlobalView:
             return None
         return SpeedKph(sum(speeds) / len(speeds))
 
-    def __getstate__(self):
-        raise Exception("Global view is not deserializable")
-
-    def __setstate__(self, state):
-        raise Exception("Global view is not serializable")
-
     def drop_old(self, dt_threshold):
         for (segment_id, old_fcds) in self.fcd_by_segment.items():
             new_fcds = [fcd for fcd in self.fcd_by_segment[segment_id] if fcd.datetime >= dt_threshold]

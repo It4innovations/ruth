@@ -64,89 +64,91 @@ class Simulator:
         last_time_moved = self.current_offset
         updated_speeds = {}
 
-        while self.current_offset is not None:
-            step_start_dt = datetime.now()
-            timer_set = TimerSet()
+        with self.sim.history:
+            while self.current_offset is not None:
+                step_start_dt = datetime.now()
+                timer_set = TimerSet()
 
-            offset = self.sim.round_time_offset(self.current_offset)
+                offset = self.sim.round_time_offset(self.current_offset)
 
-            if self.sim.setting.stuck_detection:
-                # check if the simulation is stuck
-                if ((self.current_offset - last_time_moved) >=
-                        (self.sim.setting.round_freq * self.sim.setting.stuck_detection)):
-                    if not moved_last_step:
+                if self.sim.setting.stuck_detection:
+                    # check if the simulation is stuck
+                    if ((self.current_offset - last_time_moved) >=
+                            (self.sim.setting.round_freq * self.sim.setting.stuck_detection)):
+                        if not moved_last_step:
+                            logger.error(
+                                f"The simulation is stuck at {self.current_offset}.")
+                            break
+
+                with timer_set.get("update_map_speeds"):
+                    last_map_update, updated_speeds = self.update_map_speeds(updated_speeds, last_map_update,
+                                                                             alternatives_providers)
+
+                with timer_set.get("allowed_vehicles"):
+                    vehicles_to_be_moved = [v for v in self.sim.vehicles
+                                            if self.sim.is_vehicle_within_offset(v, offset)]
+
+                with timer_set.get("alternatives"):
+                    need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
+                                      vehicle.is_at_the_end_of_segment(self.sim.routing_map)
+                                      and vehicle.alternatives != VehicleAlternatives.DEFAULT]
+
+                    computed_vehicles, alts = compute_alternatives(alternatives_providers,
+                                                                   need_new_route, self.sim.setting.k_alternatives)
+                    assert len(computed_vehicles) == len(alts) == len(need_new_route)
+
+                # Find which vehicles should have their routes recomputed
+                with timer_set.get("collect"):
+                    new_vehicle_routes = []
+                    for v, alt in zip(computed_vehicles, alts):
+                        if alt is not None and alt != []:
+                            new_vehicle_routes.append((v, alt))
+
+                with timer_set.get("selected_routes"):
+                    selected_plans = select_routes(route_selection_providers, new_vehicle_routes)
+                    assert len(selected_plans) == len(new_vehicle_routes)
+
+                    check_travel_times(self.sim.routing_map, alternatives_providers, selected_plans)
+
+                    for (vehicle, route) in selected_plans:
+                        vehicle.update_followup_route(route, self.sim.routing_map, self.sim.setting.travel_time_limit_perc)
+
+                with timer_set.get("advance_vehicle"):
+                    fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy(), offset)
+                    moved_last_step = False
+                    if has_moved or self.sim.routing_map.has_temporary_speeds_planned():
+                        last_time_moved = self.current_offset
+                        moved_last_step = True
+
+                with timer_set.get("update"):
+                    self.sim.update(fcds)
+                    self.sim.history.extend(fcds)
+
+                with timer_set.get("compute_offset"):
+                    current_offset_new = self.sim.compute_current_offset()
+                    if current_offset_new == self.current_offset:
                         logger.error(
-                            f"The simulation is stuck at {self.current_offset}.")
+                            f"The consecutive step with the same offset: {self.current_offset}.")
                         break
+                    self.current_offset = current_offset_new
 
-            with timer_set.get("update_map_speeds"):
-                last_map_update, updated_speeds = self.update_map_speeds(updated_speeds, last_map_update,
-                                                                         alternatives_providers)
+                with timer_set.get("drop_old_records"):
+                    self.sim.drop_old_records(self.current_offset)
 
-            with timer_set.get("allowed_vehicles"):
-                vehicles_to_be_moved = [v for v in self.sim.vehicles
-                                        if self.sim.is_vehicle_within_offset(v, offset)]
+                step_dur = datetime.now() - step_start_dt
+                logger.info(
+                    f"{step}. active: {len(vehicles_to_be_moved)}, need_new_route: {len(need_new_route)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
+                self.sim.duration += step_dur
 
-            with timer_set.get("alternatives"):
-                need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
-                                  vehicle.is_at_the_end_of_segment(self.sim.routing_map)
-                                  and vehicle.alternatives != VehicleAlternatives.DEFAULT]
+                if end_step_fns is not None:
+                    with timer_set.get("end_step"):
+                        for fn in end_step_fns:
+                            fn(self.state)
 
-                computed_vehicles, alts = compute_alternatives(alternatives_providers,
-                                                               need_new_route, self.sim.setting.k_alternatives)
-                assert len(computed_vehicles) == len(alts) == len(need_new_route)
+                self.sim.save_step_info(self.current_offset, step, len(vehicles_to_be_moved),
+                                        step_dur, timer_set.collect(), len(need_new_route))
 
-            # Find which vehicles should have their routes recomputed
-            with timer_set.get("collect"):
-                new_vehicle_routes = []
-                for v, alt in zip(computed_vehicles, alts):
-                    if alt is not None and alt != []:
-                        new_vehicle_routes.append((v, alt))
-
-            with timer_set.get("selected_routes"):
-                selected_plans = select_routes(route_selection_providers, new_vehicle_routes)
-                assert len(selected_plans) == len(new_vehicle_routes)
-
-                check_travel_times(self.sim.routing_map, alternatives_providers, selected_plans)
-
-                for (vehicle, route) in selected_plans:
-                    vehicle.update_followup_route(route, self.sim.routing_map, self.sim.setting.travel_time_limit_perc)
-
-            with timer_set.get("advance_vehicle"):
-                fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy(), offset)
-                moved_last_step = False
-                if has_moved or self.sim.routing_map.has_temporary_speeds_planned():
-                    last_time_moved = self.current_offset
-                    moved_last_step = True
-
-            with timer_set.get("update"):
-                self.sim.update(fcds)
-
-            with timer_set.get("compute_offset"):
-                current_offset_new = self.sim.compute_current_offset()
-                if current_offset_new == self.current_offset:
-                    logger.error(
-                        f"The consecutive step with the same offset: {self.current_offset}.")
-                    break
-                self.current_offset = current_offset_new
-
-            with timer_set.get("drop_old_records"):
-                self.sim.drop_old_records(self.current_offset)
-
-            step_dur = datetime.now() - step_start_dt
-            logger.info(
-                f"{step}. active: {len(vehicles_to_be_moved)}, need_new_route: {len(need_new_route)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
-            self.sim.duration += step_dur
-
-            if end_step_fns is not None:
-                with timer_set.get("end_step"):
-                    for fn in end_step_fns:
-                        fn(self.state)
-
-            self.sim.save_step_info(self.current_offset, step, len(vehicles_to_be_moved),
-                                    step_dur, timer_set.collect(), len(need_new_route))
-
-            step += 1
+                step += 1
         logger.info(f"Simulation done in {self.sim.duration}.")
 
     def advance_vehicles(self, vehicles: List[Vehicle], current_offset) -> Tuple[List[FCDRecord], bool]:

@@ -88,8 +88,8 @@ class Simulation:
             setting: SimSetting
         """
 
-        self.setting = setting 
-        self.history = FCDHistory(h5_path=self.setting.speeds_path or "simulation_output.h5", buffer_size=0, data_shape=(9,))
+        self.setting = setting
+        self.history = FCDHistory("fcd_history.h5", buffer_size=10_000, keep_in_memory=False)
         self.global_view = GlobalView()  # active global view
         self.vehicles = vehicles
         self.steps_info = []
@@ -110,13 +110,6 @@ class Simulation:
     def __setstate__(self, d):
         self.__dict__.update(d)
         self._routing_map = None  # lazy init
-        current_offset = self.compute_current_offset()
-        if current_offset is not None:
-            current_offset = self.setting.departure_time + current_offset
-            fcds = [fcd for fcd in self.history.fcd_history if fcd.datetime >= current_offset]
-            self.global_view = GlobalView()
-            for fcd in fcds:
-                self.global_view.add(fcd)
 
     @property
     def routing_map(self):
@@ -140,9 +133,7 @@ class Simulation:
 
     def update(self, fcds: List[FCDRecord]):
         for fcd in fcds:
-            # update global view
             self.global_view.add(fcd)
-            self.history.add(fcd)
 
     def drop_old_records(self, offset_threshold):
         if offset_threshold is not None:
@@ -162,6 +153,8 @@ class Simulation:
             columns=["simulation_offset", "step", "n_active", "duration"] + list(first.parts.keys()))
 
     def get_length(self):
+        if not self.history.fcd_history:
+            raise ValueError("No FCD history available.")
         return self.history.fcd_history[-1].datetime - self.history.fcd_history[0].datetime
 
     def get_vehicle_ids_not_finished(self):
