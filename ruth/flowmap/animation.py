@@ -9,7 +9,7 @@ import numpy as np
 from matplotlib import pyplot as plt, animation
 from shapely import LineString
 from tqdm import tqdm
-from collections import defaultdict
+import gc
 
 from .flowmapframe.zoom import plot_graph_with_zoom
 from .flowmapframe.plot import get_node_coordinates, WidthStyle
@@ -22,10 +22,10 @@ from ruth.utils import TimerSet
 from ruth.simulator import Simulation
 
 from .ax_settings import AxSettings
+from ..data.map import Map
 from .zoom import get_zoom
 from .input import preprocess_data, calculate_computation_by_simulation_time, prepare_dataframe, \
-    calculate_active_vehicles_in_time
-
+    calculate_active_vehicles_in_time, get_number_of_vehicles, dataframe_to_sorted_records
 
 def load_file_content(path):
     with open(path, 'r') as f:
@@ -76,6 +76,16 @@ class SimulationAnimator(ABC):
 
         self.ts = TimerSet()
 
+        # added during preprocessing
+        self.bbox = None
+        self.map_download_date = None
+
+        self.timestamp_from = None
+        self.num_of_frames = None
+        self.computation_by_simulation_time = None
+        self.timed_seg_dict = None
+        self.number_of_vehicles = None
+
     @property
     def interval(self):
         return self.speed / self.fps
@@ -95,21 +105,81 @@ class SimulationAnimator(ABC):
         label.set_fontsize(15)
         return cbar
 
-    def set_simulation(self, simulation):
-        self.simulation = simulation
-
-    def run(self):
+    def preprocess(self, simulation=None):
         with self.ts.get("data loading"):
             logging.info('Loading simulation data...')
-            self._load_data()
+
+            if simulation is None:
+                simulation = Simulation.load(self.simulation_path)
+
+                not_finished_vehicles = simulation.get_vehicle_ids_not_finished()
+                self.bbox = simulation.bbox
+                self.map_download_date = simulation.map_download_date
+
+            df = simulation.history.to_dataframe_short()
+            si_df = simulation.steps_info_to_dataframe()
+            departure_time = simulation.setting.departure_time
+
+            del simulation
+
+            simulation_length = df.timestamp.iloc[-1] - df.timestamp.iloc[0]
+            simulation_seconds = simulation_length.total_seconds()
+            self.speed = int(simulation_seconds / self.length)
+
             logging.info('Simulation data loaded.')
 
         with self.ts.get("data preprocessing"):
             logging.info('Preprocessing data...')
-            self._preprocess_data()
+
+            df = prepare_dataframe(df, self.speed, self.fps)
+
+            self.frames = list(df['timestamp'].unique())
+            self.frames.sort()
+            self.frames.append(df['timestamp'].max())
+
+            self.active_vehicles_in_time = calculate_active_vehicles_in_time(df)
+
+            self.number_of_vehicles = get_number_of_vehicles(df)  # total number of vehicles in the simulation
+            records = dataframe_to_sorted_records(df)
+            del df
+
+            gc.collect()
+
+            preprocessed_data = preprocess_data(records, self.divide, not_finished_vehicles)
+            del records
+
+            if self.max_width_count is None:
+                self.max_width_count = preprocessed_data.max_width_count
+            self.timestamp_from = preprocessed_data.min_timestamp + self.frame_start
+
+            self.number_of_finished_vehicles_in_time = preprocessed_data.number_of_finished_vehicles_in_time
+            self.total_meters_driven_in_time = preprocessed_data.total_meters_driven_in_time
+            self.total_simulation_time_in_time_s = preprocessed_data.total_simulation_time_in_time_s
+            self.timed_seg_dict = preprocessed_data.timed_segments_dict
+
+            self.num_of_frames = len(self.frames)
+            self.num_of_frames = min(int(self.frames_len),
+                                     self.num_of_frames) if self.frames_len else self.num_of_frames
+
+            max_timestamp = preprocessed_data.max_timestamp
+
+            if si_df is not None and 'simulation_offset' in si_df.columns and 'duration' in si_df.columns:
+                self.computation_by_simulation_time = \
+                    calculate_computation_by_simulation_time(si_df,
+                                                             departure_time,
+                                                             max_timestamp,
+                                                             self.speed,
+                                                             self.fps)
+
+            del preprocessed_data
+
             logging.info('Data preprocessed.')
 
         self._set_ax_settings_if_zoom()
+        self.g = Map(self.bbox, download_date=self.map_download_date, with_speeds=True).network
+
+    def run(self, simulation=None):
+        self.preprocess(simulation)
 
         with self.ts.get("base map preparing"):
             logging.info('Preparing base map...')
@@ -125,48 +195,11 @@ class SimulationAnimator(ABC):
         for k, v in self.ts.collect().items():
             print(f'{k}: {v} ms')
 
-    def _load_data(self):
-        if self.simulation is None:
-            self.simulation = Simulation.load(self.simulation_path)
-        self.g = self.simulation.routing_map.network
-        self.sim_history = self.simulation.history.to_dataframe()
-
-        simulation_length = self.simulation.get_length()
-        simulation_seconds = simulation_length.total_seconds()
-        self.speed = int(simulation_seconds / self.length)
+    def _load_data(self, simulation):
+        raise NotImplementedError("This method was deprecated. Use preprocess method instead.")
 
     def _preprocess_data(self):
-        df = prepare_dataframe(self.sim_history, self.speed, self.fps)
-        self.active_vehicles_in_time = calculate_active_vehicles_in_time(df)
-        preprocessed_data = preprocess_data(df, self.g, self.divide)
-        self.segments = preprocessed_data.segments
-        self.number_of_vehicles = preprocessed_data.number_of_vehicles
-        self.number_of_finished_vehicles_in_time = preprocessed_data.number_of_finished_vehicles_in_time
-        self.total_meters_driven_in_time = preprocessed_data.total_meters_driven_in_time
-        self.total_simulation_time_in_time_s = preprocessed_data.total_simulation_time_in_time_s
-        timestamps = [seg.timestamp for seg in preprocessed_data.timed_segments]
-        min_timestamp = min(timestamps)
-        max_timestamp = max(timestamps)
-
-        if self.max_width_count is None:
-            self.max_width_count = max([max(seg.counts) for seg in preprocessed_data.timed_segments])
-        self.timestamp_from = min_timestamp + self.frame_start
-        self.num_of_frames = max_timestamp - self.timestamp_from + 1  # + 1 to include the last frame
-        self.num_of_frames = min(int(self.frames_len), self.num_of_frames) if self.frames_len else self.num_of_frames
-
-        self.timed_seg_dict = defaultdict(list)
-        for seg in preprocessed_data.timed_segments:
-            self.timed_seg_dict[seg.timestamp].append(seg)
-
-        self.computation_by_simulation_time = None
-        si_df = self.simulation.steps_info_to_dataframe()
-        if 'simulation_offset' in si_df.columns and 'duration' in si_df.columns:
-            self.computation_by_simulation_time = \
-                calculate_computation_by_simulation_time(si_df,
-                                                         self.simulation.setting.departure_time,
-                                                         max_timestamp,
-                                                         self.speed,
-                                                         self.fps)
+        raise NotImplementedError("This method was deprecated. Use preprocess method instead.")
 
     def _set_ax_settings_if_zoom(self):
         if self.zoom:
@@ -262,11 +295,14 @@ class SimulationAnimator(ABC):
             nonlocal car_coordinates, progress_bar
             if progress_bar is None:
                 progress_bar = tqdm(total=self.num_of_frames, desc='Creating animation', unit='frame', leave=True)
+
+            # timestamp = self.timestamp_from + i
+            timestamp = self.frames[i]
+
             self.ax_traffic.clear()
             self.ax_map_settings.apply(self.ax_traffic)
             self.ax_traffic.axis('off')
 
-            timestamp = self.timestamp_from + i
             if i % 5 * 60 == 0:
                 self.time_text.set_text(datetime.utcfromtimestamp(timestamp * 1000 * self.interval // 10 ** 3))
 
