@@ -15,18 +15,20 @@ NodeId = NewType('NodeId', int)
 
 class PreprocessedData:
     def __init__(self,
-                 segments: set,
-                 timed_segments: set,
-                 number_of_vehicles: int,
+                 timed_segments_dict: dict,
                  number_of_finished_vehicles_in_time: defaultdict,
                  total_simulation_time_in_time_s: defaultdict = defaultdict(lambda: timedelta(0)),
-                 total_meters_driven_in_time: defaultdict = defaultdict(int)):
-        self.segments = segments
-        self.timed_segments = timed_segments
-        self.number_of_vehicles = number_of_vehicles
+                 total_meters_driven_in_time: defaultdict = defaultdict(int),
+                 min_timestamp: int = None,
+                 max_timestamp: int = None,
+                 max_width_count: int = None):
+        self.timed_segments_dict = timed_segments_dict
         self.number_of_finished_vehicles_in_time = number_of_finished_vehicles_in_time
         self.total_simulation_time_in_time_s = total_simulation_time_in_time_s
         self.total_meters_driven_in_time = total_meters_driven_in_time
+        self.min_timestamp = min_timestamp
+        self.max_timestamp = max_timestamp
+        self.max_width_count = max_width_count
 
 
 @dataclass
@@ -112,29 +114,9 @@ class Record:
     segment_length: float
     start_offset_m: float
     speed_mps: float
-    status: str
     node_from: NodeId
     node_to: NodeId
     meters_driven: float
-    active: bool = None
-    length: InitVar[float] = None
-    graph: InitVar[Graph] = None
-
-    def __post_init__(self, length, graph=None):
-        self.length = length
-
-        if (
-                length is None
-                and graph is not None
-                and (self.node_from is not None or self.node_to is not None)
-        ):
-            data = graph.get_edge_data(self.node_from, self.node_to)
-            assert data is not None
-
-            data = data[0]
-            assert 'length' in data
-            self.length = data['length']
-
 
 def add_vehicle(record: Record, divide: int, timestamp: int = None, start_offset_m: float = None, speed_mps: float = None):
     """Add vehicle to **singleton** segment in time element."""
@@ -146,7 +128,7 @@ def add_vehicle(record: Record, divide: int, timestamp: int = None, start_offset
         speed_mps = record.speed_mps
 
     timed_seg = SegmentInTime(
-        record.node_from, record.node_to, record.length, timestamp, divide
+        record.node_from, record.node_to, record.segment_length, timestamp, divide
     )
     timed_seg.add_vehicle(start_offset_m, speed_mps)
 
@@ -224,8 +206,8 @@ def prepare_dataframe(df, speed, fps):
     return df
 
 
-def dataframe_to_sorted_records(df, graph):
-    records = [Record(**kwargs, graph=graph) for kwargs in df.to_dict(orient='records')]
+def dataframe_to_sorted_records(df):
+    records = [Record(**kwargs) for kwargs in df.to_dict(orient='records')]
     records = sorted(records, key=lambda x: (x.vehicle_id, x.timestamp))
 
     return records
@@ -239,18 +221,17 @@ def is_last_record_for_vehicle(processing_record, next_record):
     return next_record is None or processing_record.vehicle_id != next_record.vehicle_id
 
 
-def preprocess_data(df, graph, divide: int = 2):
+def preprocess_data(records, divide: int = 2, not_finished_vehicles = None):
     assert (
             divide >= 2
     ), f"Invalid value of divide '{divide}'. It must be greater or equal to 2."
+    not_finished_vehicles = not_finished_vehicles or set()
 
     timed_segments = set()
     segments = set()
-    number_of_vehicles = get_number_of_vehicles(df)
     number_of_finished_vehicles_in_time = defaultdict(int)
     total_simulation_time_in_time_s = defaultdict(lambda: timedelta(0))
     total_meters_driven_in_time = defaultdict(int)
-    records = dataframe_to_sorted_records(df, graph)
 
     for i, (processing_record, next_record) in enumerate(
             zip(records[:], records[1:] + [None])
@@ -259,7 +240,7 @@ def preprocess_data(df, graph, divide: int = 2):
         total_meters_driven_in_time[processing_record.timestamp] += processing_record.meters_driven
         if is_last_record_for_vehicle(processing_record, next_record):
             timed_segments.add(add_vehicle(processing_record, divide))
-            if processing_record.active is False:
+            if not processing_record.vehicle_id in not_finished_vehicles:
                 number_of_finished_vehicles_in_time[processing_record.timestamp] += 1
 
         else:  # fill missing records
@@ -285,19 +266,19 @@ def preprocess_data(df, graph, divide: int = 2):
                 # 1. fill missing offset between two consecutive records
                 new_offsets = np.linspace(
                     processing_record.start_offset_m,
-                    next_record.start_offset_m + processing_record.length,
+                    next_record.start_offset_m + processing_record.segment_length,
                     len(new_timestamps),
                     endpoint=False
                 )
                 # 2. adjust offset where the segment change
                 processing_segments = np.where(
-                    new_offsets > processing_record.length,
+                    new_offsets > processing_record.segment_length,
                     next_record,
                     processing_record
                 )
                 new_offsets = np.where(
-                    new_offsets > processing_record.length,
-                    new_offsets - processing_record.length,
+                    new_offsets > processing_record.segment_length,
+                    new_offsets - processing_record.segment_length,
                     new_offsets
                 )
 
@@ -313,12 +294,19 @@ def preprocess_data(df, graph, divide: int = 2):
         total_simulation_time_in_time_s[timestamp] += total_simulation_time_in_time_s[timestamp - 1]
         number_of_finished_vehicles_in_time[timestamp] += number_of_finished_vehicles_in_time[timestamp - 1]
 
-    return PreprocessedData(segments,
-                            timed_segments,
-                            number_of_vehicles,
+    max_width_count = max([max(seg.counts) for seg in timed_segments])
+
+    timed_seg_dict = defaultdict(list)
+    for seg in timed_segments:
+        timed_seg_dict[seg.timestamp].append(seg)
+
+    return PreprocessedData(timed_seg_dict,
                             number_of_finished_vehicles_in_time,
                             total_simulation_time_in_time_s,
-                            total_meters_driven_in_time)
+                            total_meters_driven_in_time,
+                            min_timestamp,
+                            max_timestamp,
+                            max_width_count)
 
 
 def calculate_computation_by_simulation_time(steps_info, sim_start_time, max_rounded_timestamp, speed, fps):

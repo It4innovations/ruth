@@ -98,18 +98,19 @@ class Simulation:
         self.queues_manager = QueuesManager()
         self.bbox = bbox
         self.map_download_date = map_download_date
-        self.routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
+        self._routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
 
     def __getstate__(self):
         d = self.__dict__.copy()
-        d.pop("routing_map")
+        if "_routing_map" in d:
+            d.pop("_routing_map")
         if "global_view" in d:
             d.pop("global_view")
         return d
 
     def __setstate__(self, d):
         self.__dict__.update(d)
-        self.routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
+        self._routing_map = None  # lazy init
         current_offset = self.compute_current_offset()
         if current_offset is not None:
             current_offset = self.setting.departure_time + current_offset
@@ -119,6 +120,12 @@ class Simulation:
             for fcd in fcds:
                 self.global_view.add(fcd)
                 self.history.fcd_by_segment[fcd.segment.id].append(fcd)
+
+    @property
+    def routing_map(self):
+        if self._routing_map is None:
+            self._routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
+        return self._routing_map
 
     @property
     def random(self):
@@ -159,6 +166,9 @@ class Simulation:
 
     def get_length(self):
         return self.history.fcd_history[-1].datetime - self.history.fcd_history[0].datetime
+
+    def get_vehicle_ids_not_finished(self):
+        return set([v.id for v in self.vehicles if v.active])
 
     @property
     def last_step(self):

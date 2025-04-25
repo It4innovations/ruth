@@ -386,8 +386,7 @@ def animate(ctx, animator: Type[animation.SimulationAnimator], **kwargs):
         logging.warning("Creating animation of an unfinished simulation.")
 
     animation_creator = animator(simulation_path=ctx.obj['common-args'].out, **kwargs)
-    animation_creator.set_simulation(simulation)
-    animation_creator.run()
+    animation_creator.run(simulation)
 
 
 @single_node_simulator.command()

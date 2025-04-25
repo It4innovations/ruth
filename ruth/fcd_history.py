@@ -37,6 +37,20 @@ class FCDHistory:
 
         return pd.DataFrame(data)
 
+    def to_dataframe_short(self):
+        data = {
+            "timestamp": [fcd.datetime for fcd in self.fcd_history],
+            "node_from": pd.array([fcd.segment.node_from for fcd in self.fcd_history], dtype="Int64"),
+            "node_to": pd.array([fcd.segment.node_to for fcd in self.fcd_history], dtype="Int64"),
+            "segment_length": pd.array([fcd.segment.length for fcd in self.fcd_history], dtype="float"),
+            "vehicle_id": pd.array([fcd.vehicle_id for fcd in self.fcd_history], dtype="Int32"),
+            "start_offset_m": pd.array([fcd.start_offset for fcd in self.fcd_history], dtype="float"),
+            "speed_mps": pd.array([fcd.speed for fcd in self.fcd_history], dtype="float"),
+        }
+
+        return pd.DataFrame(data)
+
+
     def speed_in_time_at_segment(self, datetime, node_from, node_to):
         speeds = [fcd.speed for fcd in self.fcd_by_segment.get(SegmentId((node_from, node_to)), []) if
                   fcd.datetime == datetime]

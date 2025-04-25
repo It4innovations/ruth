@@ -84,7 +84,7 @@ def generate_speeds_animation(**kwargs):
 @click.argument('simulation-path', type=click.Path(exists=True))
 @click.option(
     '--time-unit',
-    type=click.Choice([el.name for el in TimeUnit]),
+    type=click.Choice([el.name.lower() for el in TimeUnit]),
     default='seconds',
     help="Choose time unit for the output",
     show_default=True
