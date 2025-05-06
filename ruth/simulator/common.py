@@ -28,6 +28,16 @@ def load_vehicles(input_path: str):
 
     ) for (_, row) in df.iterrows()]
 
+    filtered_count = 0
+    for vehicle in vehicles:
+        if not vehicle.osm_route or len(vehicle.osm_route) < 2:
+            vehicle.active = False
+            filtered_count += 1
+
+    if filtered_count > 0:
+        logger.info(f"Filtered {filtered_count} vehicles with too short routes.")
+        vehicles = [v for v in vehicles if v.active]
+
     bbox_lat_max = df["bbox_lat_max"].iloc[0]
     bbox_lon_min = df["bbox_lon_min"].iloc[0]
     bbox_lat_min = df["bbox_lat_min"].iloc[0]

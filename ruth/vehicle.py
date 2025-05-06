@@ -187,7 +187,9 @@ class Vehicle:
 
     @property
     def next_node(self):
-        """Return the end node of segment in processing."""
+        """Return the end node of the current segment, or None if at the end."""
+        if self.start_index + 1 >= len(self.osm_route):
+            return None
         return self.osm_route[self.start_index + 1]
 
     @property

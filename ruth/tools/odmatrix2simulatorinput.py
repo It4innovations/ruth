@@ -41,10 +41,10 @@ def gps_to_nodes_with_shortest_path(od_for_id, bbox, download_date, data_dir):
 def get_active_and_state(row):
     if row["origin_node"] == row["dest_node"]:
         return False, "same origin and destination"
-    elif row["osm_route"] is None:
+    if not row["osm_route"] or len(row["osm_route"]) < 2:
         return False, "no route between origin and destination"
-    else:
-        return True, "not started"
+
+    return True, "not started"
 
 
 def plot_origin_destination(df, g):
