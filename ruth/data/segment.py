@@ -28,6 +28,7 @@ class Segment:
     # Length of th segment (in meters)
     length: LengthMeters
     max_allowed_speed_kph: SpeedKph
+    lanes: int
 
     @property
     def id(self) -> SegmentId:
