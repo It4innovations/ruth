@@ -70,11 +70,12 @@ class GlobalView:
         # segments, can be replaced with different LoS ranges for different road types in the future
         ending_length = 200
         rest_segment_length = segment.length - vehicle_offset_m
+
         # rescale density
         if rest_segment_length < ending_length:
             n_vehicles_per_mile = n_vehicles * mile / ending_length
         else:
-            n_vehicles_per_mile = n_vehicles * mile / rest_segment_length
+            n_vehicles_per_mile = n_vehicles * mile / (rest_segment_length * segment.lanes)
 
         los = float("inf")  # in case the vehicles are stuck in traffic jam
         for (low, high), (m, n) in ranges:

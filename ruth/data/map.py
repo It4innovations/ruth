@@ -320,11 +320,15 @@ class Map:
     def get_osm_segment(self, node_from: int, node_to: int):
         data = self.original_network.get_edge_data(node_from, node_to)
         assert data is not None, f"Segment {node_from} -> {node_to} not found."
+        lanes = data.get("lanes", 1)
+        lanes = int(lanes[0]) if type(lanes) is list else int(lanes)
+        lanes = 1 if lanes <= 0 else lanes
         return Segment(
             node_from=node_from,
             node_to=node_to,
             length=data["length"],
-            max_allowed_speed_kph=data["speed_kph"]
+            max_allowed_speed_kph=data["speed_kph"],
+            lanes=lanes
         )
 
     def osm_route_to_py_segments(self, osm_route: Route) -> List[Segment]:
