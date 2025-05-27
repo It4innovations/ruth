@@ -2,6 +2,8 @@ from typing import List
 import h5py
 import numpy as np
 
+from .map import Map
+
 # Define the compound dtype for HDF5
 compound_dtype = np.dtype([
     ("timestamp", np.int64),  # Timestamp in nanoseconds
@@ -66,6 +68,13 @@ class HDF5Writer:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+    def save_map(self, routing_map: Map):
+        if 'bbox' not in self.file.attrs:
+            self.file.attrs['bbox'] = tuple(routing_map.bbox.get_coords())
+        if 'download_date' not in self.file.attrs:
+            self.file.attrs['download_date'] = str(routing_map.download_date)
+        self.file.flush()
 
     def append_file(self, buffer: List):
         # Create a structured numpy array from the FCD records in the buffer
