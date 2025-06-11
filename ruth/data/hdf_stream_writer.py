@@ -16,37 +16,6 @@ compound_dtype = np.dtype([
     ("active", np.bool_),
 ])
 
-# Define validation rules for each field in the compound dtype
-field_validations = {
-    "timestamp": {"type": np.int64, "range": (-np.iinfo(np.int64).max, np.iinfo(np.int64).max)},
-    "node_from": {"type": np.int64, "range": (-np.iinfo(np.int64).max, np.iinfo(np.int64).max)},
-    "node_to": {"type": np.int64, "range": (-np.iinfo(np.int64).max, np.iinfo(np.int64).max)},
-    "segment_length": {"type": np.int32, "range": (0, np.iinfo(np.int32).max)},
-    "vehicle_id": { "type": np.int64, "range": (0, np.iinfo(np.int64).max)},
-    "start_offset_m": {"type": np.float32, "range": (0, np.finfo(np.float32).max)},
-    "speed_mps": {"type": np.float32, "range": (0, np.finfo(np.float32).max)},
-    "active": {"type": np.bool_, "range": (False, True)},
-}
-
-def validate_data(data):
-    # Validate each field in the structured numpy array
-    for field in data.dtype.names:  # Iterate through the field names of the structured array
-        field_info = field_validations.get(field)
-
-        # Get the value from the structured array
-        value = data[field]
-
-        # Type validation
-        if not isinstance(value, field_info["type"]):
-            raise ValueError(f"Invalid type for {field}: Expected {field_info['type']}, got {type(value)}")
-
-        # Range validation
-        min_val, max_val = field_info["range"]
-        if not (min_val <= value <= max_val):
-            raise ValueError(f"Invalid value for {field}: {value} outside range ({min_val}, {max_val})")
-
-    return True
-
 class HDF5Writer:
     def __init__(self, filename, dtype=None):
         self.file = h5py.File(filename, 'a')
@@ -83,10 +52,6 @@ class HDF5Writer:
               fcd.vehicle_id, float(fcd.start_offset), fcd.speed, fcd.active) for fcd in buffer],
             dtype=compound_dtype
         )
-
-        # Validate the data
-        for record in data:
-            validate_data(record)  # Validate each record
 
         # Append data to the HDF5 file
         data_len = len(data)
