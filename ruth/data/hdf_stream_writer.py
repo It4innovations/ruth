@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List
 import h5py
 import numpy as np
@@ -38,11 +39,13 @@ class HDF5Writer:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
-    def save_map(self, routing_map: Map):
+    def save_map(self, routing_map: Map, departure_time: datetime):
         if 'bbox' not in self.file.attrs:
             self.file.attrs['bbox'] = tuple(routing_map.bbox.get_coords())
         if 'download_date' not in self.file.attrs:
             self.file.attrs['download_date'] = str(routing_map.download_date)
+        if 'departure_time' not in self.file.attrs:
+            self.file.attrs['departure_time'] = departure_time.isoformat()
         self.file.flush()
 
     def append_file(self, buffer: List):

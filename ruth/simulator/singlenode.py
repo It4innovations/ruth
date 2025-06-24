@@ -66,7 +66,7 @@ class Simulator:
 
         with self.sim.history:
             # save the initial map to hdf5
-            self.sim.history.writer.save_map(self.sim.routing_map)
+            self.sim.history.writer.save_map(self.sim.routing_map, self.sim.setting.departure_time)
 
             while self.current_offset is not None:
                 step_start_dt = datetime.now()

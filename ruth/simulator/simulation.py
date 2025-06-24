@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
 from typing import Dict, List
 
+import h5py
 import pandas as pd
 
 from .queues import QueuesManager
@@ -179,3 +180,15 @@ class Simulation:
     def load(path):
         with open(path, 'rb') as f:
             return pickle.load(f)
+
+    @staticmethod
+    def load_h5_df(path):
+        with h5py.File(path, 'r') as f:
+            df = pd.DataFrame(f['fcd'][:])
+            # change 'timestamp' to datetime
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+
+            departure_time = f.attrs['departure_time']
+            bbox = BBox(*f.attrs['bbox'])
+            map_download_date = f.attrs['download_date']
+            return df, departure_time, bbox, map_download_date
