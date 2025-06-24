@@ -3,14 +3,15 @@ import pandas as pd
 import itertools as itertools
 from dataclasses import dataclass, field
 from operator import attrgetter
-
-from ruth.simulator import Simulation
-from .input import dataframe_to_sorted_records, Record
 from .time_unit import TimeUnit
+from ..data.segment import SegmentId
 
 
-def get_real_time(simulation, time_unit: TimeUnit):
-    return (simulation.history.fcd_history[-1].datetime - simulation.history.fcd_history[0].datetime) / time_unit.value
+def get_real_time(sim, time_unit: TimeUnit):
+    return (sim.history.fcd_history[-1].datetime - sim.history.fcd_history[0].datetime) / time_unit.value
+
+def get_real_time_df(fcd_history: pd.DataFrame, time_unit: TimeUnit):
+    return (fcd_history.iloc[-1].timestamp - fcd_history.iloc[0].timestamp) / time_unit.value
 
 
 def get_percentage(value, total):
@@ -20,20 +21,41 @@ def get_percentage(value, total):
 def print_in_columns(*args):
     print('{0:<100} {1:>10} {2:>10}'.format(*args))
 
+@dataclass
+class InfoRecord:
+    vehicle_id: int
+    segment_id: SegmentId
+    timestamp: pd.Timestamp
+    active: bool
+
+    def dataframe_to_sorted_records(df: pd.DataFrame) -> list:
+        records = [
+            InfoRecord(
+                vehicle_id=row['vehicle_id'],
+                timestamp=row['timestamp'],
+                segment_id=SegmentId((row['node_from'], row['node_to'])),
+                active=row['active']
+            ) for _, row in df.iterrows()
+        ]
+
+        return sorted(records, key=lambda x: (x.vehicle_id, x.timestamp))
+
+    def __str__(self):
+        return f'InfoRecord(vehicle_id={self.vehicle_id}, segment_id={self.segment_id}, ' \
+               f'timestamp={self.timestamp}, active={self.active})'
+
 
 @dataclass
 class SimulationInfo:
-    simulation: Simulation
-    graph: nx.MultiDiGraph = field(init=False)
-    records_df: pd.DataFrame = field(init=False)
-    records: list[Record] = field(init=False)
+    graph: nx.MultiDiGraph
+    records_df: pd.DataFrame
+
+    records: list[InfoRecord] = field(init=False)
     vehicles_count: int = field(init=False)
     min_timestamp: int = field(init=False)
 
     def __post_init__(self):
-        self.graph = self.simulation.routing_map.network
-        self.records_df = self.simulation.history.to_dataframe()
-        self.records = dataframe_to_sorted_records(self.records_df, self.graph, 1, 1)
+        self.records = InfoRecord.dataframe_to_sorted_records(self.records_df)
         self.vehicles_count = self.records_df['vehicle_id'].nunique()
         self.min_timestamp = min(self.records, key=attrgetter('timestamp')).timestamp
 
@@ -60,7 +82,7 @@ class SimulationInfo:
     def print_info(self, minute):
         vehicles_records = self._get_records_split_by_vehicle()
 
-        last_timestamp_to_be_noted = self.min_timestamp + 60 * minute
+        last_timestamp_to_be_noted = self.min_timestamp + pd.Timedelta(minutes=minute)
         segments_visited_counts = []
         segments_visited_counts_not_finished = []
         vehicles_finished_journey_count = 0
@@ -74,7 +96,7 @@ class SimulationInfo:
             else:
                 segments_visited_counts_not_finished.append(segments_visited_count)
 
-        real_time_minutes = get_real_time(self.simulation, TimeUnit.MINUTES)
+        real_time_minutes = get_real_time_df(self.records_df, TimeUnit.MINUTES)
         print(f'\nINFO ABOUT MINUTE: {minute} ({get_percentage(minute, real_time_minutes)} % of simulation time)\n')
         print(f'Total number of vehicles: {self.vehicles_count}')
 
@@ -144,7 +166,7 @@ class SimulationInfo:
                 current_finished_vehicle_count += 1
                 segments_count_finished_sum += len(list(vehicle_segments))
 
-        real_time_minutes = get_real_time(self.simulation, TimeUnit.MINUTES)
+        real_time_minutes = get_real_time_df(self.records_df, TimeUnit.MINUTES)
         remaining_vehicles_count = self.vehicles_count - current_finished_vehicle_count
 
         print(f'\nSTATUS AT STATE OF COMPLETION: {completion_point * 100} % '
@@ -152,7 +174,7 @@ class SimulationInfo:
               f'{remaining_vehicles_count} remaining)\n')
         print(f'Total number of vehicles: {self.vehicles_count}')
 
-        minute = round((timestamp_at_point - self.min_timestamp) / 60)
+        minute = round((timestamp_at_point - self.min_timestamp).total_seconds() / 60)
         print(f'Minute: {minute} ({get_percentage(minute, real_time_minutes)} % of simulation time)')
 
         vehicles_started_count = 0

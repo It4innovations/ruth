@@ -3,8 +3,8 @@ from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
-from ruth.simulator import Simulation
-from ruth.vehicle import VehicleAlternatives, VehicleRouteSelection
+from ..simulator import Simulation
+from ..vehicle import VehicleAlternatives, VehicleRouteSelection
 from tqdm import tqdm
 
 from .input import prepare_dataframe
@@ -24,16 +24,15 @@ def add_is_first_column(df):
 
 
 class SimulationLog:
-    def __init__(self, simulation: Simulation, time_interval_minutes: int):
-        self.simulation = simulation
+    def __init__(self, df: pd.DataFrame, vehicles, time_interval_minutes: int):
         self.time_interval_minutes = time_interval_minutes
-        self.df = prepare_dataframe(simulation.history.to_dataframe(), 1, 1)
+        self.df = prepare_dataframe(df, 1, 1)
         self.df = add_is_first_column(self.df)
         self.df = sort_df_by_timestamp(self.df)
         self.vehicle_alternatives = {}
         self.vehicle_route_selection = {}
 
-        for vehicle in simulation.vehicles:
+        for vehicle in vehicles:
             self.vehicle_alternatives[vehicle.id] = vehicle.alternatives
             self.vehicle_route_selection[vehicle.id] = vehicle.route_selection
 
@@ -232,13 +231,18 @@ class SimulationLog:
                 part_number += 1
 
 
-def create_simulation_log(simulation: Simulation, output_path: str, time_interval_minutes: int):
-    simulation_log = SimulationLog(simulation, time_interval_minutes)
-    simulation_log.create_log(output_path)
-
-
 def create_simulations_comparison(simulation_paths: list[str], output_dir: str, time_interval_minutes: int):
     for path in tqdm(simulation_paths):
-        simulation = Simulation.load(path)
         output_csv_path = os.path.join(output_dir, Path(path).stem + ".csv")
-        create_simulation_log(simulation, output_csv_path, time_interval_minutes)
+
+        simulation = Simulation.load(path)
+        if simulation.history.keep_in_memory:
+            simulation_log = SimulationLog(simulation.history.to_dataframe(), simulation.vehicles,
+                                           time_interval_minutes)
+        else:
+            simulation_dir = os.path.dirname(path)
+            h5_path = os.path.join(simulation_dir, simulation.history.path)
+            df, _, _, _ = Simulation.load_h5_df(h5_path)
+            simulation_log = SimulationLog(df, simulation.vehicles, time_interval_minutes)
+
+        simulation_log.create_log(output_csv_path)

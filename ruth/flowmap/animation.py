@@ -109,18 +109,7 @@ class SimulationAnimator(ABC):
         with self.ts.get("data loading"):
             logging.info('Loading simulation data...')
 
-            if simulation is None:
-                simulation = Simulation.load(self.simulation_path)
-
-                not_finished_vehicles = simulation.get_vehicle_ids_not_finished()
-                self.bbox = simulation.bbox
-                self.map_download_date = simulation.map_download_date
-
-            df = simulation.history.to_dataframe_short()
-            si_df = simulation.steps_info_to_dataframe()
-            departure_time = simulation.setting.departure_time
-
-            del simulation
+            df, si_df, departure_time, not_finished_vehicles = self._load_data(simulation)
 
             simulation_length = df.timestamp.iloc[-1] - df.timestamp.iloc[0]
             simulation_seconds = simulation_length.total_seconds()
@@ -196,7 +185,30 @@ class SimulationAnimator(ABC):
             print(f'{k}: {v} ms')
 
     def _load_data(self, simulation):
-        raise NotImplementedError("This method was deprecated. Use preprocess method instead.")
+        # pickle load
+        if simulation is None and self.simulation_path.endswith('.pickle'):
+            simulation = Simulation.load(self.simulation_path)
+
+        # simulation object
+        if simulation is not None and isinstance(simulation, Simulation):
+            df = simulation.history.to_dataframe_short()
+            not_finished_vehicles = simulation.get_vehicle_ids_not_finished()
+
+            si_df = simulation.steps_info_to_dataframe()
+            departure_time = simulation.setting.departure_time
+            self.bbox = simulation.bbox
+            self.map_download_date = simulation.map_download_date
+        # hdf5
+        elif self.simulation_path.endswith(('.hdf5', '.h5')):
+            df, departure_time, self.bbox, self.map_download_date = Simulation.load_h5_df(self.simulation_path)
+            not_finished_vehicles = set(df.groupby('vehicle_id')['active'].all()[lambda x: x].index)
+            df.drop(columns=['active'], inplace=True)
+
+            si_df = None
+        else:
+            raise NotImplementedError
+
+        return df, si_df, departure_time, not_finished_vehicles
 
     def _preprocess_data(self):
         raise NotImplementedError("This method was deprecated. Use preprocess method instead.")

@@ -32,8 +32,17 @@ class FCDHistory:
         return state
 
     def __setstate__(self, state):
-        self.__dict__.update(state)
-        self.writer = HDF5Writer(self.path)
+        if isinstance(state, dict):
+            self.__dict__.update(state)
+            self.writer = HDF5Writer(self.path)
+        elif isinstance(state, list):
+            # backward compatibility for old pickles
+            self.keep_in_memory = True
+            self.fcd_history = state
+        else:
+            print(state)
+            raise TypeError(f"Expected dict for state, got {type(state)}")
+
 
     def extend(self, fcd: List["FCDRecord"]):
         self.buffer.extend(fcd)

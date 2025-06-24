@@ -2,12 +2,14 @@ import os
 import click
 import pathlib
 import platform
-from ruth.simulator import Simulation
+
+from ..data.map import Map
+from ..simulator import Simulation
 from .flowmapframe.plot import WidthStyle
 from .analysis import create_simulations_comparison
 from .time_unit import TimeUnit
 from .animation import SimulationVolumeAnimator, SimulationSpeedsAnimator
-from .info import SimulationInfo, get_real_time
+from .info import SimulationInfo, get_real_time, get_real_time_df
 
 
 def set_path():
@@ -105,6 +107,30 @@ def generate_speeds_animation(**kwargs):
     show_default=True
 )
 def get_info(simulation_path, time_unit, minute, status_at_point):
+    if simulation_path.endswith('.pickle'):
+        # back compatibility with old pickles
+        get_info_pickle(simulation_path, time_unit, minute, status_at_point)
+        return
+
+    df, departure_date, bbox, map_download_date = Simulation.load_h5_df(simulation_path)
+    time_unit = TimeUnit.from_str(time_unit)
+    real_time = get_real_time_df(df, time_unit)
+    print(f'Real time duration: {real_time} {time_unit.name.lower()}.')
+
+    simulation_info = None
+    if minute is not None:
+        graph = Map(bbox, download_date=map_download_date, with_speeds=True).network
+        simulation_info = SimulationInfo(graph, df)
+        simulation_info.print_info(minute)
+
+    if status_at_point is not None:
+        if simulation_info is None:
+            graph = Map(bbox, download_date=map_download_date, with_speeds=True).network
+            simulation_info = SimulationInfo(graph, df)
+        simulation_info.print_status_at_point(status_at_point)
+
+
+def get_info_pickle(simulation_path, time_unit, minute, status_at_point):
     sim = Simulation.load(simulation_path)
 
     time_unit = TimeUnit.from_str(time_unit)
@@ -115,12 +141,16 @@ def get_info(simulation_path, time_unit, minute, status_at_point):
     simulation_info = None
 
     if minute is not None:
-        simulation_info = SimulationInfo(sim)
+        graph = sim.routing_map.network
+        records_df = sim.history.to_dataframe()
+        simulation_info = SimulationInfo(graph, records_df)
         simulation_info.print_info(minute)
 
     if status_at_point is not None:
         if simulation_info is None:
-            simulation_info = SimulationInfo(sim)
+            graph = sim.routing_map.network
+            records_df = sim.history.to_dataframe()
+            simulation_info = SimulationInfo(graph, records_df)
         simulation_info.print_status_at_point(status_at_point)
 
 
