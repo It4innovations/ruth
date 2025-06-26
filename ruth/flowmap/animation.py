@@ -99,8 +99,9 @@ class SimulationAnimator(ABC):
         cmap, norm = self.get_color_bar_info()
         cbar = plt.colorbar(mappable=mpl.cm.ScalarMappable(norm=norm, cmap=cmap), ax=self.ax_map,
                             shrink=0.4, label=self.colorbar_title(), pad=0.0)
-        ticklabs = cbar.ax.get_yticklabels()
-        cbar.ax.set_yticklabels(ticklabs, fontsize=15)
+        ticks = cbar.ax.get_yticks()
+        cbar.ax.set_yticks(ticks)
+        cbar.ax.set_yticklabels(cbar.ax.get_yticklabels(), fontsize=15)
         label = cbar.ax.yaxis.label
         label.set_fontsize(15)
         return cbar
@@ -198,9 +199,15 @@ class SimulationAnimator(ABC):
             departure_time = simulation.setting.departure_time
             self.bbox = simulation.bbox
             self.map_download_date = simulation.map_download_date
+            self.total_computation_time = simulation.duration.total_seconds()
         # hdf5
         elif self.simulation_path.endswith(('.hdf5', '.h5')):
-            df, departure_time, self.bbox, self.map_download_date = Simulation.load_h5_df(self.simulation_path)
+            result = Simulation.load_h5_df(self.simulation_path)
+            df = result['df']
+            departure_time = result['departure_time']
+            self.bbox = result['bbox']
+            self.map_download_date = result['download_date']
+            self.total_computation_time = result.get('computational_time', None)
             not_finished_vehicles = set(df.groupby('vehicle_id')['active'].all()[lambda x: x].index)
             df.drop(columns=['active'], inplace=True)
 
@@ -224,10 +231,6 @@ class SimulationAnimator(ABC):
         total_km_driven = round(self.total_meters_driven_in_time[timestamp] / 1000, 2)
         text = f"Total driving time (sum of all cars): {simulation_time_formatted}\n" \
                f"Total KMs driven: {total_km_driven} km\n"
-        if self.computation_by_simulation_time is not None:
-            computation_time = timedelta(milliseconds=self.computation_by_simulation_time[timestamp])
-            text += f"Computation time: {computation_time}\n"
-
         return text
 
     def _get_finished_vehicles_text(self, timestamp: int):
@@ -252,10 +255,10 @@ class SimulationAnimator(ABC):
 
         plt.title(self.title, fontsize=40)
         self.time_text = plt.figtext(
-            0.3,
+            0.15,
             0.09,
             datetime.utcfromtimestamp(self.timestamp_from * 1000 * self.interval // 10 ** 3),
-            ha='right',
+            ha='left',
             fontsize=20)
 
         self.finished_vehicles_text = plt.figtext(
@@ -268,13 +271,32 @@ class SimulationAnimator(ABC):
         if self.description:
             txt = plt.figtext(
                 0.15,
-                0.08,
+                0.07,
                 self.description,
                 ha='left',
                 va='top',
                 fontsize=10,
                 wrap=True)
             txt._get_wrap_line_width = lambda: 1000
+
+        if self.computation_by_simulation_time is not None:
+            computation_time = timedelta(milliseconds=self.computation_by_simulation_time[self.timestamp_from])
+            self.compute_text = plt.figtext(
+                0.15,
+                0.08,
+                f"Computation time: {computation_time}\n",
+                ha='left',
+                va='top',
+                fontsize=10)
+        elif self.total_computation_time is not None:
+            computation_time = timedelta(seconds=self.total_computation_time)
+            self.compute_text = plt.figtext(
+                0.15,
+                0.08,
+                f"Computation time: {computation_time}\n",
+                ha='left',
+                va='top',
+                fontsize=10)
 
         self.stats_text = plt.figtext(
             0.7,
@@ -320,6 +342,10 @@ class SimulationAnimator(ABC):
 
             self.finished_vehicles_text.set_text(self._get_finished_vehicles_text(timestamp))
             self.stats_text.set_text(self._get_stats_text(timestamp))
+
+            if self.computation_by_simulation_time is not None:
+                computation_time = timedelta(milliseconds=self.computation_by_simulation_time[timestamp])
+                self.compute_text.set_text(f"Computation time: {computation_time}\n")
 
             segments = self._plot_routes(timestamp)
 

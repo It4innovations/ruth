@@ -112,7 +112,10 @@ def get_info(simulation_path, time_unit, minute, status_at_point):
         get_info_pickle(simulation_path, time_unit, minute, status_at_point)
         return
 
-    df, departure_date, bbox, map_download_date = Simulation.load_h5_df(simulation_path)
+    result = Simulation.load_h5_df(simulation_path)
+    df = result['df']
+    bbox = result['bbox']
+    map_download_date = result['download_date']
     time_unit = TimeUnit.from_str(time_unit)
     real_time = get_real_time_df(df, time_unit)
     print(f'Real time duration: {real_time} {time_unit.name.lower()}.')

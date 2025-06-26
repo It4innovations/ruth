@@ -152,7 +152,8 @@ class Simulator:
                                         step_dur, timer_set.collect(), len(need_new_route))
 
                 step += 1
-        logger.info(f"Simulation done in {self.sim.duration}.")
+            self.sim.history.writer.save_computational_time(self.sim.duration.total_seconds())
+            logger.info(f"Simulation done in {self.sim.duration}.")
 
     def advance_vehicles(self, vehicles: List[Vehicle], current_offset) -> Tuple[List[FCDRecord], bool]:
         """Move the vehicles on its route and generate FCD records"""

@@ -1,4 +1,5 @@
 from collections import defaultdict, deque
+from datetime import datetime
 from typing import List, TYPE_CHECKING, Dict
 import pandas as pd
 from .data.hdf_stream_writer import HDF5Writer
@@ -18,11 +19,16 @@ class FCDHistory:
 
         self.keep_in_memory = keep_in_memory
         self.fcd_history: List[FCDRecord] = []
+        self.start_time = None
 
     def __enter__(self):
+        self.start_time = datetime.now()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.start_time:
+            computational_time = (datetime.now() - self.start_time).total_seconds()
+            self.writer.save_computational_time(computational_time)
         self.close()
 
     # if pickling do not pickle the writer

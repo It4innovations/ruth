@@ -185,10 +185,12 @@ class Simulation:
     def load_h5_df(path):
         with h5py.File(path, 'r') as f:
             df = pd.DataFrame(f['fcd'][:])
-            # change 'timestamp' to datetime
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
 
-            departure_time = f.attrs['departure_time']
-            bbox = BBox(*f.attrs['bbox'])
-            map_download_date = f.attrs['download_date']
-            return df, departure_time, bbox, map_download_date
+            return {
+                "df": df,
+                "departure_time": f.attrs['departure_time'],
+                "bbox": BBox(*f.attrs['bbox']),
+                "download_date": f.attrs['download_date'],
+                "computational_time": f.attrs['computational_time']
+            }

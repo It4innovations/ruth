@@ -242,7 +242,7 @@ def create_simulations_comparison(simulation_paths: list[str], output_dir: str, 
         else:
             simulation_dir = os.path.dirname(path)
             h5_path = os.path.join(simulation_dir, simulation.history.path)
-            df, _, _, _ = Simulation.load_h5_df(h5_path)
-            simulation_log = SimulationLog(df, simulation.vehicles, time_interval_minutes)
+            result = Simulation.load_h5_df(h5_path)
+            simulation_log = SimulationLog(result['df'], simulation.vehicles, time_interval_minutes)
 
         simulation_log.create_log(output_csv_path)

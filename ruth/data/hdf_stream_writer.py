@@ -39,6 +39,11 @@ class HDF5Writer:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+    def save_computational_time(self, computational_time: float):
+        if 'computational_time' not in self.file.attrs:
+            self.file.attrs['computational_time'] = computational_time
+            self.file.flush()
+
     def save_map(self, routing_map: Map, departure_time: datetime):
         if 'bbox' not in self.file.attrs:
             self.file.attrs['bbox'] = tuple(routing_map.bbox.get_coords())
