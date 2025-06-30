@@ -8,7 +8,7 @@ if sys.version_info.major < 3 or (
 ):
     sys.exit("Python 3.6 or new is required")
 
-VERSION = "2.0"
+VERSION = "2.1"
 
 with open("requirements.txt") as reqs:
     requirements = [line.strip() for line in reqs.readlines()]
