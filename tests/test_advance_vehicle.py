@@ -31,8 +31,8 @@ def setup_vehicle():
 
 @pytest.fixture
 def setup_driving_route():
-    segment1 = Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0))
-    segment2 = Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0))
+    segment1 = Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1)
+    segment2 = Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0), 1)
     return [segment1, segment2]
 
 
@@ -46,8 +46,8 @@ def mock_gv_db():
 @pytest.fixture
 def mock_routing_map():
     routing_map = MagicMock(Map)
-    routing_map.osm_route_to_py_segments = MagicMock(return_value=[Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0)),
-                                                                   Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0))])
+    routing_map.osm_route_to_py_segments = MagicMock(return_value=[Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),
+                                                                   Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0), 1)])
     return routing_map
 
 
@@ -85,7 +85,7 @@ def test_vehicle_advances_normally(setup_vehicle, mock_gv_db, mock_routing_map, 
         FCDRecord(
             datetime=current_time + timedelta(seconds=5),
             vehicle_id=0,
-            segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0)),  # Segment length 1000, current speed 50 km/h
+            segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),  # Segment length 1000, current speed 50 km/h
             start_offset=LengthMeters(speed_kph_to_mps(SpeedKph(50.0)) * 5),  # Speed * Time (5 seconds
             speed=speed_kph_to_mps(SpeedKph(50.0)),
             status="",
@@ -94,7 +94,7 @@ def test_vehicle_advances_normally(setup_vehicle, mock_gv_db, mock_routing_map, 
         FCDRecord(
             datetime=current_time + timedelta(seconds=10),
             vehicle_id=0,
-            segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0)),
+            segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),
             # Segment 0, length 1000, current speed 50 km/h
             start_offset=LengthMeters(speed_kph_to_mps(SpeedKph(50.0)) * 10),  # Speed * Time (10 seconds)
             speed=speed_kph_to_mps(SpeedKph(50.0)),
@@ -132,7 +132,7 @@ def test_vehicle_reaches_end_of_segment(setup_vehicle, mock_gv_db, mock_routing_
 
     time_travelled = LengthMeters(10.0) / speed_kph_to_mps(SpeedKph(50.0))
     assert fcd_records[0].datetime == current_time + timedelta(seconds=time_travelled)
-    assert fcd_records[0].segment == Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0))
+    assert fcd_records[0].segment == Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1)
     assert fcd_records[0].start_offset == LengthMeters(1000.0)
     assert fcd_records[0].speed == speed_kph_to_mps(SpeedKph(50.0))
 
@@ -141,7 +141,7 @@ def test_vehicle_reaches_destination(setup_vehicle, mock_gv_db, mock_routing_map
     mock_gv_db.level_of_service_in_front_of_vehicle.return_value = 1.0
     mock_routing_map.get_current_max_speed = MagicMock(return_value=SpeedKph(50.0))
     mock_routing_map.osm_route_to_py_segments = MagicMock(return_value=[
-        Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0))])
+        Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0), 1)])
 
     setup_vehicle.start_distance_offset = LengthMeters(990.0)
     setup_vehicle.start_index = 1
@@ -163,7 +163,7 @@ def test_vehicle_reaches_destination(setup_vehicle, mock_gv_db, mock_routing_map
 
     time_travelled = LengthMeters(10.0) / speed_kph_to_mps(SpeedKph(50.0))
     assert fcd_records[0].datetime == current_time + timedelta(seconds=time_travelled)
-    assert fcd_records[0].segment == Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0))
+    assert fcd_records[0].segment == Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0), 1)
     assert fcd_records[0].start_offset == LengthMeters(1000.0)
     assert fcd_records[0].speed == speed_kph_to_mps(SpeedKph(50.0))
 
@@ -194,7 +194,7 @@ def test_vehicle_advances_on_the_next_segment(setup_vehicle, mock_gv_db, mock_ro
         FCDRecord(
             datetime=current_time + timedelta(seconds=5),
             vehicle_id=0,
-            segment=Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0)),
+            segment=Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0), 1),
             start_offset=LengthMeters(speed_kph_to_mps(SpeedKph(50.0)) * 5),  # Speed * Time (5 seconds)
             speed=speed_kph_to_mps(SpeedKph(50.0)),
             status="",
@@ -203,7 +203,7 @@ def test_vehicle_advances_on_the_next_segment(setup_vehicle, mock_gv_db, mock_ro
         FCDRecord(
             datetime=current_time + timedelta(seconds=10),
             vehicle_id=0,
-            segment=Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0)),
+            segment=Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0), 1),
             # Segment 0, length 1000, current speed 50 km/h
             start_offset=LengthMeters(speed_kph_to_mps(SpeedKph(50.0)) * 10),  # Speed * Time (10 seconds)
             speed=speed_kph_to_mps(SpeedKph(50.0)),
@@ -224,6 +224,7 @@ def test_vehicle_advances_on_the_next_segment(setup_vehicle, mock_gv_db, mock_ro
 def test_vehicle_stuck_in_traffic(setup_vehicle, mock_gv_db, mock_routing_map, mock_queues_manager, current_time):
     mock_gv_db.level_of_service_in_front_of_vehicle.return_value = 0.0
 
+    setup_vehicle.start_distance_offset = LengthMeters(20.0)
     expected_position = setup_vehicle.segment_position
     expected_time_offset = setup_vehicle.time_offset + timedelta(seconds=10)
 
@@ -242,7 +243,7 @@ def test_vehicle_stuck_in_traffic(setup_vehicle, mock_gv_db, mock_routing_map, m
         FCDRecord(
             datetime=current_time + timedelta(seconds=5),
             vehicle_id=0,
-            segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0)),
+            segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),
             start_offset=expected_position.position,
             speed=SpeedMps(0.0),
             status="",
@@ -251,7 +252,7 @@ def test_vehicle_stuck_in_traffic(setup_vehicle, mock_gv_db, mock_routing_map, m
         FCDRecord(
             datetime=current_time + timedelta(seconds=10),
             vehicle_id=0,
-            segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0)),
+            segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),
             start_offset=expected_position.position,
             speed=SpeedMps(0.0),
             status="",
@@ -311,7 +312,7 @@ def test_advance_waiting_vehicle(setup_vehicle, mock_gv_db, mock_routing_map, mo
         FCDRecord(
             datetime=current_time + timedelta(seconds=5),
             vehicle_id=0,
-            segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0)),
+            segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),
             start_offset=expected_position.position,
             speed=SpeedMps(0.0),
             status="",
@@ -320,7 +321,7 @@ def test_advance_waiting_vehicle(setup_vehicle, mock_gv_db, mock_routing_map, mo
         FCDRecord(
             datetime=current_time + timedelta(seconds=10),
             vehicle_id=0,
-            segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0)),
+            segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),
             start_offset=expected_position.position,
             speed=SpeedMps(0.0),
             status="",

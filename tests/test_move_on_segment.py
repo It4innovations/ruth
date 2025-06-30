@@ -31,8 +31,8 @@ def setup_vehicle():
 
 @pytest.fixture
 def setup_driving_route():
-    segment1 = Segment(0, 1, 1000, SpeedKph(50.0))
-    segment2 = Segment(1, 2, 1000, SpeedKph(50.0))
+    segment1 = Segment(0, 1, 1000, SpeedKph(50.0), 1)
+    segment2 = Segment(1, 2, 1000, SpeedKph(50.0), 1)
     return [segment1, segment2]
 
 
