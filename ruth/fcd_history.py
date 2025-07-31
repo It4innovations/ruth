@@ -5,6 +5,7 @@ from typing import List, TYPE_CHECKING, Dict
 import pandas as pd
 from .data.hdf_stream_writer import HDF5Writer
 from .data.segment import SegmentId
+from .mpi_comm.distributor import MPIDistributor
 
 if TYPE_CHECKING:
     from .simulator.simulation import FCDRecord
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
 class FCDHistory:
 
     def __init__(self, h5_path: str, buffer_size, keep_in_memory):
+        if not MPIDistributor.is_master(): return
         self.path = h5_path
         self.buffer_size = buffer_size
         self.buffer: List[FCDRecord] = []
@@ -29,6 +31,7 @@ class FCDHistory:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        if not MPIDistributor.is_master(): return
         if self.start_time:
             computational_time = (datetime.now() - self.start_time).total_seconds()
             self.writer.save_computational_time(computational_time)
@@ -37,7 +40,8 @@ class FCDHistory:
     # if pickling do not pickle the writer
     def __getstate__(self):
         state = self.__dict__.copy()
-        del state['writer']
+        if 'writer' in state:
+            del state['writer']
         return state
 
     def __setstate__(self, state):
@@ -54,6 +58,7 @@ class FCDHistory:
 
 
     def extend(self, fcd: List["FCDRecord"]):
+        if not MPIDistributor.is_master(): return
         self.buffer.extend(fcd)
 
         if self.keep_in_memory:

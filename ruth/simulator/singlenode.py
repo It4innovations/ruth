@@ -3,10 +3,11 @@ from datetime import datetime, timedelta
 from typing import Callable, List, Optional, Tuple
 
 from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithPlans, AlternativeRoutes, \
-    ZeroMQDistributedAlternatives, VehicleWithRoute
+    VehicleWithRoute, MPIDistributedAlternatives
 from .route import advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
 from ..data.map import Map
+from ..mpi_comm.distributor import MPIDistributor
 from ..utils import TimerSet
 from ..vehicle import Vehicle, VehicleAlternatives
 
@@ -23,8 +24,12 @@ class Simulator:
             sim: Simulation
                 State of the simulation.
         """
-        self.sim = sim
-        self.current_offset = self.sim.compute_current_offset()
+        if MPIDistributor.is_master():
+            self.sim = sim
+            self.current_offset = self.sim.compute_current_offset()
+        else:
+            self.sim = sim
+            self.current_offset = 1
 
     @property
     def state(self):
@@ -36,6 +41,7 @@ class Simulator:
             route_selection_providers: List[RouteSelectionProvider],
             end_step_fns: Optional[List[Callable[[Simulation], None]]] = None
     ):
+        MPIDistributor.barrier()
         """Perform the simulation.
 
         Parameters:
@@ -45,118 +51,150 @@ class Simulator:
             :param end_step_fns: An arbitrary functions that are called at the end of each step with
             the current state of simulation. It can be used for storing the state, for example.
         """
+        if MPIDistributor.is_master():
+            for v in self.sim.vehicles:
+                v.frequency = timedelta(seconds=5)
 
-        for v in self.sim.vehicles:
-            v.frequency = timedelta(seconds=5)
+            self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
 
-        self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
+            for alternatives_provider in alternatives_providers:
+                alternatives_provider.load_map(self.sim.routing_map)
+
+            step = self.sim.number_of_steps
+            moved_last_step = True
+            last_map_update = self.current_offset
+            last_time_moved = self.current_offset
+            updated_speeds = {}
+        else:
+            # If not master, we just wait for the master to compute the offset
+            step = 0
+
 
         if self.sim.last_saved_speeds:
              self.sim.routing_map.update_current_speeds(self.sim.last_saved_speeds)
 
         for alternatives_provider in alternatives_providers:
-            alternatives_provider.load_map(self.sim.routing_map)
-
-            if self.sim.setting.plateau_default_route:
-                if isinstance(alternatives_provider, ZeroMQDistributedAlternatives):
-                    self.change_baseline_alternatives(self.sim.vehicles, alternatives_provider)
-
-        step = self.sim.number_of_steps
-        moved_last_step = True
-        last_map_update = self.current_offset
-        last_time_moved = self.current_offset
-        updated_speeds = {}
+            if self.sim.setting.plateau_default_route and isinstance(alternatives_provider, MPIDistributedAlternatives):
+                self.change_baseline_alternatives(self.sim.vehicles if MPIDistributor.is_master() else []
+                                                  , alternatives_provider)
 
         with self.sim.history:
             # save the initial map to hdf5
-            self.sim.history.writer.save_map(self.sim.routing_map, self.sim.setting.departure_time, self.sim.setting.round_freq)
+            if MPIDistributor.is_master():
+                self.sim.history.writer.save_map(self.sim.routing_map, self.sim.setting.departure_time, self.sim.setting.round_freq)
 
-            while self.current_offset is not None:
+            while MPIDistributor.is_simulation_running() and self.current_offset is not None:
                 step_start_dt = datetime.now()
                 timer_set = TimerSet()
 
-                offset = self.sim.round_time_offset(self.current_offset)
+                if MPIDistributor.is_master():
+                    offset = self.sim.round_time_offset(self.current_offset)
 
-                if self.sim.setting.stuck_detection:
-                    # check if the simulation is stuck
-                    if ((self.current_offset - last_time_moved) >=
-                            (self.sim.setting.round_freq * self.sim.setting.stuck_detection)):
-                        if not moved_last_step:
-                            logger.error(
-                                f"The simulation is stuck at {self.current_offset}.")
-                            break
+                    if self.sim.setting.stuck_detection:
+                        # check if the simulation is stuck
+                        if ((self.current_offset - last_time_moved) >=
+                                (self.sim.setting.round_freq * self.sim.setting.stuck_detection)):
+                            if not moved_last_step:
+                                logger.error(
+                                    f"The simulation is stuck at {self.current_offset}.")
+                                break
 
-                with timer_set.get("update_map_speeds"):
-                    last_map_update, updated_speeds = self.update_map_speeds(updated_speeds, last_map_update,
-                                                                             alternatives_providers)
+                    with timer_set.get("update_map_speeds"):
+                        last_map_update, updated_speeds = self.update_map_speeds(updated_speeds, last_map_update,
+                                                                                 alternatives_providers)
 
-                with timer_set.get("allowed_vehicles"):
-                    vehicles_to_be_moved = [v for v in self.sim.vehicles
-                                            if self.sim.is_vehicle_within_offset(v, offset)]
+                    with timer_set.get("allowed_vehicles"):
+                        vehicles_to_be_moved = [v for v in self.sim.vehicles
+                                                if self.sim.is_vehicle_within_offset(v, offset)]
 
-                with timer_set.get("alternatives"):
-                    need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
-                                      vehicle.is_at_the_end_of_segment(self.sim.routing_map)
-                                      and vehicle.alternatives != VehicleAlternatives.DEFAULT]
+                        need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
+                                          vehicle.is_at_the_end_of_segment(self.sim.routing_map)
+                                          and vehicle.alternatives != VehicleAlternatives.DEFAULT]
+                # END if MPIDistributor.is_master()
+                else:
+                    # If not master, wait for the master to compute the offset
+                    need_new_route = []
 
-                    computed_vehicles, alts = compute_alternatives(alternatives_providers,
+                # with timer_set.get("alternatives"):
+                computed_vehicles, alts = compute_alternatives(alternatives_providers,
                                                                    need_new_route, self.sim.setting.k_alternatives)
+
+                if MPIDistributor.is_master():
                     assert len(computed_vehicles) == len(alts) == len(need_new_route)
 
-                # Find which vehicles should have their routes recomputed
-                with timer_set.get("collect"):
-                    new_vehicle_routes = []
-                    for v, alt in zip(computed_vehicles, alts):
-                        if alt is not None and alt != []:
-                            new_vehicle_routes.append((v, alt))
+                    # Find which vehicles should have their routes recomputed
+                    with timer_set.get("collect"):
+                        new_vehicle_routes = []
+                        for v, alt in zip(computed_vehicles, alts):
+                            if alt is not None and alt != []:
+                                new_vehicle_routes.append((v, alt))
 
-                with timer_set.get("selected_routes"):
-                    selected_plans = select_routes(route_selection_providers, new_vehicle_routes)
-                    assert len(selected_plans) == len(new_vehicle_routes)
+                    with timer_set.get("selected_routes"):
+                        selected_plans = select_routes(route_selection_providers, new_vehicle_routes)
+                        assert len(selected_plans) == len(new_vehicle_routes)
 
-                    check_travel_times(self.sim.routing_map, alternatives_providers, selected_plans)
+                        check_travel_times(self.sim.routing_map, alternatives_providers, selected_plans)
 
-                    for (vehicle, route) in selected_plans:
-                        vehicle.update_followup_route(route, self.sim.routing_map, self.sim.setting.travel_time_limit_perc)
+                        for (vehicle, route) in selected_plans:
+                            vehicle.update_followup_route(route, self.sim.routing_map,
+                                                          self.sim.setting.travel_time_limit_perc)
+                else:
+                    # If not master, we just wait for the master to compute the routes
+                    pass
 
-                with timer_set.get("advance_vehicle"):
-                    fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy(), offset)
-                    moved_last_step = False
-                    if has_moved or self.sim.routing_map.has_temporary_speeds_planned():
-                        last_time_moved = self.current_offset
-                        moved_last_step = True
 
-                with timer_set.get("update"):
-                    self.sim.update(fcds)
-                    self.sim.history.extend(fcds)
+                if MPIDistributor.is_master():
+                    with timer_set.get("advance_vehicle"):
+                        fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy(), offset)
+                        moved_last_step = False
+                        if has_moved or self.sim.routing_map.has_temporary_speeds_planned():
+                            last_time_moved = self.current_offset
+                            moved_last_step = True
 
-                with timer_set.get("compute_offset"):
-                    current_offset_new = self.sim.compute_current_offset()
-                    if current_offset_new == self.current_offset:
-                        logger.error(
-                            f"The consecutive step with the same offset: {self.current_offset}.")
-                        break
-                    self.current_offset = current_offset_new
+                    with timer_set.get("update"):
+                        self.sim.update(fcds)
+                        self.sim.history.extend(fcds)
 
-                with timer_set.get("drop_old_records"):
-                    self.sim.drop_old_records(self.current_offset)
+                    with timer_set.get("compute_offset"):
+                        current_offset_new = self.sim.compute_current_offset()
+                        if current_offset_new == self.current_offset:
+                            logger.error(
+                                f"The consecutive step with the same offset: {self.current_offset}.")
+                            break
+                        self.current_offset = current_offset_new
 
-                step_dur = datetime.now() - step_start_dt
-                logger.info(
-                    f"{step}. active: {len(vehicles_to_be_moved)}, need_new_route: {len(need_new_route)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
-                self.sim.duration += step_dur
+                    with timer_set.get("drop_old_records"):
+                        self.sim.drop_old_records(self.current_offset)
 
-                if end_step_fns is not None:
-                    with timer_set.get("end_step"):
-                        for fn in end_step_fns:
-                            fn(self.state)
+                    step_dur = datetime.now() - step_start_dt
+                    logger.info(
+                        f"{step}. active: {len(vehicles_to_be_moved)}, need_new_route: {len(need_new_route)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
+                    self.sim.duration += step_dur
 
-                self.sim.save_step_info(self.current_offset, step, len(vehicles_to_be_moved),
-                                        step_dur, timer_set.collect(), len(need_new_route))
+                    if end_step_fns is not None:
+                        with timer_set.get("end_step"):
+                            for fn in end_step_fns:
+                                fn(self.state)
 
-                step += 1
-            self.sim.history.writer.save_computational_time(self.sim.duration.total_seconds())
-            logger.info(f"Simulation done in {self.sim.duration}.")
+                    self.sim.save_step_info(self.current_offset, step, len(vehicles_to_be_moved),
+                                            step_dur, timer_set.collect(), len(need_new_route))
+                    step += 1
+                else:
+                    step += 1
+                    # If not master, we just wait for the master to advance the vehicles
+                    pass
+
+                if MPIDistributor.is_master():
+                    if self.current_offset is None:
+                        MPIDistributor.finish_simulation()
+                MPIDistributor.barrier()
+
+            # END while self.current_offset is not None
+
+            if MPIDistributor.is_master():
+                self.sim.history.writer.save_computational_time(self.sim.duration.total_seconds())
+                logger.info(f"Simulation done in {self.sim.duration}.")
+            # END if MPIDistributor.is_master()
 
     def advance_vehicles(self, vehicles: List[Vehicle], current_offset) -> Tuple[List[FCDRecord], bool]:
         """Move the vehicles on its route and generate FCD records"""
@@ -176,15 +214,17 @@ class Simulator:
             vehicles,
             k=1
         )
-        assert len(vehicles) == len(alts)
 
-        for vehicle, alt in zip(vehicles, alts):
-            if alt is not None and alt != []:
-                vehicle.update_followup_route(alt[0], self.sim.routing_map, travel_time_limit_perc=None)
-            else:
-                vehicle.osm_route = None
-                vehicle.active = False
-                vehicle.status = "no plateau route"
+        if MPIDistributor.is_master():
+            assert len(vehicles) == len(alts)
+
+            for vehicle, alt in zip(vehicles, alts):
+                if alt is not None and alt != []:
+                    vehicle.update_followup_route(alt[0], self.sim.routing_map, travel_time_limit_perc=None)
+                else:
+                    vehicle.osm_route = None
+                    vehicle.active = False
+                    vehicle.status = "no plateau route"
 
     def update_map_speeds(self, updated_speeds: dict, last_map_update: int,
                           alternatives_providers: List[AlternativesProvider]):

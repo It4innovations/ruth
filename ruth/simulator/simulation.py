@@ -13,6 +13,7 @@ from ..data.map import BBox, Map
 from ..data.segment import LengthMeters, Segment, SpeedMps
 from ..fcd_history import FCDHistory
 from ..globalview import GlobalView
+from ..mpi_comm.distributor import MPIDistributor
 from ..utils import round_timedelta
 from ..vehicle import Vehicle
 
@@ -92,6 +93,9 @@ class Simulation:
 
         self.setting = setting
         self.history = FCDHistory("fcd_history.h5", buffer_size=10_000, keep_in_memory=False)
+        if not MPIDistributor.is_master():
+            return
+
         self.global_view = GlobalView()  # active global view
         self.vehicles = vehicles
         self.steps_info = []

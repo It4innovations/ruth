@@ -1,7 +1,6 @@
 import logging
 import random
 from typing import Dict, List, Optional, Tuple
-import numpy
 
 from .ptdr import PTDRInfo
 from ..data.map import Map, osm_routes_to_segment_ids
@@ -78,14 +77,13 @@ class ShortestPathsAlternatives(AlternativesProvider):
     def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
         return len(routes) * [None]
 
+import build.ruthlib as ru
 
-class ZeroMQDistributedAlternatives(AlternativesProvider):
-    from ..zeromq.src.client import Client
+class MPIDistributedAlternatives(AlternativesProvider):
 
-    def __init__(self, client: Client):
+    def __init__(self):
         super().__init__()
         self.vehicle_behaviour = VehicleAlternatives.PLATEAU_FASTEST
-        self.client = client
         self.routing_map = None
         self.map_id = None
 
@@ -94,7 +92,8 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         Loads updated information from the passed map.
         """
         map_path = routing_map.save_hdf()
-        self.client.broadcast(Message(kind="load-map", data=map_path))
+        if ru.is_master():
+            ru.setup_map(map_path)
         self.routing_map = routing_map
         self.map_id = 0
 
@@ -102,71 +101,56 @@ class ZeroMQDistributedAlternatives(AlternativesProvider):
         """
         Update speeds of the passed segments in a previously passed map.
         """
-        self.map_id = self.routing_map.get_map_id()
-        inner_data = [{
-            "edge_id": self.routing_map.get_hdf5_edge_id(segment_id),
-            "speed": speed if speed is not None else self.routing_map.get_current_max_speed(segment_id[0],
-                                                                                            segment_id[1])
-        } for (segment_id, speed) in segments.items()]
-        data = {
-            "map_id": self.map_id,
-            "request_name": "update-speeds",
-            "segments_data": inner_data
-        }
-        self.client.broadcast(Message(kind="update-map", data=data))
+        print("Map update requested, but not implemented in MPIDistributedAlternatives.")
+        message = []
+        for segment_id, speed in segments.items():
+            edge_id = self.routing_map.get_hdf5_edge_id(segment_id)
+            speed = speed if speed is not None else self.routing_map.get_current_max_speed(segment_id[0], segment_id[1])
+            message.append((edge_id, speed))
+
+        if ru.is_master():
+            ru.update_speeds(message)
+        return
 
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
-        messages = [Message(kind="compute", data={
-            "map_id": self.map_id,
-            "request_name": "alternatives",
-            "start": self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
-            "destination": self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[1]),
-            "max_routes": k
-        }) for v in vehicles]
-
-        # The formatting can be expensive, so we explicitly set if debug logging is enabled first
-        if is_root_debug_logging():
-            logging.debug(f"Sending alternatives to distributed worker: {messages}")
-
-        results = self.client.compute(messages)
-
-        if is_root_debug_logging():
-            logging.debug(f"Response from worker: {results}")
-
-        if results and "times" in results[0]:
-            remapped_routes = [
-                [([self.routing_map.hdf5_to_osm_id(node_id) for node_id in route], time) for route, time in
-                 zip(result["routes"], result["times"])]
-                for result in results
+        if ru.is_master():
+            OD_matrix = [
+                (self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
+                    self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[1]))
+                for v in vehicles
             ]
-        else:
-            remapped_routes = [
-                [([self.routing_map.hdf5_to_osm_id(node_id) for node_id in route], None) for route in
-                 result["routes"]]
-                for result in results
-            ]
+            ru.do_alternatives(OD_matrix, k)
+
+        # -- wait for all processes to finish
+        ru.barrier()
+
+        remapped_routes = []
+        # -- get the results
+
+        if ru.is_master():
+            li = ru.get_routes()
+
+            # li[0] is a list of vehicle IDs, li[1] is a list of routes, and li[2] is a list of travel times
+
+            id_to_index = {vid: i for i, vid in enumerate(li[0])}
+
+            for vehicle_index in range(len(vehicles)):
+                i = id_to_index.get(vehicle_index)
+                if i is not None:
+                    results = [
+                        ([self.routing_map.hdf5_to_osm_id(node_id) for node_id in route],travel_time)
+                        for route, travel_time in zip(li[1][i], li[2][i])
+                    ]
+                    remapped_routes.append(results)
+                else:
+                    remapped_routes.append([])
+
         return remapped_routes
 
     def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
-        messages = [Message(kind="compute", data={
-            "map_id": self.map_id,
-            "request_name": "travel-times",
-            "node_ids": [self.routing_map.osm_to_hdf5_id(node_id) for node_id in route]
-        }) for route in routes]
-
-        results = self.client.compute(messages)
-
-        times = []
-        for result in results:
-            assert result["success"], f"Failed to compute travel time: {result}"
-            if "travel_time" in result:
-                times.append(result["travel_time"] if result["travel_time"] is not None else numpy.inf)
-            else:
-                times.append(None)
-
-        return times
-
+        travel_times = [self.routing_map.get_path_travel_time(route) for route in routes]
+        return travel_times
 
 # Route selection
 class RouteSelectionProvider:

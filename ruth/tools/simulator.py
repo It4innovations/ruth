@@ -15,9 +15,10 @@ from ..simulator import SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
 from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, FirstRouteSelection, \
     RandomRouteSelection, RouteSelectionProvider, ShortestPathsAlternatives, \
-    ZeroMQDistributedAlternatives, ZeroMQDistributedPTDRRouteSelection
+    MPIDistributedAlternatives, ZeroMQDistributedPTDRRouteSelection
 from ..simulator.ptdr import PTDRInfo
 from ..zeromq.src.client import Client
+from ..mpi_comm.distributor import MPIDistributor
 
 
 @dataclass
@@ -88,16 +89,28 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     stuck_detection = common_args.stuck_detection
     plateau_default_route = common_args.plateau_default_route
 
+    ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
+                    los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
+                    stuck_detection=stuck_detection,
+                    plateau_default_route=plateau_default_route)
+
+
+    if not MPIDistributor.is_master():
+        simulation = Simulation(
+            vehicles=[],  # Empty list for non-master processes
+            setting=ss,
+            bbox=None,  # No bounding box for non-master processes
+            map_download_date=None  # No download date for non-master processes
+        )
+        return SingleNodeSimulator(simulation)
+
+    # Master process: load or create simulation
     simulation = Simulation.load(continue_from) if continue_from != '' else None
 
     # TODO: solve the debug symbol
     if simulation is None:
         if vehicles_path is None:
             raise ValueError("Either vehicles_path or continue_from must be specified.")
-        ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
-                        los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
-                        stuck_detection=stuck_detection,
-                        plateau_default_route=plateau_default_route)
         vehicles, bbox, download_date = load_vehicles(vehicles_path)
 
         set_vehicle_behavior(vehicles, alternatives_ratio.to_list(), route_selection_ratio.to_list())
@@ -266,7 +279,6 @@ class ZeroMqContext:
 
 
 def create_alternatives_providers(alternatives_ratio: AlternativesRatio,
-                                  zmq_ctx: ZeroMqContext,
                                   plateu_default_route: bool = False,
                                   ) -> List[AlternativesProvider]:
     providers = []
@@ -275,10 +287,7 @@ def create_alternatives_providers(alternatives_ratio: AlternativesRatio,
     if alternatives_ratio.dijkstra_shortest > 0:
         providers.append(ShortestPathsAlternatives())
     if alternatives_ratio.plateau_fastest > 0 or plateu_default_route:
-        port = int(os.environ['port']) if 'port' in os.environ else 5555
-        brodcast_port = int(os.environ['broadcast_port']) if 'broadcast_port' in os.environ else 5556
-        providers.append(ZeroMQDistributedAlternatives(
-            client=zmq_ctx.get_or_create_client(port=port, broadcast_port=brodcast_port)))
+        providers.append(MPIDistributedAlternatives())
     return providers
 
 
@@ -334,57 +343,64 @@ def run(ctx,
 
 def run_inner(common_args: CommonArgs, vehicles_path: Path,
               alternatives_ratio, route_selection_ratio) -> Simulation:
-    out = common_args.out
-    walltime = common_args.walltime
-    saving_interval = common_args.saving_interval
-    task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
-    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
-    end_step_fns = []
+    with MPIDistributor() as distributor:
+        out = common_args.out
+        walltime = common_args.walltime
+        saving_interval = common_args.saving_interval
+        task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
-    if walltime is not None:
-        end_step_fns.append(store_simulation_at_walltime(walltime, f"run{task_id}"))
+        simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+        end_step_fns = []
+        alternatives_providers = create_alternatives_providers(alternatives_ratio,
+                                                               plateu_default_route=common_args.plateau_default_route)
+        MPIDistributor.barrier()
 
-    if saving_interval is not None:
-        end_step_fns.append(store_simulation_at_interval(saving_interval, f"run{task_id}"))
+        if distributor.is_master():
+            if walltime is not None:
+                end_step_fns.append(store_simulation_at_walltime(walltime, f"run{task_id}"))
 
-    zmq_ctx = ZeroMqContext()
-    alternatives_providers = create_alternatives_providers(alternatives_ratio,
-                                                           zmq_ctx=zmq_ctx,
-                                                           plateu_default_route=common_args.plateau_default_route)
-    route_selection_providers = create_route_selection_providers(route_selection_ratio, zeromq_ctx=zmq_ctx,
-                                                                 seed=common_args.seed)
+            if saving_interval is not None:
+                end_step_fns.append(store_simulation_at_interval(saving_interval, f"run{task_id}"))
 
-    for route_selection_provider in route_selection_providers:
-        if isinstance(route_selection_provider, ZeroMQDistributedPTDRRouteSelection):
-            ptdr_info = PTDRInfo(common_args.departure_time)
-            route_selection_provider.update_segment_profiles(ptdr_info)
-            break
+            zmq_ctx = ZeroMqContext()
+            route_selection_providers = create_route_selection_providers(route_selection_ratio, zeromq_ctx=zmq_ctx,
+                                                                         seed=common_args.seed)
+            for route_selection_provider in route_selection_providers:
+                if isinstance(route_selection_provider, ZeroMQDistributedPTDRRouteSelection):
+                    ptdr_info = PTDRInfo(common_args.departure_time)
+                    route_selection_provider.update_segment_profiles(ptdr_info)
+                    break
+        else:
+            # if not master, use empty providers
+            route_selection_providers = []
 
-    def handle_save_only(signum, frame):
-        print("Received SIGUSR1: Saving simulation state...")
-        simulator.state.store("break.pickle")
+        def handle_save_only(signum, frame):
+            print("Received SIGUSR1: Saving simulation state...")
+            simulator.state.store("break.pickle")
 
-    def handle_save_and_exit(signum, frame):
-        print("Received SIGUSR2: Saving and shutting down...")
-        simulator.state.store("break.pickle")
-        sys.exit(0)
+        def handle_save_and_exit(signum, frame):
+            print("Received SIGUSR2: Saving and shutting down...")
+            simulator.state.store("break.pickle")
+            sys.exit(0)
 
-    signal.signal(signal.SIGUSR1, handle_save_only)
-    signal.signal(signal.SIGUSR2, handle_save_and_exit)
+        signal.signal(signal.SIGUSR1, handle_save_only)
+        signal.signal(signal.SIGUSR2, handle_save_and_exit)
 
-    try:
-        simulator.simulate(
-            alternatives_providers=alternatives_providers,
-            route_selection_providers=route_selection_providers,
-            end_step_fns=end_step_fns,
-        )
-    except Exception as error:
-        print(f"An error occurred: {error}")
+        try:
+            simulator.simulate(
+                alternatives_providers=alternatives_providers,
+                route_selection_providers=route_selection_providers,
+                end_step_fns=end_step_fns,
+            )
+        except Exception as error:
+            print(f"An error occurred: {error}")
 
-    simulation = simulator.state
-    simulation.store(out)
-    return simulation
+        if distributor.is_master():
+            simulation = simulator.state
+            simulation.store(out)
+
+    return simulator.state if distributor.is_master() else None
 
 
 def main():
