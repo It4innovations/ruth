@@ -149,8 +149,19 @@ class MPIDistributedAlternatives(AlternativesProvider):
         return remapped_routes
 
     def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
-        travel_times = [self.routing_map.get_path_travel_time(route) for route in routes]
-        return travel_times
+
+        if ru.is_master():
+            ru.do_travel_times(routes)
+
+        ru.barrier()
+
+        if ru.is_master():
+            travel_times = ru.get_travel_times()
+            print(f"Updated travel times: {travel_times}")
+
+        print( "Program finished" )
+        # travel_times = [self.routing_map.get_path_travel_time(route) for route in routes]
+        return travel_times if ru.is_master() else []
 
 # Route selection
 class RouteSelectionProvider:

@@ -132,18 +132,20 @@ class Simulator:
                     with timer_set.get("selected_routes"):
                         selected_plans = select_routes(route_selection_providers, new_vehicle_routes)
                         assert len(selected_plans) == len(new_vehicle_routes)
-
-                        check_travel_times(self.sim.routing_map, alternatives_providers, selected_plans)
-
-                        for (vehicle, route) in selected_plans:
-                            vehicle.update_followup_route(route, self.sim.routing_map,
-                                                          self.sim.setting.travel_time_limit_perc)
                 else:
                     # If not master, we just wait for the master to compute the routes
+                    selected_plans = []
                     pass
 
 
+                check_travel_times(self.sim.routing_map if MPIDistributor.is_master() else None
+                                   , alternatives_providers, selected_plans)
+
                 if MPIDistributor.is_master():
+                    for (vehicle, route) in selected_plans:
+                        vehicle.update_followup_route(route, self.sim.routing_map,
+                                                      self.sim.setting.travel_time_limit_perc)
+
                     with timer_set.get("advance_vehicle"):
                         fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy(), offset)
                         moved_last_step = False
@@ -286,20 +288,27 @@ def check_travel_times(routing_map: Map, alternatives_providers: List[Alternativ
     Recomputes travel times for vehicles if map has changed.
     Note: Travel time when finishing a segment is changed in update_followup_route
     """
-    current_map_id = routing_map.map_id
-    vehicles_to_update = [v_r[0] for v_r in vehicles_with_routes if v_r[0].map_id != current_map_id
-                          and v_r[0].alternatives not in [VehicleAlternatives.DEFAULT,
-                                                          VehicleAlternatives.DIJKSTRA_SHORTEST]]
-    if not vehicles_to_update:
-        return
+    if MPIDistributor.is_master():
+        current_map_id = routing_map.map_id
+        vehicles_to_update = [v_r[0] for v_r in vehicles_with_routes if v_r[0].map_id != current_map_id
+                              and v_r[0].alternatives not in [VehicleAlternatives.DEFAULT,
+                                                              VehicleAlternatives.DIJKSTRA_SHORTEST]]
+    # if not vehicles_to_update:
+    #     return
 
     for provider in alternatives_providers:
-        current_routes = [v.get_followup_route() for v in vehicles_to_update
-                          if v.alternatives == provider.vehicle_behaviour]
+        if MPIDistributor.is_master():
+            current_routes = [v.get_followup_route() for v in vehicles_to_update
+                              if v.alternatives == provider.vehicle_behaviour]
+        else:
+            current_routes = []
+
         travel_times = provider.get_routes_travel_times(current_routes)
-        for vehicle, travel_time in zip(vehicles_to_update, travel_times):
-            if travel_time is not None:
-                vehicle.set_current_travel_time(travel_time, current_map_id)
+
+        if MPIDistributor.is_master():
+            for vehicle, travel_time in zip(vehicles_to_update, travel_times):
+                if travel_time is not None:
+                    vehicle.set_current_travel_time(travel_time, current_map_id)
 
 
 def remove_infinity_alternatives(alternatives: List[AlternativeRoutes], routing_map: Map) \
