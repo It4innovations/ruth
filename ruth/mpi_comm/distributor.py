@@ -1,35 +1,33 @@
-import ruthlib as ru
 import multiprocessing
 
 class MPIDistributor:
 
     def __enter__(self):
+        import ruthlib as ru
+        self.ru = ru
         num_threads = multiprocessing.cpu_count()  # Use all available CPU cores
         ru.setup_ace(num_threads)
         ru.init_routes()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        ru.finalize()
+        self.ru.finalize()
+
+    @staticmethod
+    def allow_mpi() -> bool:
+        try:
+            import ruthlib as ru
+            return True
+        except ImportError:
+            return False
 
     @staticmethod
     def is_master() -> bool:
-        return ru.is_master()
-
-    @staticmethod
-    def barrier():
-        ru.barrier()
-
-    @staticmethod
-    def is_simulation_running() -> bool:
-        return ru.is_simulation_running()
-
-    @staticmethod
-    def finish_simulation():
-        if ru.is_master():
-            ru.finish_simulation()
-        else:
-            print("Worker process cannot finish simulation.")
+        try:
+            import ruthlib as ru
+            return ru.is_master()
+        except ImportError:
+            return True
 
 def main():
     with MPIDistributor() as distributor:

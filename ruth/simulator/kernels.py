@@ -77,22 +77,26 @@ class ShortestPathsAlternatives(AlternativesProvider):
     def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
         return len(routes) * [None]
 
-import ruthlib as ru
 
 class MPIDistributedAlternatives(AlternativesProvider):
-
     def __init__(self):
         super().__init__()
         self.vehicle_behaviour = VehicleAlternatives.PLATEAU_FASTEST
         self.routing_map = None
         self.map_id = None
 
+        try:
+            import ruthlib as ru
+            self.ru = ru
+        except ImportError:
+            raise ImportError("ruthlib is not installed. Please install ruthlib to use Plateau Alternatives.")
+
     def load_map(self, routing_map: Map):
         """
         Loads updated information from the passed map.
         """
         map_path = routing_map.save_hdf()
-        ru.setup_map(map_path)
+        self.ru.setup_map(map_path)
         self.routing_map = routing_map
         self.map_id = 0
 
@@ -106,7 +110,7 @@ class MPIDistributedAlternatives(AlternativesProvider):
             speed = speed if speed is not None else self.routing_map.get_current_max_speed(segment_id[0], segment_id[1])
             message.append((edge_id, speed))
 
-        ru.update_speeds(message)
+        self.ru.update_speeds(message)
         return
 
     def postprocess(self, li, vehicles):
@@ -131,11 +135,11 @@ class MPIDistributedAlternatives(AlternativesProvider):
                 self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[1]))
             for v in vehicles
         ]
-        ru.do_alternatives(OD_matrix, k)
+        self.ru.do_alternatives(OD_matrix, k)
 
         remapped_routes = []
 
-        li = ru.get_routes()
+        li = self.ru.get_routes()
 
         # li[0] is a list of vehicle IDs, li[1] is a list of routes, and li[2] is a list of travel times
         remapped_routes = self.postprocess(li, vehicles)
@@ -146,9 +150,9 @@ class MPIDistributedAlternatives(AlternativesProvider):
         routes = [
             [self.routing_map.osm_to_hdf5_id(node_id) for node_id in route] for route in routes
         ]
-        ru.do_travel_times(routes)
+        self.ru.do_travel_times(routes)
 
-        travel_times = ru.get_travel_times()
+        travel_times = self.ru.get_travel_times()
         # travel_times = [self.routing_map.get_path_travel_time(route) for route in routes]
         return travel_times
 

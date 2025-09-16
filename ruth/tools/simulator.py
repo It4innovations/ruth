@@ -333,57 +333,66 @@ def run(ctx,
 def run_inner(common_args: CommonArgs, vehicles_path: Path,
               alternatives_ratio, route_selection_ratio) -> Simulation:
 
-    with MPIDistributor() as distributor:
-        if distributor.is_master():
-            out = common_args.out
-            walltime = common_args.walltime
-            saving_interval = common_args.saving_interval
-            task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
-
-            simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
-            end_step_fns = []
-            alternatives_providers = create_alternatives_providers(alternatives_ratio,
-                                                                   plateu_default_route=common_args.plateau_default_route)
-            if walltime is not None:
-                end_step_fns.append(store_simulation_at_walltime(walltime, f"run{task_id}"))
-
-            if saving_interval is not None:
-                end_step_fns.append(store_simulation_at_interval(saving_interval, f"run{task_id}"))
-
-            zmq_ctx = ZeroMqContext()
-            route_selection_providers = create_route_selection_providers(route_selection_ratio, zeromq_ctx=zmq_ctx,
-                                                                             seed=common_args.seed)
-            for route_selection_provider in route_selection_providers:
-                if isinstance(route_selection_provider, ZeroMQDistributedPTDRRouteSelection):
-                    ptdr_info = PTDRInfo(common_args.departure_time)
-                    route_selection_provider.update_segment_profiles(ptdr_info)
-                    break
-
-            def handle_save_only(signum, frame):
-                print("Received SIGUSR1: Saving simulation state...")
-                simulator.state.store("break.pickle")
-
-            def handle_save_and_exit(signum, frame):
-                print("Received SIGUSR2: Saving and shutting down...")
-                simulator.state.store("break.pickle")
-                sys.exit(0)
-
-            signal.signal(signal.SIGUSR1, handle_save_only)
-            signal.signal(signal.SIGUSR2, handle_save_and_exit)
-
-            try:
-                simulator.simulate(
-                    alternatives_providers=alternatives_providers,
-                    route_selection_providers=route_selection_providers,
-                    end_step_fns=end_step_fns,
-                )
-            except Exception as error:
-                print(f"An error occurred: {error}")
-
-            simulation = simulator.state
-            simulation.store(out)
+    if MPIDistributor.allow_mpi():
+        with MPIDistributor() as distributor:
+            if distributor.is_master():
+                simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+    else:
+        # no MPI available, run as a single process
+        simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
 
     return simulator.state if MPIDistributor.is_master() else None
+
+def setup(common_args: CommonArgs, vehicles_path: Path,
+            alternatives_ratio, route_selection_ratio) -> SingleNodeSimulator:
+    out = common_args.out
+    walltime = common_args.walltime
+    saving_interval = common_args.saving_interval
+    task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
+
+    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+    end_step_fns = []
+    alternatives_providers = create_alternatives_providers(alternatives_ratio,
+                                                           plateu_default_route=common_args.plateau_default_route)
+    if walltime is not None:
+        end_step_fns.append(store_simulation_at_walltime(walltime, f"run{task_id}"))
+
+    if saving_interval is not None:
+        end_step_fns.append(store_simulation_at_interval(saving_interval, f"run{task_id}"))
+
+    zmq_ctx = ZeroMqContext()
+    route_selection_providers = create_route_selection_providers(route_selection_ratio, zeromq_ctx=zmq_ctx,
+                                                                 seed=common_args.seed)
+    for route_selection_provider in route_selection_providers:
+        if isinstance(route_selection_provider, ZeroMQDistributedPTDRRouteSelection):
+            ptdr_info = PTDRInfo(common_args.departure_time)
+            route_selection_provider.update_segment_profiles(ptdr_info)
+            break
+
+    def handle_save_only(signum, frame):
+        print("Received SIGUSR1: Saving simulation state...")
+        simulator.state.store("break.pickle")
+
+    def handle_save_and_exit(signum, frame):
+        print("Received SIGUSR2: Saving and shutting down...")
+        simulator.state.store("break.pickle")
+        sys.exit(0)
+
+    signal.signal(signal.SIGUSR1, handle_save_only)
+    signal.signal(signal.SIGUSR2, handle_save_and_exit)
+
+    try:
+        simulator.simulate(
+            alternatives_providers=alternatives_providers,
+            route_selection_providers=route_selection_providers,
+            end_step_fns=end_step_fns,
+        )
+    except Exception as error:
+        print(f"An error occurred: {error}")
+
+    simulation = simulator.state
+    simulation.store(out)
+    return simulator
 
 
 def main():
