@@ -94,17 +94,6 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                     stuck_detection=stuck_detection,
                     plateau_default_route=plateau_default_route)
 
-
-    if not MPIDistributor.is_master():
-        simulation = Simulation(
-            vehicles=[],  # Empty list for non-master processes
-            setting=ss,
-            bbox=None,  # No bounding box for non-master processes
-            map_download_date=None  # No download date for non-master processes
-        )
-        return SingleNodeSimulator(simulation)
-
-    # Master process: load or create simulation
     simulation = Simulation.load(continue_from) if continue_from != '' else None
 
     # TODO: solve the debug symbol
@@ -345,18 +334,16 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
               alternatives_ratio, route_selection_ratio) -> Simulation:
 
     with MPIDistributor() as distributor:
-        out = common_args.out
-        walltime = common_args.walltime
-        saving_interval = common_args.saving_interval
-        task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
-
-        simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
-        end_step_fns = []
-        alternatives_providers = create_alternatives_providers(alternatives_ratio,
-                                                               plateu_default_route=common_args.plateau_default_route)
-        MPIDistributor.barrier()
-
         if distributor.is_master():
+            out = common_args.out
+            walltime = common_args.walltime
+            saving_interval = common_args.saving_interval
+            task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
+
+            simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+            end_step_fns = []
+            alternatives_providers = create_alternatives_providers(alternatives_ratio,
+                                                                   plateu_default_route=common_args.plateau_default_route)
             if walltime is not None:
                 end_step_fns.append(store_simulation_at_walltime(walltime, f"run{task_id}"))
 
@@ -365,42 +352,38 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
 
             zmq_ctx = ZeroMqContext()
             route_selection_providers = create_route_selection_providers(route_selection_ratio, zeromq_ctx=zmq_ctx,
-                                                                         seed=common_args.seed)
+                                                                             seed=common_args.seed)
             for route_selection_provider in route_selection_providers:
                 if isinstance(route_selection_provider, ZeroMQDistributedPTDRRouteSelection):
                     ptdr_info = PTDRInfo(common_args.departure_time)
                     route_selection_provider.update_segment_profiles(ptdr_info)
                     break
-        else:
-            # if not master, use empty providers
-            route_selection_providers = []
 
-        def handle_save_only(signum, frame):
-            print("Received SIGUSR1: Saving simulation state...")
-            simulator.state.store("break.pickle")
+            def handle_save_only(signum, frame):
+                print("Received SIGUSR1: Saving simulation state...")
+                simulator.state.store("break.pickle")
 
-        def handle_save_and_exit(signum, frame):
-            print("Received SIGUSR2: Saving and shutting down...")
-            simulator.state.store("break.pickle")
-            sys.exit(0)
+            def handle_save_and_exit(signum, frame):
+                print("Received SIGUSR2: Saving and shutting down...")
+                simulator.state.store("break.pickle")
+                sys.exit(0)
 
-        signal.signal(signal.SIGUSR1, handle_save_only)
-        signal.signal(signal.SIGUSR2, handle_save_and_exit)
+            signal.signal(signal.SIGUSR1, handle_save_only)
+            signal.signal(signal.SIGUSR2, handle_save_and_exit)
 
-        try:
-            simulator.simulate(
-                alternatives_providers=alternatives_providers,
-                route_selection_providers=route_selection_providers,
-                end_step_fns=end_step_fns,
-            )
-        except Exception as error:
-            print(f"An error occurred: {error}")
+            try:
+                simulator.simulate(
+                    alternatives_providers=alternatives_providers,
+                    route_selection_providers=route_selection_providers,
+                    end_step_fns=end_step_fns,
+                )
+            except Exception as error:
+                print(f"An error occurred: {error}")
 
-        if distributor.is_master():
             simulation = simulator.state
             simulation.store(out)
 
-    return simulator.state if distributor.is_master() else None
+    return simulator.state if MPIDistributor.is_master() else None
 
 
 def main():

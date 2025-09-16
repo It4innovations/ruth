@@ -14,7 +14,6 @@ if TYPE_CHECKING:
 class FCDHistory:
 
     def __init__(self, h5_path: str, buffer_size, keep_in_memory):
-        if not MPIDistributor.is_master(): return
         self.path = h5_path
         self.buffer_size = buffer_size
         self.buffer: List[FCDRecord] = []
@@ -31,7 +30,6 @@ class FCDHistory:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if not MPIDistributor.is_master(): return
         if self.start_time:
             computational_time = (datetime.now() - self.start_time).total_seconds()
             self.writer.save_computational_time(computational_time)
@@ -58,7 +56,6 @@ class FCDHistory:
 
 
     def extend(self, fcd: List["FCDRecord"]):
-        if not MPIDistributor.is_master(): return
         self.buffer.extend(fcd)
 
         if self.keep_in_memory:

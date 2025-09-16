@@ -77,7 +77,7 @@ class ShortestPathsAlternatives(AlternativesProvider):
     def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
         return len(routes) * [None]
 
-import build.ruthlib as ru
+import ruthlib as ru
 
 class MPIDistributedAlternatives(AlternativesProvider):
 
@@ -92,8 +92,7 @@ class MPIDistributedAlternatives(AlternativesProvider):
         Loads updated information from the passed map.
         """
         map_path = routing_map.save_hdf()
-        if ru.is_master():
-            ru.setup_map(map_path)
+        ru.setup_map(map_path)
         self.routing_map = routing_map
         self.map_id = 0
 
@@ -107,8 +106,7 @@ class MPIDistributedAlternatives(AlternativesProvider):
             speed = speed if speed is not None else self.routing_map.get_current_max_speed(segment_id[0], segment_id[1])
             message.append((edge_id, speed))
 
-        if ru.is_master():
-            ru.update_speeds(message)
+        ru.update_speeds(message)
         return
 
     def postprocess(self, li, vehicles):
@@ -128,45 +126,31 @@ class MPIDistributedAlternatives(AlternativesProvider):
 
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
-        if ru.is_master():
-            OD_matrix = [
-                (self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
-                    self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[1]))
-                for v in vehicles
-            ]
-            ru.do_alternatives(OD_matrix, k)
-
-        # -- wait for all processes to finish
-        ru.barrier()
+        OD_matrix = [
+            (self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
+                self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[1]))
+            for v in vehicles
+        ]
+        ru.do_alternatives(OD_matrix, k)
 
         remapped_routes = []
-        # -- get the results
 
-        if ru.is_master():
-            li = ru.get_routes()
+        li = ru.get_routes()
 
-            # li[0] is a list of vehicle IDs, li[1] is a list of routes, and li[2] is a list of travel times
-            remapped_routes = self.postprocess(li, vehicles)
+        # li[0] is a list of vehicle IDs, li[1] is a list of routes, and li[2] is a list of travel times
+        remapped_routes = self.postprocess(li, vehicles)
 
         return remapped_routes
 
     def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
+        routes = [
+            [self.routing_map.osm_to_hdf5_id(node_id) for node_id in route] for route in routes
+        ]
+        ru.do_travel_times(routes)
 
-        if ru.is_master():
-            routes = [
-                [self.routing_map.osm_to_hdf5_id(node_id) for node_id in route] for route in routes
-            ]
-            ru.do_travel_times(routes)
-
-        ru.barrier()
-
-        if ru.is_master():
-            travel_times = ru.get_travel_times()
-            print(f"Updated travel times: {travel_times}")
-
-        print( "Program finished" )
+        travel_times = ru.get_travel_times()
         # travel_times = [self.routing_map.get_path_travel_time(route) for route in routes]
-        return travel_times if ru.is_master() else []
+        return travel_times
 
 # Route selection
 class RouteSelectionProvider:

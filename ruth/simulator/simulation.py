@@ -93,8 +93,6 @@ class Simulation:
 
         self.setting = setting
         self.history = FCDHistory("fcd_history.h5", buffer_size=10_000, keep_in_memory=False)
-        if not MPIDistributor.is_master():
-            return
 
         self.global_view = GlobalView()  # active global view
         self.vehicles = vehicles

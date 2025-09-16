@@ -1,9 +1,11 @@
-import build.ruthlib as ru
+import ruthlib as ru
+import multiprocessing
 
 class MPIDistributor:
 
     def __enter__(self):
-        ru.setup_ace(10)
+        num_threads = multiprocessing.cpu_count()  # Use all available CPU cores
+        ru.setup_ace(num_threads)
         ru.init_routes()
         return self
 
