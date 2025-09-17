@@ -1,0 +1,8 @@
+[submodule "binding/ace"]
+	path = binding/ace
+	url = https://opencode.it4i.eu/epicure/ace.git
+	branch = devel
+[submodule "binding/RoutingAlg"]
+	path = binding/RoutingAlg
+	url = https://github.com/It4innovations/RoutingAlg.git
+	branch = dev
