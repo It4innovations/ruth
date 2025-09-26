@@ -19,9 +19,6 @@ sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     build-essential gdal-bin libgdal-dev openmpi-bin libopenmpi-dev \
     python3 python3-dev python3-virtualenv python3-pip python3-setuptools python3-wheel
 
-# install rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-
 # create and activate python virtual environment
 python3 -m venv venv
 source venv/bin/activate
@@ -37,7 +34,7 @@ python3 -m pip install git+https://github.com/It4innovations/ruth.git
 
 ## Execution
 
-Information about multi-node execution can be found in **ruth/zeromq/README.md**.
+Information about **multi-node** execution can be found in **binding/README.md**.
 
 For single-node execution, consider the following steps:
 
@@ -98,7 +95,7 @@ For the Alternatives and Route selection, percentages of vehicles can be set for
 - shortest-paths networkx implementation of dijkstra algorithm using route length as weight
 - fastest-paths: networkx implementation of dijkstra algorithm using current-travel-time as weight
 - distributed: cpp implementation of Plateau algorithm
-  - provided by [evkit](https://code.it4i.cz/everest/evkit)
+  - provided by [ACE](https://opencode.it4i.eu/epicure/ace)
   - ports either taken from the environment or set to 5555 and 5556.
   - **plateau-default-route**: flag to recalculate the default route with Plateau algorithm
 ### Route selection
@@ -111,33 +108,7 @@ For the Alternatives and Route selection, percentages of vehicles can be set for
     node_from;node_to;speed;timestamp_from;timestamp_to
     8400868548;10703818;0;2024-08-03 00:10:00;2024-08-03 00:25:00
     ```
-### PTDR path
-- path to msqpack file with probability speed profiles
-- to generate PTDR file use first the `aggregate-globalview` or `aggregate-globalview-set` command generating
-csv file with aggregated information about speeds during simulation
-  ``` csv
-  segment_osm_id;fcd_time_calc;segment_length;max_speed;current_speed
-  OSM172512T300107261;2023-11-13 00:00;74.59;46.7;46.7
-  OSM172512T300107261;2023-11-20 00:00;74.59;46.7;12.97
-  ``` 
-- then, use [this code](https://code.it4i.cz/mic0427/ptdr/) (a currently private repository - access may be granted upon request) to calculate probability profiles (json representation of msqpack file below):
-  
-  ``` json
-  [
-    { "id": "OSM172512T300107261",
-      "length": 74.59,
-      "max_speed": 46.7,
-      "profiles": [{
-          "time_id": 0,
-          "values": [0, 0, 27, 100],
-          "cumprobs": [0.0, 0.0, 0.5, 1.0]
-         },
-         ...
-      ]
-    },
-    ...
-  ]
-  ```
+
 ### Stuck detection
 Parameter `stuck-detection` defines the number of round-frequency-s long rounds with no vehicles movement
 that have to pass before the simulation is terminated.  

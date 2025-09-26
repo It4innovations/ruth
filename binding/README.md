@@ -45,3 +45,4 @@ mpirun -np 2 python test.py
 ```bash
 mpirun -np 2 ruth-simulator-conf --config-file="config.json" run
 ```
+- input dataset for 2.6M and 25M for multi-node execution can be found in this [dataset](https://doi.org/10.5281/zenodo.17206523)
