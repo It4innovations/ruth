@@ -2,6 +2,8 @@ import logging
 import random
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
+
 from .ptdr import PTDRInfo
 from ..data.map import Map, osm_routes_to_segment_ids
 from ..data.segment import Route, SegmentId, SpeedMps, RouteWithTime
@@ -153,7 +155,8 @@ class MPIDistributedAlternatives(AlternativesProvider):
         self.ru.do_travel_times(routes)
 
         travel_times = self.ru.get_travel_times()
-        # travel_times = [self.routing_map.get_path_travel_time(route) for route in routes]
+        travel_times = [tt if tt >= 0 else np.inf for tt in travel_times]
+
         return travel_times
 
 # Route selection

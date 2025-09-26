@@ -339,6 +339,7 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
                 simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
     else:
         # no MPI available, run as a single process
+        logging.warning("MPI not available, running in single-process mode.")
         simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
 
     return simulator.state if MPIDistributor.is_master() else None
