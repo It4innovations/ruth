@@ -104,12 +104,14 @@ class Simulation:
         d = self.__dict__.copy()
         if "_routing_map" in d:
             d.pop("_routing_map")
-        if "global_view" in d:
-            d.pop("global_view")
+        # if "global_view" in d:
+        #     d.pop("global_view")
         return d
 
     def __setstate__(self, d):
         self.__dict__.update(d)
+        if "global_view" not in d:
+            self.global_view = GlobalView()
         self._routing_map = None  # lazy init
 
     @property
