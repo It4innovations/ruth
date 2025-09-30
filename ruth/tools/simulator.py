@@ -17,7 +17,6 @@ from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, 
     RandomRouteSelection, RouteSelectionProvider, ShortestPathsAlternatives, \
     MPIDistributedAlternatives, ZeroMQDistributedPTDRRouteSelection
 from ..simulator.ptdr import PTDRInfo
-from ..zeromq.src.client import Client
 from ..mpi_comm.distributor import MPIDistributor
 
 
@@ -260,11 +259,12 @@ class ZeroMqContext:
     def __init__(self):
         self.clients = {}
 
-    def get_or_create_client(self, port: int, broadcast_port: int) -> Client:
-        if port not in self.clients:
-            assert broadcast_port not in self.clients
-            self.clients[port] = Client(port=port, broadcast_port=broadcast_port)
-        return self.clients[port]
+    def get_or_create_client(self, port: int, broadcast_port: int):
+        raise NotImplementedError("ZeroMQ client is not implemented yet.")
+        # if port not in self.clients:
+        #     assert broadcast_port not in self.clients
+        #     self.clients[port] = Client(port=port, broadcast_port=broadcast_port)
+        # return self.clients[port]
 
 
 def create_alternatives_providers(alternatives_ratio: AlternativesRatio,

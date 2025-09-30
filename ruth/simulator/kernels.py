@@ -9,7 +9,6 @@ from ..data.map import Map, osm_routes_to_segment_ids
 from ..data.segment import Route, SegmentId, SpeedMps, RouteWithTime
 from ..utils import is_root_debug_logging
 from ..vehicle import Vehicle, VehicleAlternatives, VehicleRouteSelection
-from ..zeromq.src.client import Message
 
 AlternativeRoutes = List[RouteWithTime]
 
@@ -203,9 +202,9 @@ class RandomRouteSelection(RouteSelectionProvider):
 
 
 class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
-    from ..zeromq.src.client import Client
+    # from ..zeromq.src.client import Client
 
-    def __init__(self, client: Client):
+    def __init__(self, client):
         self.vehicle_behaviour = VehicleRouteSelection.PTDR
         self.client = client
         self.ptdr_info = None
@@ -220,19 +219,20 @@ class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
     """
 
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
-        messages = [Message(kind="monte-carlo", data={
-            "routes": osm_routes_to_segment_ids(routes[0]),
-            "frequency": vehicle.frequency.total_seconds(),
-            "departure_time": self.ptdr_info.get_time_from_start_of_interval(vehicle.time_offset),
-        }) for (vehicle, routes) in route_possibilities]
-
-        if is_root_debug_logging():
-            logging.debug(f"Sending PTDR to distributed worker: {messages}")
-
-        shortest_routes = self.client.compute(messages)
-
-        if is_root_debug_logging():
-            logging.debug(f"Response from worker: {shortest_routes}")
-
-        return [(vehicle, routes[shortest_route]) for ((vehicle, routes), shortest_route) in
-                zip(route_possibilities, shortest_routes)]
+        raise NotImplementedError("PTDR route selection is not implemented yet.")
+        # messages = [Message(kind="monte-carlo", data={
+        #     "routes": osm_routes_to_segment_ids(routes[0]),
+        #     "frequency": vehicle.frequency.total_seconds(),
+        #     "departure_time": self.ptdr_info.get_time_from_start_of_interval(vehicle.time_offset),
+        # }) for (vehicle, routes) in route_possibilities]
+        #
+        # if is_root_debug_logging():
+        #     logging.debug(f"Sending PTDR to distributed worker: {messages}")
+        #
+        # shortest_routes = self.client.compute(messages)
+        #
+        # if is_root_debug_logging():
+        #     logging.debug(f"Response from worker: {shortest_routes}")
+        #
+        # return [(vehicle, routes[shortest_route]) for ((vehicle, routes), shortest_route) in
+        #         zip(route_possibilities, shortest_routes)]

@@ -28,7 +28,6 @@ setup(
             "ruth-traffic-flow-to-od-matrix = ruth.tools.trafficflow2odmatrix:convert",
             "ruth-od-matrix-to-simulator-input = ruth.tools.odmatrix2simulatorinput:convert",
             "ruth-combine-od-matrix = ruth.tools.combineodmatrix:combine_odmatrix",
-            "ruth-distributed = ruth.zeromq.distributed:distributed",
             "traffic-flow-map = ruth.flowmap.app:main",
         ]
     }
