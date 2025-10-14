@@ -1,6 +1,8 @@
 import os
+import time
 from collections import defaultdict
 from pathlib import Path
+import logging
 
 import pandas as pd
 from ..simulator import Simulation
@@ -26,9 +28,15 @@ def add_is_first_column(df):
 class SimulationLog:
     def __init__(self, df: pd.DataFrame, vehicles, time_interval_minutes: int):
         self.time_interval_minutes = time_interval_minutes
+        start = time.time()
         self.df = prepare_dataframe(df, 1, 1)
+        logging.info(f"Preparing dataframe took {time.time() - start:.2f} seconds.")
+
         self.df = add_is_first_column(self.df)
+
+        start = time.time()
         self.df = sort_df_by_timestamp(self.df)
+        logging.info(f"Sorting dataframe by timestamp took {time.time() - start:.2f} seconds.")
         self.vehicle_alternatives = {}
         self.vehicle_route_selection = {}
 
@@ -242,7 +250,11 @@ def create_simulations_comparison(simulation_paths: list[str], output_dir: str, 
         else:
             simulation_dir = os.path.dirname(path)
             h5_path = os.path.join(simulation_dir, simulation.history.path)
+            # measure time
+            start = time.time()
             result = Simulation.load_h5_df(h5_path)
+            end = time.time()
+            print(f"Loading history took {end - start:.2f} seconds.",  flush=True)
             simulation_log = SimulationLog(result['df'], simulation.vehicles, time_interval_minutes)
 
         simulation_log.create_log(output_csv_path)

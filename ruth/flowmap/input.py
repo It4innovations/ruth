@@ -6,6 +6,7 @@ from collections import defaultdict
 import pandas as pd
 from pandas import to_datetime
 from networkx import MultiDiGraph as Graph
+from tqdm import tqdm
 from typing import NewType
 
 from ruth.metaclasses import Singleton
@@ -234,7 +235,7 @@ def preprocess_data(records, divide: int = 2, not_finished_vehicles = None):
     total_meters_driven_in_time = defaultdict(int)
 
     for i, (processing_record, next_record) in enumerate(
-            zip(records[:], records[1:] + [None])
+            tqdm(zip(records[:], records[1:] + [None]), total=len(records))
     ):
         segments.add((processing_record.node_from, processing_record.node_to))
         total_meters_driven_in_time[processing_record.timestamp] += processing_record.meters_driven

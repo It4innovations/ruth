@@ -191,6 +191,7 @@ class SimulationAnimator(ABC):
             simulation = Simulation.load(self.simulation_path)
 
         # simulation object
+        start_time = time()
         if simulation is not None and isinstance(simulation, Simulation):
             df = simulation.history.to_dataframe_short()
             not_finished_vehicles = simulation.get_vehicle_ids_not_finished()
@@ -214,7 +215,7 @@ class SimulationAnimator(ABC):
             si_df = None
         else:
             raise NotImplementedError
-
+        logging.info(f"Data loaded in {round(time() - start_time, 5)} s")
         return df, si_df, departure_time, not_finished_vehicles
 
     def _preprocess_data(self):
