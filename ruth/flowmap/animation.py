@@ -4,6 +4,7 @@ from os import path
 from abc import ABC, abstractmethod
 
 import logging
+import h5py
 import matplotlib as mpl
 import numpy as np
 from matplotlib import pyplot as plt, animation
@@ -22,10 +23,7 @@ from ruth.utils import TimerSet
 from ruth.simulator import Simulation
 
 from .ax_settings import AxSettings
-from ..data.map import Map
-from .zoom import get_zoom
-from .input import preprocess_data, calculate_computation_by_simulation_time, prepare_dataframe, \
-    calculate_active_vehicles_in_time, get_number_of_vehicles, dataframe_to_sorted_records
+from ..data.map import Map, BBox
 
 def load_file_content(path):
     with open(path, 'r') as f:
@@ -60,11 +58,9 @@ class SimulationAnimator(ABC):
         self.frames_len = frames_len
         self.width_modif = width_modif
         self.title = title
-        self.length = length
         self.speed = None
         self.divide = divide
         self.max_width_count = max_width_count
-        self.plot_cars = plot_cars
         self.zoom = zoom
         self.generate_gif = gif
 
@@ -86,9 +82,6 @@ class SimulationAnimator(ABC):
         self.timed_seg_dict = None
         self.number_of_vehicles = None
 
-    @property
-    def interval(self):
-        return self.speed / self.fps
 
     @property
     @abstractmethod
@@ -108,68 +101,21 @@ class SimulationAnimator(ABC):
 
     def preprocess(self, simulation=None):
         with self.ts.get("data loading"):
-            logging.info('Loading simulation data...')
-
-            df, si_df, departure_time, not_finished_vehicles = self._load_data(simulation)
-
-            simulation_length = df.timestamp.iloc[-1] - df.timestamp.iloc[0]
-            simulation_seconds = simulation_length.total_seconds()
-            self.speed = int(simulation_seconds / self.length)
-
-            logging.info('Simulation data loaded.')
-
-        with self.ts.get("data preprocessing"):
-            logging.info('Preprocessing data...')
-
-            df = prepare_dataframe(df, self.speed, self.fps)
-
-            self.frames = list(df['timestamp'].unique())
-            self.frames.sort()
-            self.frames.append(df['timestamp'].max())
-
-            self.active_vehicles_in_time = calculate_active_vehicles_in_time(df)
-
-            self.number_of_vehicles = get_number_of_vehicles(df)  # total number of vehicles in the simulation
-            records = dataframe_to_sorted_records(df)
-            del df
-
-            gc.collect()
-
-            preprocessed_data = preprocess_data(records, self.divide, not_finished_vehicles)
-            del records
-
-            if self.max_width_count is None:
-                self.max_width_count = preprocessed_data.max_width_count
-            self.timestamp_from = preprocessed_data.min_timestamp + self.frame_start
-
-            self.number_of_finished_vehicles_in_time = preprocessed_data.number_of_finished_vehicles_in_time
-            self.total_meters_driven_in_time = preprocessed_data.total_meters_driven_in_time
-            self.total_simulation_time_in_time_s = preprocessed_data.total_simulation_time_in_time_s
-            self.timed_seg_dict = preprocessed_data.timed_segments_dict
-
-            self.num_of_frames = len(self.frames)
-            self.num_of_frames = min(int(self.frames_len),
-                                     self.num_of_frames) if self.frames_len else self.num_of_frames
-
-            max_timestamp = preprocessed_data.max_timestamp
-
-            if si_df is not None and 'simulation_offset' in si_df.columns and 'duration' in si_df.columns:
-                self.computation_by_simulation_time = \
-                    calculate_computation_by_simulation_time(si_df,
-                                                             departure_time,
-                                                             max_timestamp,
-                                                             self.speed,
-                                                             self.fps)
-
-            del preprocessed_data
-
-            logging.info('Data preprocessed.')
-
-        self._set_ax_settings_if_zoom()
-        self.g = Map(self.bbox, download_date=self.map_download_date, with_speeds=True).network
+            with h5py.File(self.simulation_path, 'r') as f:
+                bbox = f.attrs['bbox']
+                self.bbox = BBox(*bbox)
+                self.map_download_date = f.attrs['download_date']
+                self.timestamp_from = f['grouped_index'][0][0]
+                self.total_computation_time = f.attrs.get('computational_time', None)
+                self.num_of_frames = len(f['grouped_index'])
+                self.interval = int(f.attrs['interval_s']) if 'interval_s' in f.attrs else 5
+                self.number_of_vehicles = int(f.attrs['number_of_vehicles']) if 'number_of_vehicles' in f.attrs else '-'
 
     def run(self, simulation=None):
         self.preprocess(simulation)
+
+        self._set_ax_settings_if_zoom()
+        self.g = Map(self.bbox, download_date=self.map_download_date, with_speeds=True).network
 
         with self.ts.get("base map preparing"):
             logging.info('Preparing base map...')
@@ -223,21 +169,21 @@ class SimulationAnimator(ABC):
 
     def _set_ax_settings_if_zoom(self):
         if self.zoom:
-            print('Use the zoom button to choose an area that will be zoomed in in the animation.')
-            print('Close the window when satisfied with the selection.')
-            self.ax_map_settings = get_zoom(self.g, self.segments)
+            raise NotImplementedError("Zooming is not implemented in the base class. Use a subclass that defines self.segments.")
+            # self.segments = all segments with data in the time range
+            # print('Use the zoom button to choose an area that will be zoomed in in the animation.')
+            # print('Close the window when satisfied with the selection.')
+            # self.ax_map_settings = get_zoom(self.g, self.segments)
 
-    def _get_stats_text(self, timestamp: int):
-        simulation_time_formatted = round_timedelta(self.total_simulation_time_in_time_s[timestamp])
-        total_km_driven = round(self.total_meters_driven_in_time[timestamp] / 1000, 2)
-        text = f"Total driving time (sum of all cars): {simulation_time_formatted}\n" \
-               f"Total KMs driven: {total_km_driven} km\n"
+    def _get_stats_text(self, total_km_driven, total_driving_time):
+        text = f"Total driving time (sum of all cars): {round_timedelta(timedelta(seconds=float(total_driving_time or 0)))}\n" \
+               f"Total KMs driven: {round(total_km_driven / 1000, 2)} km\n"
         return text
 
-    def _get_finished_vehicles_text(self, timestamp: int):
+    def _get_finished_vehicles_text(self, active_vehicles: int, vehicles_finished: int):
         return \
-            f'Finished vehicles: {self.number_of_finished_vehicles_in_time[timestamp]} / {self.number_of_vehicles}\n' \
-            f'Active vehicles: {self.active_vehicles_in_time[timestamp]}'
+            f'Finished vehicles: {vehicles_finished} / {self.number_of_vehicles}\n' \
+            f'Active vehicles: {active_vehicles}'
 
     def _prepare_base_map(self):
         mpl.use('Agg')
@@ -265,7 +211,7 @@ class SimulationAnimator(ABC):
         self.finished_vehicles_text = plt.figtext(
             0.7,
             0.08,
-            self._get_finished_vehicles_text(self.timestamp_from),
+            "",
             ha='left',
             fontsize=15)
 
@@ -302,7 +248,7 @@ class SimulationAnimator(ABC):
         self.stats_text = plt.figtext(
             0.7,
             0.03,
-            self._get_stats_text(self.timestamp_from))
+            self._get_stats_text(0, 0))
 
         self.plot_cbar()
 
@@ -323,56 +269,52 @@ class SimulationAnimator(ABC):
         anim.save(path.join(self.save_path, f'{str(timestamp)}-rt.{filetype}'), writer='ffmpeg', fps=self.fps)
 
     def _animate(self):
-        car_coordinates = []
         progress_bar = None
 
         def step(i):
-            nonlocal car_coordinates, progress_bar
-            if progress_bar is None:
-                progress_bar = tqdm(total=self.num_of_frames, desc='Creating animation', unit='frame', leave=True)
+            nonlocal progress_bar
+            with h5py.File(self.simulation_path, 'r') as f:
 
-            # timestamp = self.timestamp_from + i
-            timestamp = self.frames[i]
+                data = f['grouped_data']
+                index = f['grouped_index']
+                if progress_bar is None:
+                    progress_bar = tqdm(total=self.num_of_frames, desc='Creating animation', unit='frame', leave=True)
 
-            self.ax_traffic.clear()
-            self.ax_map_settings.apply(self.ax_traffic)
-            self.ax_traffic.axis('off')
+                timestamp = index[i]['rounded_ts']
 
-            if i % 5 * 60 == 0:
-                self.time_text.set_text(datetime.utcfromtimestamp(timestamp * 1000 * self.interval // 10 ** 3))
+                start_offset = index[i]['start_index']
+                end_offset = index[i]['end_index']
+                records = data[start_offset:end_offset]
 
-            self.finished_vehicles_text.set_text(self._get_finished_vehicles_text(timestamp))
-            self.stats_text.set_text(self._get_stats_text(timestamp))
+                active_vehicles = index[i]['active_vehicles']
+                vehicles_finished = index[i]['vehicles_finished']
+                total_distance = index[i]['total_distance']
+                total_driving_time = index[i]['total_time']
 
-            if self.computation_by_simulation_time is not None:
-                computation_time = timedelta(milliseconds=self.computation_by_simulation_time[timestamp])
-                self.compute_text.set_text(f"Computation time: {computation_time}\n")
+                self.ax_traffic.clear()
+                self.ax_map_settings.apply(self.ax_traffic)
+                self.ax_traffic.axis('off')
 
-            segments = self._plot_routes(timestamp)
+                if i % 5 * 60 == 0:
+                    self.time_text.set_text(datetime.utcfromtimestamp(timestamp * 1000 * self.interval // 10 ** 3))
 
-            if self.plot_cars:
-                if len(car_coordinates) == 3:
-                    car_coordinates.pop(0)
-                xp = []
-                yp = []
-                for segment in segments:
-                    if segment.cars_offsets is not None:
-                        x, y = self.get_cars_xy(segment.node_from.id, segment.node_to.id, segment.cars_offsets)
-                        xp.append(x)
-                        yp.append(y)
-                alphas = [1, 0.75, 0.5]
-                car_coordinates.append((xp, yp))
-                for coords, alpha in zip(reversed(car_coordinates), alphas):
-                    self.ax_traffic.scatter(coords[0], coords[1], facecolors='none', edgecolors='black', alpha=alpha)
+                self.finished_vehicles_text.set_text(self._get_finished_vehicles_text(active_vehicles, vehicles_finished))
+                self.stats_text.set_text(self._get_stats_text(total_distance, total_driving_time))
 
-            progress_bar.update(1)
-            if i == self.num_of_frames - 1:
-                progress_bar.close()
+                if self.computation_by_simulation_time is not None:
+                    computation_time = timedelta(milliseconds=self.computation_by_simulation_time[timestamp])
+                    self.compute_text.set_text(f"Computation time: {computation_time}\n")
+
+                self._plot_routes(records)
+
+                progress_bar.update(1)
+                if i == self.num_of_frames - 1:
+                    progress_bar.close()
 
         return step
 
     @abstractmethod
-    def _plot_routes(self, timestamp):
+    def _plot_routes(self, records: np.array):
         pass
 
     @abstractmethod
@@ -412,11 +354,12 @@ class SimulationVolumeAnimator(SimulationAnimator):
         )
         self.width_style = WidthStyle[width_style]
 
-    def _plot_routes(self, timestamp):
-        segments = self.timed_seg_dict[timestamp]
-        nodes_from = [seg.node_from.id for seg in segments]
-        nodes_to = [seg.node_to.id for seg in segments]
-        vehicle_counts = [seg.counts for seg in segments]
+    def _plot_routes(self, records):
+        nodes_from = records['node_from']
+        nodes_to = records['node_to']
+        vehicle_count_first = records['count_unique_first']
+        vehicle_count_second = records['count_unique_second']
+        vehicle_counts = [[f, s] for f, s in zip(vehicle_count_first, vehicle_count_second)]
 
         plot_routes_densities(
             self.g,
@@ -428,7 +371,7 @@ class SimulationVolumeAnimator(SimulationAnimator):
             width_modifier=self.width_modif,
             width_style=self.width_style
         )
-        return segments
+        return records
 
     def get_color_bar_info(self):
         return get_color_bar_info_densities(0, self.max_width_count)
@@ -441,12 +384,21 @@ class SimulationSpeedsAnimator(SimulationAnimator):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def _plot_routes(self, timestamp):
-        segments = self.timed_seg_dict[timestamp]
-        nodes_from = [seg.node_from.id for seg in segments]
-        nodes_to = [seg.node_to.id for seg in segments]
-        vehicle_counts = [seg.counts for seg in segments]
-        speeds = [seg.speeds for seg in segments]
+    def _plot_routes(self, records):
+        nodes_from = records['node_from']
+        nodes_to = records['node_to']
+        vehicle_count_first = records['count_unique_first']
+        vehicle_count_second = records['count_unique_second']
+        vehicle_counts = [[f, s] for f, s in zip(vehicle_count_first, vehicle_count_second)]
+        speed_count_first = records['speed_count_first']
+        speed_sum_first = records['speed_sum_first']
+        speed_count_second = records['speed_count_second']
+        speed_sum_second = records['speed_sum_second']
+        speeds = []
+        for count1, sum1, count2, sum2 in zip(speed_count_first, speed_sum_first, speed_count_second, speed_sum_second):
+            avg1 = sum1 / count1 if count1 > 0 else -1
+            avg2 = sum2 / count2 if count2 > 0 else -1
+            speeds.append([avg1, avg2])
 
         plot_routes_speeds(
             self.g,
@@ -458,7 +410,7 @@ class SimulationSpeedsAnimator(SimulationAnimator):
             max_width_density=self.max_width_count,
             width_modifier=self.width_modif
         )
-        return segments
+        return
 
     def get_color_bar_info(self):
         return get_color_bar_info_speeds()
