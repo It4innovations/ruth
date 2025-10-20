@@ -69,11 +69,9 @@ public:
     }
     graph_ = graph;
 
-    alg_ = std::make_shared<Routing::Algorithms::AlternativesPlateauAlgorithm>(graph);
-    auto settings = alg_->GetAlgorithmSettings();
+    auto settings = Routing::Algorithms::AlgorithmSettings();
     settings.filterSettings.allFilterOff = true;
-    alg_->SetAlgorithmSettings(settings);
-    alg_->UpdateAlternativesSettings();
+    alg_ = std::make_shared<Routing::Algorithms::AlternativesPlateauAlgorithm>(graph, settings);
   }
 
   std::shared_ptr<Routing::Data::GraphMemory> get_graph() { return graph_; }
