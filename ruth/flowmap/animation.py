@@ -115,7 +115,6 @@ class SimulationAnimator(ABC):
                     self.max_width_count = calculated_max_width_count
 
                 print(f"Loaded data from {self.simulation_path}:")
-                print(f" - BBox: {self.bbox}")
                 print(f" - Map download date: {self.map_download_date}")
                 print(f" - Simulation start time: {datetime.utcfromtimestamp(self.timestamp_from * self.interval)}")
                 print(f" - Number of frames: {self.num_of_frames}")

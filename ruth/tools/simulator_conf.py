@@ -13,9 +13,8 @@ from serde.json import from_json
 
 from ..flowmap import animation
 from ..flowmap.app import animation_options
-from ..simulator import Simulation
 from ..tools.simulator import (run_inner, AlternativesRatio as AlternativesRatioInner, CommonArgs as CommonArgsInner,
-                               RouteSelectionRatio as RouteSelectionRatioInner, animate)
+                               RouteSelectionRatio as RouteSelectionRatioInner)
 
 
 def make_animation_args_dataclass(options_dict):

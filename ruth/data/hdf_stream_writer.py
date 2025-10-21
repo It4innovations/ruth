@@ -48,13 +48,15 @@ class HDF5Writer:
             self.file.attrs['computational_time'] = computational_time
             self.file.flush()
 
-    def save_map(self, routing_map: Map, departure_time: datetime):
+    def save_map(self, routing_map: Map, departure_time: datetime, round_freq: timedelta):
         if 'bbox' not in self.file.attrs:
             self.file.attrs['bbox'] = tuple(routing_map.bbox.get_coords())
         if 'download_date' not in self.file.attrs:
             self.file.attrs['download_date'] = str(routing_map.download_date)
         if 'departure_time' not in self.file.attrs:
             self.file.attrs['departure_time'] = departure_time.isoformat()
+        if 'round_freq_s' not in self.file.attrs:
+            self.file.attrs['round_freq_s'] = round_freq.total_seconds()
         self.file.flush()
 
     def append_file(self, buffer: List):

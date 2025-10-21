@@ -19,7 +19,28 @@ FlowMapVideo is a tool for visualizing the evolution of traffic flow over time. 
 
 Activate the virtual environment where Ruth is installed.
 
-## Run
+## Build and run preprocessing
+Use cpp tool to generate data for the animation.
+
+```
+cd binding/video
+mkdir build
+cd build
+cmake ..
+make
+./video_preprocess -h
+```
+For example, to preprocess data:
+---filename : input file with Ruth simulation data in HDF5 format (default: fcd_history.h5)
+---outfile : output file for preprocessed data in HDF5 format (default: fcd_aggregated.h5)
+---length : length of the output video in seconds (default 60)
+---fps : frames per second in the output video (default 25)
+---max : maximum number of vehicles to consider in the visualization (optional)
+```
+./video_preprocess --filename fcd_history.h5 --outfile fcd_aggregated.h5 --length 30 --fps 25 --max 1000
+```
+
+## Run video generation CLI tool
 ```
 traffic-flow-map --help
 ```
@@ -43,15 +64,13 @@ traffic-flow-map generate-speeds-animation --help
 
 #### Example
 ```
-traffic-flow-map generate-speeds-animation <PATH_TO_DATA> --length 20 --title "Traffic flow" -c
+traffic-flow-map generate-speeds-animation aggregated_fcd.h5 --title "Traffic flow" --description_path "description.txt" --gif
 ```
-* use `--title` to set your title
-* use `-c` parameter to animate the movement of the vehicles
 
 For fixed number of vehicles that will be depicted with maximum line width, use the `--max-width-density` parameter (important when making multiple videos to compare).
 
 
-### Get more detailed information about the simulation
+## Get more detailed information about the simulation
 * use `get-info` to get simulation length
     #### Example
     ```
@@ -70,6 +89,7 @@ For fixed number of vehicles that will be depicted with maximum line width, use 
     traffic-flow-map get-info <PATH_TO_DATA> --status-at-point 0.5
     ```
 ### Generate CSV file with simulation progress
+* generate from fcd_history.h5 file, not from preprocessed aggregated file
 * generate CSV file with data calculated for every n minutes of the simulation
 * use `get-comparison-csv` to generate CSV file with simulation progress for 5 minute intervals
     #### Example 
