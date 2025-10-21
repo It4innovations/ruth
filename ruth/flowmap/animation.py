@@ -10,7 +10,6 @@ import numpy as np
 from matplotlib import pyplot as plt, animation
 from shapely import LineString
 from tqdm import tqdm
-import gc
 
 from .flowmapframe.zoom import plot_graph_with_zoom
 from .flowmapframe.plot import get_node_coordinates, WidthStyle
@@ -23,6 +22,7 @@ from ruth.utils import TimerSet
 from ruth.simulator import Simulation
 
 from .ax_settings import AxSettings
+from .plot_dask import create_frames_dask, save_frames_to_video
 from ..data.map import Map, BBox
 
 def load_file_content(path):
@@ -36,10 +36,6 @@ def round_timedelta(td):
     return timedelta(seconds=rounded_seconds)
 
 
-def timedeltas_to_timestamps(timedeltas: np.array, start_time: datetime) -> np.array:
-    return np.array([start_time + td for td in timedeltas])
-
-
 def load_description(path):
     description = load_file_content(path)
     if len(description) > 990:
@@ -49,7 +45,7 @@ def load_description(path):
 
 class SimulationAnimator(ABC):
     def __init__(self, simulation_path, fps, save_path, frame_start, frames_len, width_modif, title, description,
-                 description_path, length, divide, max_width_count, plot_cars, zoom, gif):
+                 description_path, max_width_count, gif, dask_workers):
         self.simulation_path = simulation_path
         self.simulation = None
         self.fps = fps
@@ -59,10 +55,10 @@ class SimulationAnimator(ABC):
         self.width_modif = width_modif
         self.title = title
         self.speed = None
-        self.divide = divide
         self.max_width_count = max_width_count
-        self.zoom = zoom
         self.generate_gif = gif
+        self.dask = dask_workers > 0
+        self.dask_workers = dask_workers
 
         self.description = None
         if description:
@@ -111,16 +107,34 @@ class SimulationAnimator(ABC):
                 self.interval = int(f.attrs['interval_s']) if 'interval_s' in f.attrs else 5
                 self.number_of_vehicles = int(f.attrs['number_of_vehicles']) if 'number_of_vehicles' in f.attrs else '-'
 
+                if self.frames_len is not None:
+                    self.num_of_frames = min(self.num_of_frames - self.frame_start, self.frames_len)
+
+                calculated_max_width_count = int(f.attrs['max_unique_vehicles_on_segment']) if 'max_unique_vehicles_on_segment' in f.attrs else 1
+                if self.max_width_count is None:
+                    self.max_width_count = calculated_max_width_count
+
+                print(f"Loaded data from {self.simulation_path}:")
+                print(f" - BBox: {self.bbox}")
+                print(f" - Map download date: {self.map_download_date}")
+                print(f" - Simulation start time: {datetime.utcfromtimestamp(self.timestamp_from * self.interval)}")
+                print(f" - Number of frames: {self.num_of_frames}")
+                print(f" - Interval between frames: {self.interval} seconds")
+                print(f" - Total number of vehicles: {self.number_of_vehicles}")
+                if self.total_computation_time is not None:
+                    print(f" - Total computation time: {timedelta(seconds=self.total_computation_time)}")
+
     def run(self, simulation=None):
         self.preprocess(simulation)
 
-        self._set_ax_settings_if_zoom()
+        # self._set_ax_settings_if_zoom()
         self.g = Map(self.bbox, download_date=self.map_download_date, with_speeds=True).network
 
         with self.ts.get("base map preparing"):
-            logging.info('Preparing base map...')
-            self._prepare_base_map()
-            logging.info('Base map prepared.')
+            if not self.dask:
+                logging.info('Preparing base map...')
+                self._prepare_base_map()
+                logging.info('Base map prepared.')
 
         with self.ts.get("create animation"):
             logging.info('Creating animation...')
@@ -168,8 +182,8 @@ class SimulationAnimator(ABC):
         raise NotImplementedError("This method was deprecated. Use preprocess method instead.")
 
     def _set_ax_settings_if_zoom(self):
-        if self.zoom:
-            raise NotImplementedError("Zooming is not implemented in the base class. Use a subclass that defines self.segments.")
+        raise NotImplementedError("Zooming is not implemented in the base class. Use a subclass that defines self.segments.")
+        #  if self.zoom:
             # self.segments = all segments with data in the time range
             # print('Use the zoom button to choose an area that will be zoomed in in the animation.')
             # print('Close the window when satisfied with the selection.')
@@ -191,8 +205,8 @@ class SimulationAnimator(ABC):
         self.fig, self.ax_map = plt.subplots()
         plot_graph_with_zoom(self.g, self.ax_map, secondary_sizes=[1, 0.7, 0.5, 0.3])
 
-        if self.zoom:
-            self.ax_map_settings.apply(self.ax_map)
+        # if self.zoom:
+        #     self.ax_map_settings.apply(self.ax_map)
 
         size = self.fig.get_size_inches()
         new_size = 20
@@ -256,17 +270,42 @@ class SimulationAnimator(ABC):
         self.ax_map_settings = AxSettings(self.ax_map)
 
     def _create_animation(self):
-        anim = animation.FuncAnimation(
-            plt.gcf(),
-            self._animate(),
-            interval=75,
-            frames=self.num_of_frames,
-            repeat=False
-        )
-
         timestamp = round(time() * 1000)
         filetype = 'gif' if self.generate_gif else 'mp4'
-        anim.save(path.join(self.save_path, f'{str(timestamp)}-rt.{filetype}'), writer='ffmpeg', fps=self.fps)
+        output_path = path.join(self.save_path, f'{str(timestamp)}-rt.{filetype}')
+
+        if self.dask:
+            plot_style_settings = {}
+            plot_style_settings['style'] = 'speeds' if isinstance(self, SimulationSpeedsAnimator) else 'density'
+            plot_style_settings['width_modif'] = self.width_modif
+            plot_style_settings['max_width_count'] = self.max_width_count
+            plot_style_settings['width_style'] = self.width_style if isinstance(self, SimulationVolumeAnimator) else None
+
+            # name frames folder with timestamp to avoid conflicts
+            frames_folder_path = path.join(self.save_path, f'frames-{str(timestamp)}')
+            create_frames_dask(self.dask_workers,
+                                self.simulation_path,
+                                frames_folder_path,
+                                self.num_of_frames,
+                                self.bbox,
+                                self.map_download_date,
+                                self.timestamp_from,
+                                self.interval,
+                                self.total_computation_time,
+                                self.number_of_vehicles,
+                                self.title,
+                                self.description,
+                                plot_style_settings)
+            save_frames_to_video(frames_folder_path, output_path, fps=self.fps)
+        else:
+            anim = animation.FuncAnimation(
+                plt.gcf(),
+                self._animate(),
+                interval=75,
+                frames=self.num_of_frames,
+                repeat=False
+            )
+            anim.save(output_path, writer='ffmpeg', fps=self.fps)
 
     def _animate(self):
         progress_bar = None
@@ -334,7 +373,7 @@ class SimulationAnimator(ABC):
 
 class SimulationVolumeAnimator(SimulationAnimator):
     def __init__(self, simulation_path, fps, save_path, frame_start, frames_len, width_modif, title, description,
-                 description_path, length, divide, max_width_count, plot_cars, zoom, gif, width_style="BOXED"):
+                 description_path, max_width_count, gif, dask_workers, width_style="BOXED"):
         super().__init__(
             simulation_path,
             fps,
@@ -345,11 +384,8 @@ class SimulationVolumeAnimator(SimulationAnimator):
             title,
             description,
             description_path,
-            length,
-            divide,
             max_width_count,
-            plot_cars,
-            zoom,
+            dask_workers,
             gif
         )
         self.width_style = WidthStyle[width_style]

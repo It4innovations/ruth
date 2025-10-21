@@ -37,16 +37,13 @@ animation_options = {
                     'help': 'Description to be added to the video. Overrides `description_path` option.'},
     'description_path': {'default': '', 'help': "Path to the file with description to be added to the video. Only "
                                                 "used if `description` option is not set"},
-    'length': {'default': 30, 'type': int, 'help': "Video length in seconds.", 'show_default': True},
-    'divide': {'default': 2, 'type': int, 'help': "Into how many parts will each segment be split.",
-               'show_default': True},
     'max_width_count': {'default': None, 'type': int, 'help': "Number of vehicles that corresponds to the maximum "
                                                               "width of the segment. If not specified, it will be set"
                                                               " dynamically according to the data.",
                         'show_default': True},
-    'plot_cars': {'is_flag': True, 'help': "Visualize cars on the map."},
-    'zoom': {'is_flag': True, 'help': "Choose zoom manually."},
-    'gif': {'is_flag': True, 'help': 'Generate as a gif instead of mp4.'}
+    'gif': {'is_flag': True, 'help': 'Generate as a gif instead of mp4.'},
+    "dask_workers": {'default': 0, 'type': int, 'help': "Number of dask workers to use, if zero, no dask is used.",
+                     'show_default': True}
 }
 
 

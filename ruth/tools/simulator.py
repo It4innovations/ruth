@@ -10,9 +10,6 @@ from typing import List, Optional, Type
 import click
 import signal
 
-from ..flowmap.app import click_animation_options
-from ..flowmap import animation
-
 from ..vehicle import set_vehicle_behavior
 from ..simulator import SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
@@ -388,35 +385,6 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
     simulation = simulator.state
     simulation.store(out)
     return simulation
-
-
-def animate(ctx, animator: Type[animation.SimulationAnimator], **kwargs):
-    # check if simulation has been run and whether it finished
-    if not ctx.obj.get('simulation'):
-        raise click.ClickException("The 'animation' command can only be used after 'run' command.")
-
-    simulation = ctx.obj['simulation']
-    simulation_finished = simulation.finished()
-
-    if not simulation_finished:
-        logging.warning("Creating animation of an unfinished simulation.")
-
-    animation_creator = animator(simulation_path=ctx.obj['common-args'].out, **kwargs)
-    animation_creator.run(simulation)
-
-
-@single_node_simulator.command()
-@click_animation_options
-@click.pass_context
-def volume_animation(ctx, **kwargs):
-    animate(ctx, animation.SimulationVolumeAnimator, **kwargs)
-
-
-@single_node_simulator.command()
-@click_animation_options
-@click.pass_context
-def speed_animation(ctx, **kwargs):
-    animate(ctx, animation.SimulationSpeedsAnimator, **kwargs)
 
 
 def main():
