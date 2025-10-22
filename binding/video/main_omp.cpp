@@ -169,10 +169,13 @@ void read_into_memory(const std::string &filename, const std::string &dataset_na
     DataSpace memspace(1, count);
     dataset.read(data.data(), mtype, memspace, dataspace);
 
-    // Read round_freq_s attribute from file
-    Attribute attr = file.openAttribute("round_freq_s");
-    attr.read(PredType::NATIVE_INT, &round_freq_s);
-    std::cout << "Simulation step (s): " << round_freq_s << "\n";
+    if (H5Aexists(file.getId(), "round_freq_s") > 0) {
+        Attribute attr = file.openAttribute("round_freq_s");
+        attr.read(PredType::NATIVE_INT, &round_freq_s);
+        std::cout << "Simulation step (s): " << round_freq_s << "\n";
+    } else {
+        std::cout << "Attribute 'round_freq_s' does not exist. Using default: " << round_freq_s << "\n";
+    }
 }
 
 int64_t round_and_chunk(std::vector<VehicleData> &data, const int number_of_frames, const int round_freq_s,
@@ -620,7 +623,7 @@ int main(int argc, char* argv[]) {
     const int fps = cfg.fps;
     const size_t max_records = cfg.max_records;
     const int number_of_frames = length_s * fps;
-    int round_freq_s = 1; // will be read from file
+    int round_freq_s = 5; // will be read from file
 
     std::cout << "Input file: " << filename << "\n";
     std::cout << "Dataset name: " << dataset_name << "\n";

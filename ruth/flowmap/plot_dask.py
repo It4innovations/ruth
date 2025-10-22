@@ -16,6 +16,8 @@ from .flowmapframe.speeds import (plot_routes as plot_routes_speeds,
 from .flowmapframe.plot import (plot_routes as plot_routes_densities,
                                 get_color_bar_info as get_color_bar_info_densities)
 
+global_g = None
+
 def round_timedelta(td):
     seconds = td.total_seconds()
     rounded_seconds = round(seconds)
@@ -117,9 +119,8 @@ def plot_frames_batch(frame_ids, simulation_path, save_path,
                       total_computation_time=0,
                       number_of_vehicles=0, title='', description=None,
                       plot_style_settings=None):
-    # global global_g
-    # g = global_g
-    g = Map(bbox, download_date=download_date, with_speeds=True).network
+    global global_g
+    g = global_g
     fig, ax_map, ax_traffic, ax_map_settings = prepare_base_map(g, title)
     prepare_color_bar(fig, ax_map, plot_style_settings)
     finished_vehicles_text, stats_text, time_text = prepare_texboxes(fig, timestamp_from, interval,
@@ -225,7 +226,7 @@ def create_frames_dask(dask_workers,
     print("Max width count:", plot_style_settings['max_width_count'])
     client = Client(threads_per_worker=2, n_workers=dask_workers)
     setup_output_dir(save_path)
-    # client.run(init_worker_graph, bbox=bbox, download_date=download_date)
+    client.run(init_worker_graph, bbox=bbox, download_date=download_date)
 
     # split frames into batches
     frames = list(range(num_of_frames))
@@ -262,33 +263,38 @@ def create_frames_dask(dask_workers,
 import os
 import subprocess
 
-def save_frames_to_video(frames_dir, output_path, fps):
+def save_frames_to_video(frames_dir, output_path, fps, gif=False):
     input_pattern = os.path.join(frames_dir, "frame_%04d.png")
 
-    # Try MP4 first
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-framerate", str(fps),
-        "-i", input_pattern,
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        output_path
-    ]
+    if not gif:
+        try:
+            # MP4 format
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-framerate", str(fps),
+                "-i", input_pattern,
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                output_path
+            ]
+            subprocess.run(cmd, check=True,  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"Saved video: {output_path}")
+        except Exception as e:
+            print("Error saving video:", e)
+            # change file extension to .gif and try again
+            gif = True
+            output_path = os.path.splitext(output_path)[0] + ".gif"
 
-    try:
-        subprocess.run(cmd, check=True,  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(f"Saved video: {output_path}")
-    except Exception:
-        # fallback to GIF
-        output_gif = output_path.replace(".mp4", ".gif")
-        cmd_gif = [
+    if gif:
+        # Save as GIF
+        cmd = [
             "ffmpeg",
             "-y",
             "-framerate", str(fps),
             "-i", input_pattern,
-            "-vf", f"fps={fps},scale=640:-1:flags=lanczos",
-            output_gif
+            "-vf", "scale=800:-1:flags=lanczos,fps=" + str(fps),
+            output_path
         ]
-        subprocess.run(cmd_gif, check=True,  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(f"FFmpeg not available or failed, saved GIF instead: {output_gif}")
+        subprocess.run(cmd, check=True,  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"Saved GIF: {output_path}")

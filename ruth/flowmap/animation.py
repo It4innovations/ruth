@@ -295,7 +295,7 @@ class SimulationAnimator(ABC):
                                 self.title,
                                 self.description,
                                 plot_style_settings)
-            save_frames_to_video(frames_folder_path, output_path, fps=self.fps)
+            save_frames_to_video(frames_folder_path, output_path, fps=self.fps, gif=self.generate_gif)
         else:
             anim = animation.FuncAnimation(
                 plt.gcf(),
