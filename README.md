@@ -6,31 +6,24 @@
 
 A python library for routing on OSM map based on [osmnx](https://github.com/gboeing/osmnx).
 
-## Documentation
-
-The detailed documentation is available at: https://it4innovations.github.io/ruth/
-
 ## Installation
-Required **Python** >= 3.9.6, <= 3.11
-``` sh
-# requirements
-sudo apt-get update && sudo apt-get install -y --no-install-recommends \
-    git curl \
-    build-essential gdal-bin libgdal-dev openmpi-bin libopenmpi-dev \
-    python3 python3-dev python3-virtualenv python3-pip python3-setuptools python3-wheel
+Python packages listed in `requirements.txt` are pinned for Python 3.9 - 3.11.
+Change versions in requirements.txt if needed.
 
-# create and activate python virtual environment
+Create and activate a python virtual environment and install `ruth`:
+``` sh
 python3 -m venv venv
 source venv/bin/activate
 
-# within the venv
-# install and update python dependencies
-python3 -m pip install -U pip setuptools wheel cython
+# install ruth from GitHub
+pip install git+https://github.com/It4innovations/ruth.git
 
-# install ruth - the traffic simulator
-python3 -m pip install git+https://github.com/It4innovations/ruth.git
+# or install ruth from local copy
+git clone --recurse-submodules https://github.com/It4innovations/ruth.git
+pip install path_to/ruth
 ```
-
+To use Plateau algorithm and **multi-node** execution, ACE has to be installed and running.
+For more information, see **binding/README.md**.
 
 ## Execution
 

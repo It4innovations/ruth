@@ -15,7 +15,7 @@ set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
     "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-invalid-offsetof")
-#set(PYTHON_EXECUTABLE "/opt/homebrew/opt/python@3.13/libexec/bin/python")
+#set(PYTHON_EXECUTABLE "/bin/python")
 add_definitions(-DNDEBUG)
 
 # --- Fetch pybind11 from GitHub ---
