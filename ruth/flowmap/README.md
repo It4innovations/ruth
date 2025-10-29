@@ -8,36 +8,45 @@ FlowMapVideo is a tool for visualizing the evolution of traffic flow over time. 
 
 ### Prerequisites
 
-1. Install `FFmpeg`:
-
-    ```
-    sudo apt install ffmpeg
-    ```
-2. Install [Ruth](https://github.com/It4innovations/ruth).
-
-### Install
-
-Activate the virtual environment where Ruth is installed.
+1. Install or load necessary dependencies: python, cmake, hdf5, openMPI and ffmpeg.
+  ```
+ml Python/3.11.3-GCCcore-12.3.0
+ml CMake/3.26.3-GCCcore-12.3.0
+ml HDF5/1.14.0-gompi-2023a
+ml OpenMPI/4.1.5-GCC-12.3.0
+ml FFmpeg/6.0-GCCcore-12.3.0 
+  ```
+2. Clone and install [Ruth](https://github.com/It4innovations/ruth).
+```
+git clone --recurse-submodules -b cpp-video  https://github.com/It4innovations/ruth.git
+python -m venv venv_video
+source venv_video/bin/activate
+cd ruth
+pip install .
+```
 
 ## Build and run preprocessing
 Use cpp tool to generate data for the animation.
 
 ```
-cd binding/video
+cd ruth/binding/video
 mkdir build
 cd build
 cmake ..
 make
 ./video_preprocess -h
 ```
-For example, to preprocess data:
+
+```
 ---filename : input file with Ruth simulation data in HDF5 format (default: fcd_history.h5)
 ---outfile : output file for preprocessed data in HDF5 format (default: fcd_aggregated.h5)
 ---length : length of the output video in seconds (default 60)
 ---fps : frames per second in the output video (default 25)
----max : maximum number of vehicles to consider in the visualization (optional)
+---maxrecords : maximum number of records to consider in the visualization (optional)
 ```
-./video_preprocess --filename fcd_history.h5 --outfile fcd_aggregated.h5 --length 30 --fps 25 --max 1000
+### Example
+```
+./video_preprocess --filename fcd_history.h5 --outfile fcd_aggregated.h5 --length 30
 ```
 
 ## Run video generation CLI tool
@@ -64,11 +73,15 @@ traffic-flow-map generate-speeds-animation --help
 
 #### Example
 ```
-traffic-flow-map generate-speeds-animation aggregated_fcd.h5 --title "Traffic flow" --description_path "description.txt" --gif
+traffic-flow-map generate-speeds-animation aggregated_fcd.h5 --dask_workers 20 --title "Traffic flow" --description_path "description.txt"
 ```
 
-For fixed number of vehicles that will be depicted with maximum line width, use the `--max-width-density` parameter (important when making multiple videos to compare).
+For fixed number of vehicles that will be depicted with maximum line width, use the `--max-width-density` parameter (important when making multiple videos to compare).  
 
+### Parallelization with Dask
+If `--dask-workers` is not specified, the tool will run in single-threaded mode.
+If it is specified, the tool will use Dask to parallelize the frame rendering across multiple workers,
+where each worker will render a subset of the frames into separate image files, which will then be combined into a video.
 
 ## Get more detailed information about the simulation
 * use `get-info` to get simulation length

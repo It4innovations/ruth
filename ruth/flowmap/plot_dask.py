@@ -110,7 +110,7 @@ def prepare_color_bar(fig, ax_map, plot_style_settings):
 def init_worker_graph(bbox, download_date):
     global global_g
     if global_g is None:
-        global_g = Map(bbox, download_date=download_date, with_speeds=True).network
+        global_g = Map(bbox, download_date=download_date, with_speeds=False, save_hdf=False).network
     return global_g
 
 

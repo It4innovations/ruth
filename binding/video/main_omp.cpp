@@ -586,7 +586,7 @@ Config parseArgs(int argc, char* argv[]) {
         {"outfile", required_argument, nullptr, 'o'},
         {"length", required_argument, nullptr, 'l'},
         {"fps", required_argument, nullptr, 'p'},
-        {"max", required_argument, nullptr, 'm'},
+        {"maxrecords", required_argument, nullptr, 'm'},
         {"help", no_argument, nullptr, 'h'},
         {nullptr, 0, nullptr, 0}
     };
@@ -602,7 +602,7 @@ Config parseArgs(int argc, char* argv[]) {
             case 'm': cfg.max_records = std::stoull(optarg); break;
             case 'h':
                 std::cout << "Usage: ./video_preprocess [--filename FILE] [--outfile FILE] "
-                             "[--length SEC] [--fps N] [--max N]\n";
+                             "[--length SEC] [--fps N] [--maxrecords N]\n";
                 exit(0);
             default: break;
         }

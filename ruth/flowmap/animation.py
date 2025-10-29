@@ -144,42 +144,6 @@ class SimulationAnimator(ABC):
         for k, v in self.ts.collect().items():
             print(f'{k}: {v} ms')
 
-    def _load_data(self, simulation):
-        # pickle load
-        if simulation is None and self.simulation_path.endswith('.pickle'):
-            simulation = Simulation.load(self.simulation_path)
-
-        # simulation object
-        start_time = time()
-        if simulation is not None and isinstance(simulation, Simulation):
-            df = simulation.history.to_dataframe_short()
-            not_finished_vehicles = simulation.get_vehicle_ids_not_finished()
-
-            si_df = simulation.steps_info_to_dataframe()
-            departure_time = simulation.setting.departure_time
-            self.bbox = simulation.bbox
-            self.map_download_date = simulation.map_download_date
-            self.total_computation_time = simulation.duration.total_seconds()
-        # hdf5
-        elif self.simulation_path.endswith(('.hdf5', '.h5')):
-            result = Simulation.load_h5_df(self.simulation_path)
-            df = result['df']
-            departure_time = result['departure_time']
-            self.bbox = result['bbox']
-            self.map_download_date = result['download_date']
-            self.total_computation_time = result.get('computational_time', None)
-            not_finished_vehicles = set(df.groupby('vehicle_id')['active'].all()[lambda x: x].index)
-            df.drop(columns=['active'], inplace=True)
-
-            si_df = None
-        else:
-            raise NotImplementedError
-        logging.info(f"Data loaded in {round(time() - start_time, 5)} s")
-        return df, si_df, departure_time, not_finished_vehicles
-
-    def _preprocess_data(self):
-        raise NotImplementedError("This method was deprecated. Use preprocess method instead.")
-
     def _set_ax_settings_if_zoom(self):
         raise NotImplementedError("Zooming is not implemented in the base class. Use a subclass that defines self.segments.")
         #  if self.zoom:
