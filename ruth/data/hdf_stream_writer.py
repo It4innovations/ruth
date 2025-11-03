@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import List
 import h5py
 import numpy as np
@@ -55,11 +55,12 @@ class HDF5Writer:
 
     def append_file(self, buffer: List):
         # Create a structured numpy array from the FCD records in the buffer
-        data = np.array(
-            [(int(fcd.datetime.timestamp()), fcd.segment.node_from, fcd.segment.node_to, fcd.segment.length,
-              fcd.vehicle_id, float(fcd.start_offset), fcd.speed, fcd.active) for fcd in buffer],
-            dtype=compound_dtype
-        )
+        data = np.array([
+            (int(fcd.datetime.replace(tzinfo=timezone.utc).timestamp()),
+             fcd.segment.node_from, fcd.segment.node_to, fcd.segment.length,
+             fcd.vehicle_id, float(fcd.start_offset), fcd.speed, fcd.active)
+            for fcd in buffer
+        ], dtype=compound_dtype)
 
         # Append data to the HDF5 file
         data_len = len(data)
