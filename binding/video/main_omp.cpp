@@ -17,6 +17,7 @@
 #include <execution>
 #include <numeric>
 #include <getopt.h>
+#include <filesystem>
 
 using Timestamp = int64_t;
 using FrameID = int64_t;
@@ -143,7 +144,21 @@ using namespace H5;
 
 void read_into_memory(const std::string &filename, const std::string &dataset_name,
                       std::vector<VehicleData> &data, hsize_t max_records, int &round_freq_s) {
+
+    if (!std::filesystem::exists(filename)) {
+        std::cerr << "Error: file '" << filename << "' does not exist\n";
+        exit(1);
+    }
+
     H5File file(filename, H5F_ACC_RDONLY);
+
+    // Check if dataset exists first
+    if (H5Lexists(file.getId(), dataset_name.c_str(), H5P_DEFAULT) <= 0) {
+        std::cerr << "Error: dataset '" << dataset_name << "' not found in file '" << filename << "'\n";
+        std::cerr << "Make sure you are using simulator output (fcd_history.h5) as input file.\n";
+        exit(1);
+    }
+
     DataSet dataset = file.openDataSet(dataset_name);
 
     CompType mtype(sizeof(VehicleData));
@@ -159,9 +174,7 @@ void read_into_memory(const std::string &filename, const std::string &dataset_na
     DataSpace dataspace = dataset.getSpace();
     hsize_t dims[1]; dataspace.getSimpleExtentDims(dims);
 
-    hsize_t count[1] = {dims[0]};
-    if (dims[0] > max_records){ count[0] = max_records; }
-
+    hsize_t count[1] = { std::min(dims[0], max_records) };
     std::cout << "Reading " << count[0] << " records from HDF5 file.\n";
     data.resize(count[0]);
     hsize_t offset[1] = {0};
@@ -582,7 +595,6 @@ Config parseArgs(int argc, char* argv[]) {
     Config cfg;
 
     static struct option long_options[] = {
-        {"filename", required_argument, nullptr, 'f'},
         {"outfile", required_argument, nullptr, 'o'},
         {"length", required_argument, nullptr, 'l'},
         {"fps", required_argument, nullptr, 'p'},
@@ -593,19 +605,24 @@ Config parseArgs(int argc, char* argv[]) {
 
     int option_index = 0;
     int c;
-    while ((c = getopt_long(argc, argv, "f:d:o:l:p:s:m:h", long_options, &option_index)) != -1) {
+    while ((c = getopt_long(argc, argv, "o:l:p:m:h", long_options, &option_index)) != -1) {
         switch (c) {
-            case 'f': cfg.filename = optarg; break;
             case 'o': cfg.outfile = optarg; break;
             case 'l': cfg.length_s = std::stoi(optarg); break;
             case 'p': cfg.fps = std::stoi(optarg); break;
             case 'm': cfg.max_records = std::stoull(optarg); break;
             case 'h':
-                std::cout << "Usage: ./video_preprocess [--filename FILE] [--outfile FILE] "
+                std::cout << "Usage: ./video_preprocess <INPUT_FILE> [--outfile FILE] "
                              "[--length SEC] [--fps N] [--maxrecords N]\n";
                 exit(0);
-            default: break;
         }
+    }
+
+    if (optind < argc) {
+        cfg.filename = argv[optind];
+    } else {
+        std::cerr << "Error: filename is required\n";
+        exit(1);
     }
 
     return cfg;
@@ -629,7 +646,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Dataset name: " << dataset_name << "\n";
     std::cout << "Output file: " << outfile << "\n";
     std::cout << "Length (s): " << length_s << "\n";
-    std::cout << "FPS: " << fps << "\n";
+    std::cout << "FPS: " << fps << "\n\n";
 
     // --------------------- Read input data --------------------
     std::vector<VehicleData> data;

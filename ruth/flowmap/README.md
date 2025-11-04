@@ -38,7 +38,7 @@ make
 ```
 
 ```
----filename : input file with Ruth simulation data in HDF5 format (default: fcd_history.h5)
+<input_file> : input file with Ruth simulation data in HDF5 format (default: fcd_history.h5)
 ---outfile : output file for preprocessed data in HDF5 format (default: fcd_aggregated.h5)
 ---length : length of the output video in seconds (default 60)
 ---fps : frames per second in the output video (default 25)
@@ -46,7 +46,7 @@ make
 ```
 ### Example
 ```
-./video_preprocess --filename fcd_history.h5 --outfile fcd_aggregated.h5 --length 30
+./video_preprocess fcd_history.h5 --outfile fcd_aggregated.h5 --length 30
 ```
 
 ## Run video generation CLI tool
