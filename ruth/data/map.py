@@ -142,7 +142,7 @@ def remove_roundabouts(network):
 class Map:
     """Routing map."""
 
-    def __init__(self, bbox, download_date, data_dir="./data", with_speeds=True, save_hdf=True):
+    def __init__(self, bbox=None, download_date=None, graphml_file=None, data_dir="./data", with_speeds=True, save_hdf=True):
         """
         Initialize a map via the border.
         If `data_dir` provided, the map is loaded from locally stored maps preferably.
@@ -151,12 +151,23 @@ class Map:
         self.bbox = bbox
         self.download_date = download_date
         self.data_dir = data_dir
-        self.network, fresh_data = self._load()
+        self.graphml_file = None
+
+        if graphml_file is not None:
+            cl.info(f"Loading map from {graphml_file}, ignoring bbox and download_date.")
+            self.graphml_file = graphml_file
+            self.network = load_graphml(graphml_file)
+            self.bbox, self.download_date = None, None
+            fresh_data = False
+        elif bbox is None or download_date is None:
+            raise ValueError("Either graphml_file or both bbox and download_date must be provided.")
+        else:
+            self.network, fresh_data = self._load()
         self.temporary_speeds = []
 
         if fresh_data:
             for u, v, k, data in self.network.edges(keys=True, data=True):
-                if 'highway' in data and type(data['highway']) is list:
+                if 'highway' in data and isinstance(data['highway'], list):
                     self.network[u][v][k]['highway'] = sorted(data['highway'], key=lambda x: highway_dict[x])
 
         if with_speeds:
@@ -164,6 +175,7 @@ class Map:
 
         self.original_network = ox.get_digraph(self.network)
 
+        # Removing roundabouts, stored separately
         self.remapped_nodes = remove_roundabouts(self.original_network)
 
         self.segment_lengths = {}
@@ -192,8 +204,6 @@ class Map:
 
         if fresh_data:
             self._store()
-
-        self.network = MultiDiGraph(self.original_network)
 
         if save_hdf:
             hdf5_file_name = f"map_{round(time() * 1000)}_{os.getpid()}.hdf5"
@@ -242,12 +252,18 @@ class Map:
     def file_path(self):
         if self.data_dir is None:
             return None
+
+        if self.graphml_file is not None:
+            return self.graphml_file
+
         """Path to locally stored map."""
         return os.path.join(self.data_dir, f"{self.name}.graphml")
 
     @property
     def name(self):
         """Name of the map."""
+        if self.bbox is None or self.download_date is None:
+            return "map"
         return self.bbox.name + "_" + self.download_date.replace(":", "-")
 
     def edges(self):
@@ -418,7 +434,7 @@ class Map:
             osmnx.settings.overpass_settings = f"[out:json][timeout:{{timeout}}][date:'{self.download_date}']"
 
             north, west, south, east = self.bbox.get_coords()
-            network = graph_from_bbox(north, south, east, west,
+            network = graph_from_bbox(bbox=(north, south, east, west),
                                       network_type="drive",
                                       retain_all=False)
 
