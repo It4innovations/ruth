@@ -73,7 +73,7 @@ class GlobalView:
 
         # rescale density
         if rest_segment_length < ending_length:
-            n_vehicles_per_mile = n_vehicles * mile / ending_length
+            n_vehicles_per_mile = n_vehicles * mile / (ending_length * segment.lanes)
         else:
             n_vehicles_per_mile = n_vehicles * mile / (rest_segment_length * segment.lanes)
 

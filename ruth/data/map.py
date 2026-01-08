@@ -320,6 +320,7 @@ class Map:
             speed = round_speed(speed)
             edge["current_speed"] = speed
             edge["current_travel_time"] = self.get_travel_time_from_speed(node_from, node_to, speed)
+            edge["lanes"] = edge.get("lanes", 1) if edge.get("lanes", 1) > 0 else 1
             new_current_speeds[(node_from, node_to)] = speed
 
         return new_current_speeds
