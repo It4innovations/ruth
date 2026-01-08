@@ -196,6 +196,7 @@ class Map:
                 edge['lanes'] = int(lanes)
             except (ValueError, TypeError):
                 edge['lanes'] = 1
+            edge["lanes"] = edge.get("lanes", 1) if edge.get("lanes", 1) > 0 else 1
 
         self.current_network = self.original_network.copy()
 
@@ -320,7 +321,6 @@ class Map:
             speed = round_speed(speed)
             edge["current_speed"] = speed
             edge["current_travel_time"] = self.get_travel_time_from_speed(node_from, node_to, speed)
-            edge["lanes"] = edge.get("lanes", 1) if edge.get("lanes", 1) > 0 else 1
             new_current_speeds[(node_from, node_to)] = speed
 
         return new_current_speeds
@@ -350,7 +350,7 @@ class Map:
             node_to=node_to,
             length=data["length"],
             max_allowed_speed_kph=data["speed_kph"],
-            lanes=data.get("lanes", 1)
+            lanes=data["lanes"],
         )
 
     def osm_route_to_py_segments(self, osm_route: Route) -> List[Segment]:
