@@ -7,7 +7,7 @@ from .map import Map
 
 # Define the compound dtype for HDF5
 compound_dtype = np.dtype([
-    ("timestamp", np.int64),  # Timestamp in nanoseconds
+    ("timestamp", np.int64),  # Timestamp in seconds
     ("node_from", np.int64),
     ("node_to", np.int64),
     ("segment_length", np.int32),
@@ -19,7 +19,11 @@ compound_dtype = np.dtype([
 
 class HDF5Writer:
     def __init__(self, filename, dtype=None):
-        self.file = h5py.File(filename, 'a')
+        # check if the file exists raise an error if it does
+        if h5py.is_hdf5(filename):
+            raise FileExistsError(f"The file {filename} already exists. Use a different filename or remove the existing file.")
+
+        self.file = h5py.File(filename, 'x')
 
         if 'fcd' not in self.file or not isinstance(self.file['fcd'], h5py.Dataset):
             self.dataset = self.file.create_dataset(
