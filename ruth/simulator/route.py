@@ -19,7 +19,8 @@ def move_on_segment(
         current_time: datetime,
         gv_db: GlobalView,
         routing_map: Map,
-        los_vehicles_tolerance: timedelta = timedelta(seconds=0)
+        los_vehicles_tolerance: timedelta = timedelta(seconds=0),
+        segment_end_delta=2
 ) -> Tuple[datetime, SegmentPosition, SpeedMps]:
     """
     Moves the car on its current segment.
@@ -61,19 +62,29 @@ def move_on_segment(
     elapsed_m = frequency_s * speed_mps
     end_position = LengthMeters(start_position + elapsed_m)
 
-    if end_position < current_segment.length:
-        return (
-            current_time + timedelta(seconds=frequency_s),
-            SegmentPosition(index=segment_position.index, position=end_position),
-            speed_mps
-        )
-    else:
-        # The car has finished the segment, it stays at the end of it
+    if end_position >= current_segment.length:
+        # SEGMENT LENGTH OR MORE - The car has finished the segment, it stays at the end of it
         travel_distance_m = current_segment.length - start_position
         travel_time = travel_distance_m / speed_mps
         return (
             current_time + timedelta(seconds=travel_time),
-            SegmentPosition(segment_position.index, current_segment.length),
+            SegmentPosition(index=segment_position.index, position=current_segment.length),
+            speed_mps
+        )
+    elif end_position >= (current_segment.length - segment_end_delta):
+        # NEAR THE END OF THE SEGMENT - The car has finished the segment, it stays at the end of it
+        travel_distance_m = current_segment.length - start_position
+        travel_time = travel_distance_m / speed_mps
+        return (
+            current_time + timedelta(seconds=travel_time),
+            SegmentPosition(index=segment_position.index, position=current_segment.length),
+            speed_mps
+        )
+    else:
+        # LESS THAN SEGMENT LENGTH - The car moves within the segment
+        return (
+            current_time + timedelta(seconds=frequency_s),
+            SegmentPosition(index=segment_position.index, position=end_position),
             speed_mps
         )
 
