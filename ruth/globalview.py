@@ -46,7 +46,7 @@ class GlobalView:
         return len(vehicles)
 
     def level_of_service_in_front_of_vehicle(self, datetime, segment, vehicle_id=-1,
-                                             vehicle_offset_m=0, tolerance=None, limit_vehicle_count=False):
+                                             vehicle_offset_m=0, tolerance=None):
         mile = 1609.344  # meters
         # density of vehicles per mile with ranges of level of service
         # https://transportgeography.org/contents/methods/transport-technical-economic-performance-indicators/levels-of-service-road-transportation/
@@ -60,11 +60,6 @@ class GlobalView:
 
         n_vehicles = self.number_of_vehicles_ahead(datetime, segment.id, tolerance,
                                                    vehicle_id, vehicle_offset_m)
-
-        if limit_vehicle_count and vehicle_offset_m == 0.0:
-            vehicles_length = n_vehicles * aprox_vehicles_length
-            if vehicles_length > segment.length:
-                return float("inf")
 
         # NOTE: the ending length is set to avoid massive LoS increase at the end of the segments and also on short
         # segments, can be replaced with different LoS ranges for different road types in the future
