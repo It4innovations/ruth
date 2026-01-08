@@ -80,8 +80,8 @@ class FCDHistory:
             data["node_to"].append(fcd.segment.node_to)
             data["segment_length"].append(fcd.segment.length)
             data["vehicle_id"].append(fcd.vehicle_id)
-            data["start_offset_m"].append(fcd.start_offset)
-            data["speed_mps"].append(fcd.speed)
+            data["start_offset_m"].append(fcd.offset_from_start)
+            data["speed_mps"].append(fcd.vehicle_speed_mps)
             data["status"].append(fcd.status)
             data["active"].append(fcd.active)
 
@@ -94,8 +94,8 @@ class FCDHistory:
             "node_to": pd.array([fcd.segment.node_to for fcd in self.fcd_history], dtype="Int64"),
             "segment_length": pd.array([fcd.segment.length for fcd in self.fcd_history], dtype="float"),
             "vehicle_id": pd.array([fcd.vehicle_id for fcd in self.fcd_history], dtype="Int32"),
-            "start_offset_m": pd.array([fcd.start_offset for fcd in self.fcd_history], dtype="float"),
-            "speed_mps": pd.array([fcd.speed for fcd in self.fcd_history], dtype="float"),
+            "start_offset_m": pd.array([fcd.offset_from_start for fcd in self.fcd_history], dtype="float"),
+            "speed_mps": pd.array([fcd.vehicle_speed_mps for fcd in self.fcd_history], dtype="float"),
         }
 
         return pd.DataFrame(data)
@@ -111,7 +111,7 @@ class FCDHistory:
             for fcd in self.fcd_history:
                 self.fcd_by_segment[fcd.segment.id].append(fcd)
 
-        speeds = [fcd.speed for fcd in self.fcd_by_segment.get(SegmentId((node_from, node_to)), []) if
+        speeds = [fcd.vehicle_speed_mps for fcd in self.fcd_by_segment.get(SegmentId((node_from, node_to)), []) if
                   fcd.datetime == datetime]
         if len(speeds) == 0:
             return None

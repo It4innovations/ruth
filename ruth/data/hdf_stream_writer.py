@@ -62,7 +62,7 @@ class HDF5Writer:
         data = np.array([
             (int(fcd.datetime.replace(tzinfo=timezone.utc).timestamp()),
              fcd.segment.node_from, fcd.segment.node_to, fcd.segment.length,
-             fcd.vehicle_id, float(fcd.start_offset), fcd.speed, fcd.active)
+             fcd.vehicle_id, float(fcd.offset_from_start), fcd.vehicle_speed_mps, fcd.active)
             for fcd in buffer
         ], dtype=compound_dtype)
 

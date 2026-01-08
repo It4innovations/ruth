@@ -21,8 +21,8 @@ class FCDRecord:
     datetime: datetime
     vehicle_id: int
     segment: Segment
-    start_offset: LengthMeters
-    speed: SpeedMps
+    offset_from_start: LengthMeters
+    vehicle_speed_mps: SpeedMps
     status: str
     active: bool
 

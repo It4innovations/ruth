@@ -41,7 +41,7 @@ class GlobalView:
         vehicles = set()
         for fcd in self.fcd_by_segment.get(segment_id, []):
             if datetime - tolerance <= fcd.datetime <= datetime + tolerance:
-                if fcd.vehicle_id != vehicle_id and fcd.start_offset > vehicle_offset_m:
+                if fcd.vehicle_id != vehicle_id and fcd.offset_from_start > vehicle_offset_m:
                     vehicles.add(fcd.vehicle_id)
         return len(vehicles)
 
@@ -102,7 +102,7 @@ class GlobalView:
         by_segment = list(self.fcd_by_segment[segment_id])
         by_segment.sort(key=lambda fcd: fcd.datetime)
         for fcd in by_segment:
-            speeds[fcd.vehicle_id] = fcd.speed
+            speeds[fcd.vehicle_id] = fcd.vehicle_speed_mps
         speeds = list(speeds.values())
         if len(speeds) == 0:
             return None

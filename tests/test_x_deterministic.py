@@ -102,12 +102,12 @@ def compare_simulation(simulation1, simulation2):
             i].datetime, f"Datetime mismatch at index {i}"
         assert simulation1.history.fcd_history[i].segment == simulation2.history.fcd_history[
             i].segment, f"Segment mismatch at index {i}"
-        assert simulation1.history.fcd_history[i].speed == simulation2.history.fcd_history[
-            i].speed, f"Speed mismatch at index {i}"
+        assert simulation1.history.fcd_history[i].vehicle_speed_mps == simulation2.history.fcd_history[
+            i].vehicle_speed_mps, f"Speed mismatch at index {i}"
         assert simulation1.history.fcd_history[i].vehicle_id == simulation2.history.fcd_history[
             i].vehicle_id, f"Vehicle ID mismatch at index {i}"
-        assert simulation1.history.fcd_history[i].start_offset == simulation2.history.fcd_history[
-            i].start_offset, f"Start offset mismatch at index {i}"
+        assert simulation1.history.fcd_history[i].offset_from_start == simulation2.history.fcd_history[
+            i].offset_from_start, f"Start offset mismatch at index {i}"
         assert simulation1.history.fcd_history[i].status == simulation2.history.fcd_history[
             i].status, f"Status mismatch at index {i}"
         assert simulation1.history.fcd_history[i].active == simulation2.history.fcd_history[

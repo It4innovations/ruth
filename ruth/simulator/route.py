@@ -196,8 +196,8 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
             datetime=current_time,
             vehicle_id=vehicle.id,
             segment=current_segment,
-            start_offset=current_position,
-            speed=speed,
+            offset_from_start=current_position,
+            vehicle_speed_mps=speed,
             status=vehicle.status,
             active=True
         ))
@@ -207,8 +207,8 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
         datetime=end_time,
         vehicle_id=vehicle.id,
         segment=current_segment,
-        start_offset=end_segment_position.position,
-        speed=speed,
+        offset_from_start=end_segment_position.position,
+        vehicle_speed_mps=speed,
         status=vehicle.status,
         active=remains_active
     ))

@@ -86,8 +86,8 @@ def test_vehicle_advances_normally(setup_vehicle, mock_gv_db, mock_routing_map, 
             datetime=current_time + timedelta(seconds=5),
             vehicle_id=0,
             segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),  # Segment length 1000, current speed 50 km/h
-            start_offset=LengthMeters(speed_kph_to_mps(SpeedKph(50.0)) * 5),  # Speed * Time (5 seconds
-            speed=speed_kph_to_mps(SpeedKph(50.0)),
+            offset_from_start=LengthMeters(speed_kph_to_mps(SpeedKph(50.0)) * 5),  # Speed * Time (5 seconds
+            vehicle_speed_mps=speed_kph_to_mps(SpeedKph(50.0)),
             status="",
             active=True
         ),
@@ -96,8 +96,8 @@ def test_vehicle_advances_normally(setup_vehicle, mock_gv_db, mock_routing_map, 
             vehicle_id=0,
             segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),
             # Segment 0, length 1000, current speed 50 km/h
-            start_offset=LengthMeters(speed_kph_to_mps(SpeedKph(50.0)) * 10),  # Speed * Time (10 seconds)
-            speed=speed_kph_to_mps(SpeedKph(50.0)),
+            offset_from_start=LengthMeters(speed_kph_to_mps(SpeedKph(50.0)) * 10),  # Speed * Time (10 seconds)
+            vehicle_speed_mps=speed_kph_to_mps(SpeedKph(50.0)),
             status="",
             active=True
         )
@@ -106,8 +106,8 @@ def test_vehicle_advances_normally(setup_vehicle, mock_gv_db, mock_routing_map, 
         assert fcd_records[i].datetime == expected_fcd_records[i].datetime
         assert fcd_records[i].vehicle_id == expected_fcd_records[i].vehicle_id
         assert fcd_records[i].segment == expected_fcd_records[i].segment
-        assert fcd_records[i].start_offset == expected_fcd_records[i].start_offset
-        assert fcd_records[i].speed == expected_fcd_records[i].speed
+        assert fcd_records[i].offset_from_start == expected_fcd_records[i].offset_from_start
+        assert fcd_records[i].vehicle_speed_mps == expected_fcd_records[i].vehicle_speed_mps
         assert fcd_records[i].status == expected_fcd_records[i].status
         assert fcd_records[i].active == expected_fcd_records[i].active
 
@@ -133,8 +133,8 @@ def test_vehicle_reaches_end_of_segment(setup_vehicle, mock_gv_db, mock_routing_
     time_travelled = LengthMeters(10.0) / speed_kph_to_mps(SpeedKph(50.0))
     assert fcd_records[0].datetime == current_time + timedelta(seconds=time_travelled)
     assert fcd_records[0].segment == Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1)
-    assert fcd_records[0].start_offset == LengthMeters(1000.0)
-    assert fcd_records[0].speed == speed_kph_to_mps(SpeedKph(50.0))
+    assert fcd_records[0].offset_from_start == LengthMeters(1000.0)
+    assert fcd_records[0].vehicle_speed_mps == speed_kph_to_mps(SpeedKph(50.0))
 
 
 def test_vehicle_reaches_destination(setup_vehicle, mock_gv_db, mock_routing_map, mock_queues_manager, current_time):
@@ -164,8 +164,8 @@ def test_vehicle_reaches_destination(setup_vehicle, mock_gv_db, mock_routing_map
     time_travelled = LengthMeters(10.0) / speed_kph_to_mps(SpeedKph(50.0))
     assert fcd_records[0].datetime == current_time + timedelta(seconds=time_travelled)
     assert fcd_records[0].segment == Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0), 1)
-    assert fcd_records[0].start_offset == LengthMeters(1000.0)
-    assert fcd_records[0].speed == speed_kph_to_mps(SpeedKph(50.0))
+    assert fcd_records[0].offset_from_start == LengthMeters(1000.0)
+    assert fcd_records[0].vehicle_speed_mps == speed_kph_to_mps(SpeedKph(50.0))
 
 
 def test_vehicle_advances_on_the_next_segment(setup_vehicle, mock_gv_db, mock_routing_map, mock_queues_manager,
@@ -195,8 +195,8 @@ def test_vehicle_advances_on_the_next_segment(setup_vehicle, mock_gv_db, mock_ro
             datetime=current_time + timedelta(seconds=5),
             vehicle_id=0,
             segment=Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0), 1),
-            start_offset=LengthMeters(speed_kph_to_mps(SpeedKph(50.0)) * 5),  # Speed * Time (5 seconds)
-            speed=speed_kph_to_mps(SpeedKph(50.0)),
+            offset_from_start=LengthMeters(speed_kph_to_mps(SpeedKph(50.0)) * 5),  # Speed * Time (5 seconds)
+            vehicle_speed_mps=speed_kph_to_mps(SpeedKph(50.0)),
             status="",
             active=True
         ),
@@ -205,8 +205,8 @@ def test_vehicle_advances_on_the_next_segment(setup_vehicle, mock_gv_db, mock_ro
             vehicle_id=0,
             segment=Segment(1, 2, LengthMeters(1000.0), SpeedKph(50.0), 1),
             # Segment 0, length 1000, current speed 50 km/h
-            start_offset=LengthMeters(speed_kph_to_mps(SpeedKph(50.0)) * 10),  # Speed * Time (10 seconds)
-            speed=speed_kph_to_mps(SpeedKph(50.0)),
+            offset_from_start=LengthMeters(speed_kph_to_mps(SpeedKph(50.0)) * 10),  # Speed * Time (10 seconds)
+            vehicle_speed_mps=speed_kph_to_mps(SpeedKph(50.0)),
             status="",
             active=True
         )
@@ -215,8 +215,8 @@ def test_vehicle_advances_on_the_next_segment(setup_vehicle, mock_gv_db, mock_ro
         assert fcd_records[i].datetime == expected_fcd_records[i].datetime
         assert fcd_records[i].vehicle_id == expected_fcd_records[i].vehicle_id
         assert fcd_records[i].segment == expected_fcd_records[i].segment
-        assert fcd_records[i].start_offset == expected_fcd_records[i].start_offset
-        assert fcd_records[i].speed == expected_fcd_records[i].speed
+        assert fcd_records[i].offset_from_start == expected_fcd_records[i].offset_from_start
+        assert fcd_records[i].vehicle_speed_mps == expected_fcd_records[i].vehicle_speed_mps
         assert fcd_records[i].status == expected_fcd_records[i].status
         assert fcd_records[i].active == expected_fcd_records[i].active
 
@@ -244,8 +244,8 @@ def test_vehicle_stuck_in_traffic(setup_vehicle, mock_gv_db, mock_routing_map, m
             datetime=current_time + timedelta(seconds=5),
             vehicle_id=0,
             segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),
-            start_offset=expected_position.position,
-            speed=SpeedMps(0.0),
+            offset_from_start=expected_position.position,
+            vehicle_speed_mps=SpeedMps(0.0),
             status="",
             active=True
         ),
@@ -253,8 +253,8 @@ def test_vehicle_stuck_in_traffic(setup_vehicle, mock_gv_db, mock_routing_map, m
             datetime=current_time + timedelta(seconds=10),
             vehicle_id=0,
             segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),
-            start_offset=expected_position.position,
-            speed=SpeedMps(0.0),
+            offset_from_start=expected_position.position,
+            vehicle_speed_mps=SpeedMps(0.0),
             status="",
             active=True
         )
@@ -264,8 +264,8 @@ def test_vehicle_stuck_in_traffic(setup_vehicle, mock_gv_db, mock_routing_map, m
         assert fcd_records[i].datetime == expected_fcd_records[i].datetime
         assert fcd_records[i].vehicle_id == expected_fcd_records[i].vehicle_id
         assert fcd_records[i].segment == expected_fcd_records[i].segment
-        assert fcd_records[i].start_offset == expected_fcd_records[i].start_offset
-        assert fcd_records[i].speed == expected_fcd_records[i].speed
+        assert fcd_records[i].offset_from_start == expected_fcd_records[i].offset_from_start
+        assert fcd_records[i].vehicle_speed_mps == expected_fcd_records[i].vehicle_speed_mps
         assert fcd_records[i].status == expected_fcd_records[i].status
         assert fcd_records[i].active == expected_fcd_records[i].active
 
@@ -313,8 +313,8 @@ def test_advance_waiting_vehicle(setup_vehicle, mock_gv_db, mock_routing_map, mo
             datetime=current_time + timedelta(seconds=5),
             vehicle_id=0,
             segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),
-            start_offset=expected_position.position,
-            speed=SpeedMps(0.0),
+            offset_from_start=expected_position.position,
+            vehicle_speed_mps=SpeedMps(0.0),
             status="",
             active=True
         ),
@@ -322,8 +322,8 @@ def test_advance_waiting_vehicle(setup_vehicle, mock_gv_db, mock_routing_map, mo
             datetime=current_time + timedelta(seconds=10),
             vehicle_id=0,
             segment=Segment(0, 1, LengthMeters(1000.0), SpeedKph(50.0), 1),
-            start_offset=expected_position.position,
-            speed=SpeedMps(0.0),
+            offset_from_start=expected_position.position,
+            vehicle_speed_mps=SpeedMps(0.0),
             status="",
             active=True
         )
@@ -333,7 +333,7 @@ def test_advance_waiting_vehicle(setup_vehicle, mock_gv_db, mock_routing_map, mo
         assert fcd_records[i].datetime == expected_fcd_records[i].datetime
         assert fcd_records[i].vehicle_id == expected_fcd_records[i].vehicle_id
         assert fcd_records[i].segment == expected_fcd_records[i].segment
-        assert fcd_records[i].start_offset == expected_fcd_records[i].start_offset
-        assert fcd_records[i].speed == expected_fcd_records[i].speed
+        assert fcd_records[i].offset_from_start == expected_fcd_records[i].offset_from_start
+        assert fcd_records[i].vehicle_speed_mps == expected_fcd_records[i].vehicle_speed_mps
         assert fcd_records[i].status == expected_fcd_records[i].status
         assert fcd_records[i].active == expected_fcd_records[i].active
