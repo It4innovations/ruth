@@ -99,8 +99,14 @@ class Simulation:
         self.bbox = bbox
         self.map_download_date = map_download_date
         self._routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
+        self.last_saved_speeds = None
 
     def __getstate__(self):
+        self.last_saved_speeds = {}
+        for node_from, node_to, data in self.routing_map.current_network.edges(data=True):
+            segment_id = (node_from, node_to)
+            self.last_saved_speeds[segment_id] = data.get('current_speed', None)
+
         d = self.__dict__.copy()
         if "_routing_map" in d:
             d.pop("_routing_map")

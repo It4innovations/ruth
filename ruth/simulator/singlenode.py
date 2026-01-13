@@ -51,6 +51,9 @@ class Simulator:
 
         self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
 
+        if self.sim.last_saved_speeds:
+             self.sim.routing_map.update_current_speeds(self.sim.last_saved_speeds)
+
         for alternatives_provider in alternatives_providers:
             alternatives_provider.load_map(self.sim.routing_map)
 
