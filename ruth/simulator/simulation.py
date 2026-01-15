@@ -1,3 +1,4 @@
+import logging
 import pickle
 from dataclasses import InitVar, dataclass
 from datetime import datetime, timedelta
@@ -118,6 +119,8 @@ class Simulation:
         self.__dict__.update(d)
         if "global_view" not in d:
             self.global_view = GlobalView()
+        if "last_saved_speeds" not in d:
+            self.last_saved_speeds = None
         self._routing_map = None  # lazy init
 
     @property
@@ -162,6 +165,10 @@ class Simulation:
             columns=["simulation_offset", "step", "n_active", "duration"] + list(first.parts.keys()))
 
     def get_length(self):
+        """
+        This function will be deprecated soon with migration to h5 storage for FCD history.
+        """
+        logging.warning("This function will be deprecated soon with migration to h5 storage for FCD history.")
         if not self.history.fcd_history:
             raise ValueError("No FCD history available.")
         return self.history.fcd_history[-1].datetime - self.history.fcd_history[0].datetime

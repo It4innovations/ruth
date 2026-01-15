@@ -34,7 +34,7 @@ class Simulator:
             self,
             alternatives_providers: List[AlternativesProvider],
             route_selection_providers: List[RouteSelectionProvider],
-            end_step_fns: [Optional[Callable[[Simulation], None]]] = None,
+            end_step_fns: Optional[List[Callable[[Simulation], None]]] = None
     ):
         """Perform the simulation.
 

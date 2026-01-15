@@ -1,6 +1,6 @@
 import logging
 from dataclasses import asdict
-from datetime import timedelta
+from typing import List, Tuple, Optional
 
 import pandas as pd
 
@@ -10,39 +10,45 @@ from ..vehicle import Vehicle
 logger = logging.getLogger(__name__)
 
 
-def load_vehicles(input_path: str):
+def load_vehicles(input_path: str) -> Tuple[List[Vehicle], Optional[BBox], Optional[pd.Timestamp]]:
     logger.info("Loading data... %s", input_path)
     df = pd.read_parquet(input_path, engine="fastparquet")
-    vehicles = [Vehicle(
-        id=row["id"],
-        time_offset=row["time_offset"],
-        frequency=row["frequency"],
-        start_index=row["start_index"],
-        start_distance_offset=row["start_distance_offset"],
-        origin_node=row["origin_node"],
-        dest_node=row["dest_node"],
-        osm_route=row["osm_route"],
-        active=row["active"],
-        fcd_sampling_period=row["fcd_sampling_period"],
-        status=row["status"],
+    if df.empty:
+        raise ValueError(f"No vehicle data found in {input_path}")
 
-    ) for (_, row) in df.iterrows()]
+    records = df.to_dict(orient="records")
+    vehicles: List[Vehicle] = []
+    for r in records:
+        vehicles.append(Vehicle(
+            id=r.get("id"),
+            time_offset=r.get("time_offset"),
+            frequency=r.get("frequency"),
+            start_index=r.get("start_index"),
+            start_distance_offset=r.get("start_distance_offset"),
+            origin_node=r.get("origin_node"),
+            dest_node=r.get("dest_node"),
+            osm_route=r.get("osm_route"),
+            active=r.get("active", True),
+            fcd_sampling_period=r.get("fcd_sampling_period"),
+            status=r.get("status"),
+        ))
 
-    filtered_count = 0
-    for vehicle in vehicles:
-        if not vehicle.osm_route or len(vehicle.osm_route) < 2:
-            vehicle.active = False
-            filtered_count += 1
-
+    # Filter vehicles with missing or too-short routes or inactive flag
+    pre_count = len(vehicles)
+    vehicles = [v for v in vehicles if v.active and v.osm_route and len(v.osm_route) >= 2]
+    filtered_count = pre_count - len(vehicles)
     if filtered_count > 0:
-        logger.info(f"Filtered {filtered_count} vehicles with too short routes.")
-        vehicles = [v for v in vehicles if v.active]
+        logger.info(f"Filtered {filtered_count} vehicles with too short or missing routes.")
 
-    bbox_lat_max = df["bbox_lat_max"].iloc[0]
-    bbox_lon_min = df["bbox_lon_min"].iloc[0]
-    bbox_lat_min = df["bbox_lat_min"].iloc[0]
-    bbox_lon_max = df["bbox_lon_max"].iloc[0]
-    download_date = df["download_date"].iloc[0]
+    # Helper to read optional columns
+    def _get_col(col_name: str):
+        return df[col_name].iloc[0] if col_name in df.columns and not df[col_name].empty else None
+
+    bbox_lat_max = _get_col("bbox_lat_max")
+    bbox_lon_min = _get_col("bbox_lon_min")
+    bbox_lat_min = _get_col("bbox_lat_min")
+    bbox_lon_max = _get_col("bbox_lon_max")
+    download_date = _get_col("download_date")
     bbox = BBox(bbox_lat_max, bbox_lon_min, bbox_lat_min, bbox_lon_max)
     return vehicles, bbox, download_date
 

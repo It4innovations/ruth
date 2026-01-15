@@ -18,7 +18,7 @@ ml FFmpeg/6.0-GCCcore-12.3.0
   ```
 2. Clone and install [Ruth](https://github.com/It4innovations/ruth).
 ```
-git clone --recurse-submodules -b cpp-video  https://github.com/It4innovations/ruth.git
+git clone --recurse-submodules https://github.com/It4innovations/ruth.git
 python -m venv venv_video
 source venv_video/bin/activate
 cd ruth
@@ -37,11 +37,14 @@ make
 ./video_preprocess -h
 ```
 
+### Preprocessing CLI tool help
+Use either --round-interval or --length and --fps to specify the length of the output video.
 ```
 <input_file> : input file with Ruth simulation data in HDF5 format (default: fcd_history.h5)
----outfile : output file for preprocessed data in HDF5 format (default: fcd_aggregated.h5)
----length : length of the output video in seconds (default 60)
+---round-interval : time interval (in seconds) for aggregating data (default 60)
+---length : length of the output video (in seconds)
 ---fps : frames per second in the output video (default 25)
+---outfile : output file for preprocessed data in HDF5 format (default: fcd_aggregated.h5)
 ---maxrecords : maximum number of records to consider in the visualization (optional)
 ```
 ### Example
@@ -87,7 +90,7 @@ where each worker will render a subset of the frames into separate image files, 
 * use `get-info` to get simulation length
     #### Example
     ```
-    traffic-flow-map get-info <PATH_TO_DATA>
+    traffic-flow-map get-info fcd_history.h5
     ```
 * use `get-info --minute n` to get more detailed information about n<sup>th</sup> minute of the simulation
     #### Example 

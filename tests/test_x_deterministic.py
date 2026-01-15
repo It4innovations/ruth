@@ -4,6 +4,7 @@ import pytest
 
 from datetime import datetime, timedelta
 
+from ruth.simulator import Simulation
 from ruth.simulator.kernels import ShortestPathsAlternatives, FirstRouteSelection, FastestPathsAlternatives, \
     RandomRouteSelection, ZeroMQDistributedAlternatives
 from ruth.tools.simulator import CommonArgs, prepare_simulator, AlternativesRatio, RouteSelectionRatio, ZeroMqContext
@@ -56,7 +57,7 @@ def setup_distributed_alt_provider():
 vehicles_path_10 = "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet"
 
 
-def run_inner_mock(common_args, vehicles_path, alternatives_ratio, route_selection_ratio,
+def run_inner_mock(common_args, vehicles_path, alternatives_ratio, route_selection_ratio, name,
                    distributed_alt_provider=None):
     simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
     end_step_fns = []
@@ -67,17 +68,22 @@ def run_inner_mock(common_args, vehicles_path, alternatives_ratio, route_selecti
 
     route_selection_providers = [FirstRouteSelection(), RandomRouteSelection()]
 
+    if os.path.exists(f"fcd_history.h5"):
+        raise FileExistsError("fcd_history.h5 already exists. Remove it before running the test.")
+
+
     simulator.simulate(
         alternatives_providers=alternatives_providers,
         route_selection_providers=route_selection_providers,
         end_step_fns=end_step_fns,
     )
 
+    os.rename("fcd_history.h5", f"fcd_history_{name}.h5")
+
     return simulator
 
 
-def compare_simulation(simulation1, simulation2):
-    assert len(simulation1.history.fcd_history) == len(simulation2.history.fcd_history), "FCD history mismatch"
+def compare_simulation(simulation1, simulation2, sim_1_name="sim1", sim_2_name="sim2"):
     assert len(simulation1.steps_info) == len(simulation2.steps_info), "Steps info mismatch"
     assert simulation1.queues_manager.queues == simulation2.queues_manager.queues, "Queues mismatch"
 
@@ -97,21 +103,17 @@ def compare_simulation(simulation1, simulation2):
             i].need_new_route, f"Need new route mismatch at index {i}"
 
     # check history
-    for i in range(len(simulation1.history.fcd_history)):
-        assert simulation1.history.fcd_history[i].datetime == simulation2.history.fcd_history[
-            i].datetime, f"Datetime mismatch at index {i}"
-        assert simulation1.history.fcd_history[i].segment == simulation2.history.fcd_history[
-            i].segment, f"Segment mismatch at index {i}"
-        assert simulation1.history.fcd_history[i].vehicle_speed_mps == simulation2.history.fcd_history[
-            i].vehicle_speed_mps, f"Speed mismatch at index {i}"
-        assert simulation1.history.fcd_history[i].vehicle_id == simulation2.history.fcd_history[
-            i].vehicle_id, f"Vehicle ID mismatch at index {i}"
-        assert simulation1.history.fcd_history[i].offset_from_start == simulation2.history.fcd_history[
-            i].offset_from_start, f"Start offset mismatch at index {i}"
-        assert simulation1.history.fcd_history[i].status == simulation2.history.fcd_history[
-            i].status, f"Status mismatch at index {i}"
-        assert simulation1.history.fcd_history[i].active == simulation2.history.fcd_history[
-            i].active, f"Active mismatch at index {i}"
+    fcd_history_1 = Simulation.load_h5_df(f"fcd_history_{sim_1_name}.h5")["df"]
+    fcd_history_2 = Simulation.load_h5_df(f"fcd_history_{sim_2_name}.h5")["df"]
+    assert len(fcd_history_1) == len(fcd_history_2), "FCD history mismatch"
+    for i in range(len(fcd_history_1)):
+        assert fcd_history_1.iloc[i]['timestamp'] == fcd_history_2.iloc[i]['timestamp'], f"Datetime mismatch at index {i}"
+        assert fcd_history_1.iloc[i]['node_from'] == fcd_history_2.iloc[i]['node_from'], f" Node from mismatch at index {i}"
+        assert fcd_history_1.iloc[i]['node_to'] == fcd_history_2.iloc[i]['node_to'], f"Node to mismatch at index {i}"
+        assert fcd_history_1.iloc[i]['speed_mps'] == fcd_history_2.iloc[i]['speed_mps'], f"Speed mismatch at index {i}"
+        assert fcd_history_1.iloc[i]['vehicle_id'] == fcd_history_2.iloc[i]['vehicle_id'], f"Vehicle ID mismatch at index {i}"
+        assert fcd_history_1.iloc[i]['start_offset_m'] == fcd_history_2.iloc[i]['start_offset_m'], f"Start offset mismatch at index {i}"
+        assert fcd_history_1.iloc[i]['active'] == fcd_history_2.iloc[i]['active'], f"Active mismatch at index {i}"
 
 
 def test_simulation(setup_common_args):
@@ -124,7 +126,7 @@ def test_simulation(setup_common_args):
     setup_route_selection_ratio = RouteSelectionRatio(no_alternative=1.0, first=0.0, random=0.0, ptdr=0.0)
 
     simulator1 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
-                                setup_route_selection_ratio)
+                                setup_route_selection_ratio, "sim1")
 
     assert simulator1.current_offset is None
     simulation1 = simulator1.state
@@ -135,7 +137,7 @@ def test_simulation(setup_common_args):
         assert vehicle.start_index == len(vehicle.osm_route) - 2  # last segment
 
     simulator2 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
-                                setup_route_selection_ratio)
+                                setup_route_selection_ratio, "sim2")
 
     simulation2 = simulator2.state
     compare_simulation(simulation1, simulation2)
@@ -151,7 +153,7 @@ def test_simulation_download_map(setup_common_args):
     setup_route_selection_ratio = RouteSelectionRatio(no_alternative=1.0, first=0.0, random=0.0, ptdr=0.0)
 
     simulator1 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
-                                setup_route_selection_ratio)
+                                setup_route_selection_ratio, "sim1")
 
     assert simulator1.current_offset is None
     simulation1 = simulator1.state
@@ -160,7 +162,7 @@ def test_simulation_download_map(setup_common_args):
     os.remove(map_path)
 
     simulator2 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
-                                setup_route_selection_ratio)
+                                setup_route_selection_ratio, "sim2")
 
     simulation2 = simulator2.state
     compare_simulation(simulation1, simulation2)
@@ -168,7 +170,7 @@ def test_simulation_download_map(setup_common_args):
 
 def test_simulation_with_alt(setup_common_args, setup_alternatives_ratio, setup_route_selection_ratio):
     simulator1 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
-                                setup_route_selection_ratio)
+                                setup_route_selection_ratio, "sim1")
 
     assert simulator1.current_offset is None
     simulation1 = simulator1.state
@@ -179,7 +181,7 @@ def test_simulation_with_alt(setup_common_args, setup_alternatives_ratio, setup_
         assert vehicle.start_index == len(vehicle.osm_route) - 2  # last segment
 
     simulator2 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
-                                setup_route_selection_ratio)
+                                setup_route_selection_ratio, "sim2")
 
     simulation2 = simulator2.state
     compare_simulation(simulation1, simulation2)
@@ -195,7 +197,7 @@ def test_simulation_with_alt_distributed(setup_common_args, setup_route_selectio
     )
     print("\nRunning first simulation")
     simulator1 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
-                                setup_route_selection_ratio, setup_distributed_alt_provider)
+                                setup_route_selection_ratio, "sim1", setup_distributed_alt_provider)
 
     assert simulator1.current_offset is None
     simulation1 = simulator1.state
@@ -207,7 +209,7 @@ def test_simulation_with_alt_distributed(setup_common_args, setup_route_selectio
 
     print("\nRunning second simulation")
     simulator2 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
-                                setup_route_selection_ratio, setup_distributed_alt_provider)
+                                setup_route_selection_ratio, "sim2", setup_distributed_alt_provider)
 
     simulation2 = simulator2.state
     compare_simulation(simulation1, simulation2)

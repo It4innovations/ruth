@@ -40,11 +40,7 @@ def move_on_segment(
         segment_position = SegmentPosition(segment_position.index + 1, start_position)
         current_segment = driving_route_part[1]
 
-    if segment_position.index == (len(vehicle.osm_route) - 1) and start_position == current_segment.length:
-        # the end of the driving route
-        level_of_service = 1.0
-    else:
-        level_of_service = gv_db.level_of_service_in_front_of_vehicle(current_time, current_segment, vehicle.id,
+    level_of_service = gv_db.level_of_service_in_front_of_vehicle(current_time, current_segment, vehicle.id,
                                                                          start_position, los_vehicles_tolerance)
 
     # if car is stuck in traffic jam, it will not move and its speed will be 0
@@ -116,12 +112,6 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
     # update the vehicle
     vehicle.time_offset += vehicle_end_time - current_time
     vehicle.set_position(segment_pos)
-
-    # step_m = assigned_speed_mps * (vehicle.fcd_sampling_period / timedelta(seconds=1))
-    # segment = driving_route[vehicle.segment_position.index]
-    # dt = departure_time + vehicle.time_offset
-    # logger.info(f"\n{dt} {vehicle.id} ({vehicle.start_distance_offset}) {segment.id} ({segment.length}) step: {step_m}")
-    # logger.info(fcds)
 
     segment = driving_route_part[segment_pos.index - segment_pos_old.index]
     segment_old = driving_route_part[0]
@@ -253,5 +243,4 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
         new_fcds = advance_waiting_vehicle(vehicle, routing_map, departure_time)
         fcds.extend(new_fcds)
 
-    # assert len(fcds) == len(vehicles_to_be_moved)
     return fcds, vehicles_moved

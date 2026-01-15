@@ -523,7 +523,7 @@ class Map:
         return get_edge_id_from_data(self.current_network[node_from][node_to])
 
 
-def admin_level_to_road_filter(admin_level):  # TODO: where to put it?
+def admin_level_to_road_filter(admin_level):
     """Create a road filter based on administrative level."""
     if admin_level <= 2:  # country level
         return '["highway"~"motorway|trunk|primary"]'

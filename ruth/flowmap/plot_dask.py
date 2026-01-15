@@ -224,7 +224,7 @@ def create_frames_dask(dask_workers,
                         plot_style_settings=None,
                         batch_size=10):
     print("Max width count:", plot_style_settings['max_width_count'])
-    client = Client(threads_per_worker=2, n_workers=dask_workers)
+    client = Client(threads_per_worker=1, n_workers=dask_workers)
     setup_output_dir(save_path)
     client.run(init_worker_graph, bbox=bbox, download_date=download_date)
 

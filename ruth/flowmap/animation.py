@@ -18,11 +18,9 @@ from .flowmapframe.speeds import (plot_routes as plot_routes_speeds,
 from .flowmapframe.plot import (plot_routes as plot_routes_densities,
                                 get_color_bar_info as get_color_bar_info_densities)
 
-from ruth.utils import TimerSet
-from ruth.simulator import Simulation
+from ..utils import TimerSet
 
 from .ax_settings import AxSettings
-from .plot_dask import create_frames_dask, save_frames_to_video
 from ..data.map import Map, BBox
 
 def load_file_content(path):
@@ -238,6 +236,8 @@ class SimulationAnimator(ABC):
         output_path = path.join(self.save_path, f'{str(timestamp)}-rt.{filetype}')
 
         if self.dask:
+            from .plot_dask import create_frames_dask, save_frames_to_video
+
             plot_style_settings = {}
             plot_style_settings['style'] = 'speeds' if isinstance(self, SimulationSpeedsAnimator) else 'density'
             plot_style_settings['width_modif'] = self.width_modif

@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict, deque
 from datetime import datetime
 from typing import List, TYPE_CHECKING, Dict
@@ -13,15 +14,17 @@ class FCDHistory:
 
     def __init__(self, h5_path: str, buffer_size, keep_in_memory):
         self.path = h5_path
-        self.writer = HDF5Writer(h5_path)
         self.buffer_size = buffer_size
         self.buffer: List[FCDRecord] = []
 
         self.keep_in_memory = keep_in_memory
         self.fcd_history: List[FCDRecord] = []
         self.start_time = None
+        self.writer = None
 
     def __enter__(self):
+        if self.writer is None:
+            self.writer = HDF5Writer(self.path)
         self.start_time = datetime.now()
         return self
 
@@ -40,7 +43,7 @@ class FCDHistory:
     def __setstate__(self, state):
         if isinstance(state, dict):
             self.__dict__.update(state)
-            self.writer = HDF5Writer(self.path)
+            self.writer = None
         elif isinstance(state, list):
             # backward compatibility for old pickles
             self.keep_in_memory = True
@@ -70,6 +73,7 @@ class FCDHistory:
         self.writer.close()
 
     def to_dataframe(self):
+        logging.warning("This function will be deprecated soon with migration to h5 storage for FCD history.")
         if not self.keep_in_memory:
             raise NotImplementedError("to_dataframe is disabled when streaming to HDF5.")
 
@@ -86,33 +90,3 @@ class FCDHistory:
             data["active"].append(fcd.active)
 
         return pd.DataFrame(data)
-
-    def to_dataframe_short(self):
-        data = {
-            "timestamp": [fcd.datetime for fcd in self.fcd_history],
-            "node_from": pd.array([fcd.segment.node_from for fcd in self.fcd_history], dtype="Int64"),
-            "node_to": pd.array([fcd.segment.node_to for fcd in self.fcd_history], dtype="Int64"),
-            "segment_length": pd.array([fcd.segment.length for fcd in self.fcd_history], dtype="float"),
-            "vehicle_id": pd.array([fcd.vehicle_id for fcd in self.fcd_history], dtype="Int32"),
-            "start_offset_m": pd.array([fcd.offset_from_start for fcd in self.fcd_history], dtype="float"),
-            "speed_mps": pd.array([fcd.vehicle_speed_mps for fcd in self.fcd_history], dtype="float"),
-        }
-
-        return pd.DataFrame(data)
-
-
-    def speed_in_time_at_segment(self, datetime, node_from, node_to):
-        if not self.keep_in_memory:
-            raise NotImplementedError("speed_in_time_at_segment is disabled when streaming to HDF5.")
-
-        # check if has attribute fcd_by_segment
-        if not hasattr(self, 'fcd_by_segment'):
-            self.fcd_by_segment = defaultdict(list)
-            for fcd in self.fcd_history:
-                self.fcd_by_segment[fcd.segment.id].append(fcd)
-
-        speeds = [fcd.vehicle_speed_mps for fcd in self.fcd_by_segment.get(SegmentId((node_from, node_to)), []) if
-                  fcd.datetime == datetime]
-        if len(speeds) == 0:
-            return None
-        return sum(speeds) / len(speeds)

@@ -192,13 +192,27 @@ void read_into_memory(const std::string &filename, const std::string &dataset_na
 }
 
 int64_t round_and_chunk(std::vector<VehicleData> &data, const int number_of_frames, const int round_freq_s,
-                     std::vector<std::pair<size_t,size_t>> &ranges){
+                     std::vector<std::pair<size_t,size_t>> &ranges, const int64_t explicit_round_interval = -1){
 
     const Timestamp first_ts = data.front().timestamp;
     const Timestamp last_ts = data.back().timestamp;
     int64_t duration = last_ts - first_ts;
-    int64_t round_interval = duration / number_of_frames;
-    if (round_interval < round_freq_s) round_interval = round_freq_s;
+    int64_t round_interval = 0;
+
+    if (explicit_round_interval > 0) {
+        round_interval = explicit_round_interval;
+        if (round_interval < round_freq_s) {
+            std::cerr << "Warning: explicit round_interval (" << round_interval
+                      << "s) is below file minimum round_freq_s (" << round_freq_s
+                      << "s). Using " << round_freq_s << "s instead.\n";
+            round_interval = round_freq_s;
+        }
+    } else {
+        if (number_of_frames <= 0)
+            throw std::runtime_error("Invalid number_of_frames (0) when explicit round interval not provided.");
+        round_interval = duration / number_of_frames;
+        if (round_interval < round_freq_s) round_interval = round_freq_s;
+    }
 
     for (auto &d : data) {
         d.frame_id = ((d.timestamp + round_interval / 2) / round_interval);
@@ -586,9 +600,10 @@ struct Config {
     std::string filename = "fcd_history.h5";
     std::string dataset_name = "fcd";
     std::string outfile = "fcd_aggregated.h5";
-    int length_s = 60;
+    int length_s = -1;               // -1 means not provided by user
     int fps = 25;
     size_t max_records = std::numeric_limits<size_t>::max();
+    int round_interval_s = -1;       // explicit round interval provided by user (seconds)
 };
 
 Config parseArgs(int argc, char* argv[]) {
@@ -597,6 +612,7 @@ Config parseArgs(int argc, char* argv[]) {
     static struct option long_options[] = {
         {"outfile", required_argument, nullptr, 'o'},
         {"length", required_argument, nullptr, 'l'},
+        {"round-interval", required_argument, nullptr, 'r'},
         {"fps", required_argument, nullptr, 'p'},
         {"maxrecords", required_argument, nullptr, 'm'},
         {"help", no_argument, nullptr, 'h'},
@@ -609,11 +625,12 @@ Config parseArgs(int argc, char* argv[]) {
         switch (c) {
             case 'o': cfg.outfile = optarg; break;
             case 'l': cfg.length_s = std::stoi(optarg); break;
+            case 'r': cfg.round_interval_s = std::stoi(optarg); break;
             case 'p': cfg.fps = std::stoi(optarg); break;
             case 'm': cfg.max_records = std::stoull(optarg); break;
             case 'h':
                 std::cout << "Usage: ./video_preprocess <INPUT_FILE> [--outfile FILE] "
-                             "[--length SEC] [--fps N] [--maxrecords N]\n";
+                             "[--length SEC] [--round-interval SEC] [--fps N] [--maxrecords N]\n";
                 exit(0);
         }
     }
@@ -622,6 +639,14 @@ Config parseArgs(int argc, char* argv[]) {
         cfg.filename = argv[optind];
     } else {
         std::cerr << "Error: filename is required\n";
+        exit(1);
+    }
+
+    // Require that user provides either duration (--length) or explicit round interval (--round-interval)
+    if (cfg.length_s <= 0 && cfg.round_interval_s <= 0) {
+        std::cerr << "Error: you must specify either --length <seconds> or --round-interval <seconds>\n";
+        std::cerr << "Usage: ./video_preprocess <INPUT_FILE> [--outfile FILE] "
+                  << "[--length SEC] [--round-interval SEC] [--fps N] [--maxrecords N]\n";
         exit(1);
     }
 
@@ -639,14 +664,19 @@ int main(int argc, char* argv[]) {
     const int length_s = cfg.length_s;
     const int fps = cfg.fps;
     const size_t max_records = cfg.max_records;
-    const int number_of_frames = length_s * fps;
+    const int number_of_frames = (length_s > 0) ? (length_s * fps) : 0;
     int round_freq_s = 5; // will be read from file
 
     std::cout << "Input file: " << filename << "\n";
     std::cout << "Dataset name: " << dataset_name << "\n";
     std::cout << "Output file: " << outfile << "\n";
-    std::cout << "Length (s): " << length_s << "\n";
-    std::cout << "FPS: " << fps << "\n\n";
+    if (length_s > 0) {
+        std::cout << "Length (s): " << length_s << "\n";
+        std::cout << "FPS: " << fps << "\n\n";
+        std::cout << "Number of frames: " << number_of_frames << "\n";
+    } else {
+        std::cout << "Using explicit round interval (s): " << cfg.round_interval_s << "\n\n";
+    }
 
     // --------------------- Read input data --------------------
     std::vector<VehicleData> data;
@@ -659,7 +689,7 @@ int main(int argc, char* argv[]) {
     // ----------------- Round timestamps and chunk data --------
     std::vector<std::pair<size_t,size_t>> ranges;
     t0 = std::chrono::high_resolution_clock::now();
-    auto round_interval = round_and_chunk(data, number_of_frames, round_freq_s, ranges);
+    auto round_interval = round_and_chunk(data, number_of_frames, round_freq_s, ranges, cfg.round_interval_s);
     t1 = std::chrono::high_resolution_clock::now();
     std::cout << "Round+Chunk: " << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms\n";
     // ----------------------------------------------------------
