@@ -1,9 +1,11 @@
 import logging
+import os
 import pickle
+import glob
 from dataclasses import InitVar, dataclass
 from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, BinaryIO, cast
 
 import h5py
 import pandas as pd
@@ -70,12 +72,19 @@ class SimSetting:
     max_records_per_file: int = None
     stuck_detection: int = 0
     plateau_default_route: bool = False
+    fcd_history_base_name: str = "fcd_history"
 
     def __post_init__(self, seed: Optional[int]):
         if seed is not None:
             rnd_seed(seed)
         self.rnd_gen = random
 
+        if self.fcd_history_base_name:
+            # when starting a new simulation, there must be no existing part files
+            base_no_ext = os.path.splitext(self.fcd_history_base_name)[0]
+            existing_parts = glob.glob(f"{base_no_ext}-part*.h5")
+            if existing_parts:
+                raise FileExistsError(f"FCD history base '{self.fcd_history_base_name}' conflicts with existing files: {existing_parts}")
 
 class Simulation:
     """A simulation state."""
@@ -93,7 +102,7 @@ class Simulation:
 
         self.setting = setting
         # use configured buffer size and max records per file for FCD history
-        self.history = FCDHistory("fcd_history.h5", self.setting.buffer_size, self.setting.max_records_per_file)
+        self.history = FCDHistory(self.setting.fcd_history_base_name, self.setting.buffer_size, self.setting.max_records_per_file)
         self.global_view = GlobalView()  # active global view
         self.vehicles = vehicles
         self.steps_info = []
@@ -205,12 +214,14 @@ class Simulation:
 
     def store(self, path):
         with open(path, 'wb') as f:
-            pickle.dump(self, f)
+            # cast to BinaryIO to satisfy static type checkers
+            pickle.dump(self, cast(BinaryIO, f))
 
     @staticmethod
     def load(path):
         with open(path, 'rb') as f:
-            return pickle.load(f)
+            # cast to BinaryIO to satisfy static type checkers
+            return pickle.load(cast(BinaryIO, f))
 
     @staticmethod
     def load_h5_df(path):

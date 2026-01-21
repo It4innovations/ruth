@@ -3,8 +3,8 @@ from datetime import datetime
 from typing import List, TYPE_CHECKING
 import os
 import glob
-
-import numpy as np
+import re
+import sys
 
 from .data.hdf_stream_writer import HDF5Writer
 
@@ -14,8 +14,8 @@ if TYPE_CHECKING:
 
 class FCDHistory:
 
-    def __init__(self, h5_path: str, buffer_size, max_records_per_file=None):
-        self.base_path = h5_path
+    def __init__(self, h5_path_base: str, buffer_size, max_records_per_file=None):
+        self.base_path = h5_path_base
         self.buffer_size = buffer_size
         self.buffer: List[FCDRecord] = []
 
@@ -25,7 +25,7 @@ class FCDHistory:
 
         self.max_records_per_file = max_records_per_file
         if self.max_records_per_file is None:
-            self.max_records_per_file = np.max
+            self.max_records_per_file = sys.maxsize
         self._current_part = 0
 
     def __enter__(self):
@@ -52,8 +52,32 @@ class FCDHistory:
             self.writer = None
             if not hasattr(self, 'base_path'):
                 self.base_path = self.path
+
             if not hasattr(self, "_current_part"):
                 self._current_part = 0
+            else:
+                self._current_part += 1
+
+                # look for existing fcd part files (basename matching "<base>-partNNNN.h5")
+                base_no_ext = os.path.splitext(self.base_path)[0]
+                existing_paths = glob.glob(f"{base_no_ext}-part*.h5")
+                if existing_paths:
+                    part_nums = []
+                    for p in existing_paths:
+                        basename = os.path.basename(p)
+                        m = re.search(r"-part(\d+)\.h5$", basename)
+                        try:
+                            part_nums.append(int(m.group(1)))
+                        except Exception:
+                            continue
+
+                    max_part = max(part_nums, default=-1)
+                    if max_part >= self._current_part:
+                        logging.warning(f"FCD history part files exist for base '{self.base_path}'. Continuing from part {max_part + 1}.")
+                        self._current_part = max_part + 3
+
+                a = self._current_part
+
         else:
             print(state)
             raise TypeError(f"Expected dict for state, got {type(state)}")
