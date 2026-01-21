@@ -147,20 +147,16 @@ void read_into_memory(const std::string &filename, const std::string &dataset_na
 
     if (!std::filesystem::exists(filename)) {
         std::cerr << "Error: file '" << filename << "' does not exist\n";
-        exit(1);
+        return;
     }
 
     H5File file(filename, H5F_ACC_RDONLY);
-
-    // Check if dataset exists first
     if (H5Lexists(file.getId(), dataset_name.c_str(), H5P_DEFAULT) <= 0) {
-        std::cerr << "Error: dataset '" << dataset_name << "' not found in file '" << filename << "'\n";
-        std::cerr << "Make sure you are using simulator output (fcd_history.h5) as input file.\n";
-        exit(1);
+        std::cerr << "Error: dataset '" << dataset_name << "' not found in " << filename << "\n";
+        return;
     }
 
     DataSet dataset = file.openDataSet(dataset_name);
-
     CompType mtype(sizeof(VehicleData));
     mtype.insertMember("timestamp", HOFFSET(VehicleData, timestamp), PredType::NATIVE_INT64);
     mtype.insertMember("node_from", HOFFSET(VehicleData, node_from), PredType::NATIVE_INT64);
@@ -173,21 +169,19 @@ void read_into_memory(const std::string &filename, const std::string &dataset_na
 
     DataSpace dataspace = dataset.getSpace();
     hsize_t dims[1]; dataspace.getSimpleExtentDims(dims);
-
     hsize_t count[1] = { std::min(dims[0], max_records) };
-    std::cout << "Reading " << count[0] << " records from HDF5 file.\n";
-    data.resize(count[0]);
+
+    size_t current_size = data.size();
+    data.resize(current_size + count[0]);
+
     hsize_t offset[1] = {0};
     dataspace.selectHyperslab(H5S_SELECT_SET, count, offset);
     DataSpace memspace(1, count);
-    dataset.read(data.data(), mtype, memspace, dataspace);
+    dataset.read(data.data() + current_size, mtype, memspace, dataspace);
 
     if (H5Aexists(file.getId(), "round_freq_s") > 0) {
         Attribute attr = file.openAttribute("round_freq_s");
         attr.read(PredType::NATIVE_INT, &round_freq_s);
-        std::cout << "Simulation step (s): " << round_freq_s << "\n";
-    } else {
-        std::cout << "Attribute 'round_freq_s' does not exist. Using default: " << round_freq_s << "\n";
     }
 }
 
@@ -384,7 +378,7 @@ VehicleID get_unique_vehicle_count(const std::vector<VehicleData> &data)
 void write_index_to_hdf5(const std::string &filename,
                          const std::string &dataset_name,
                          const std::vector<IndexRow> &index) {
-    H5File file(filename, H5F_ACC_RDWR); // file must exist
+    H5File file(filename, H5F_ACC_RDWR);
     CompType itype(sizeof(IndexRow));
     itype.insertMember("rounded_ts", HOFFSET(IndexRow, frame_id), PredType::NATIVE_INT64);
     itype.insertMember("start_index", HOFFSET(IndexRow, start_index), PredType::NATIVE_INT64);
@@ -417,7 +411,6 @@ std::vector<IndexRow> read_index(const std::string &filename, const std::string 
 }
 
 bool lookup_index(const std::vector<IndexRow> &index, int64_t rounded_ts, int64_t &start_out, int64_t &count_out) {
-    // binary search on index (index sorted by rounded_ts)
     size_t lo = 0, hi = index.size();
     while (lo < hi) {
         size_t mid = (lo + hi) / 2;
@@ -597,13 +590,13 @@ void copy_metadata(const std::string &src, const std::string &dst,
 }
 
 struct Config {
-    std::string filename = "fcd_history.h5";
+    std::string filename;
     std::string dataset_name = "fcd";
     std::string outfile = "fcd_aggregated.h5";
-    int length_s = -1;               // -1 means not provided by user
+    int length_s = -1;
     int fps = 25;
     size_t max_records = std::numeric_limits<size_t>::max();
-    int round_interval_s = -1;       // explicit round interval provided by user (seconds)
+    int round_interval_s = -1;
 };
 
 Config parseArgs(int argc, char* argv[]) {
@@ -678,12 +671,34 @@ int main(int argc, char* argv[]) {
         std::cout << "Using explicit round interval (s): " << cfg.round_interval_s << "\n\n";
     }
 
-    // --------------------- Read input data --------------------
+// --------------------- Read input data --------------------
     std::vector<VehicleData> data;
+    std::vector<std::string> files_to_process;
+    std::string first_file = "";
+
+    if (std::filesystem::is_directory(filename)) {
+        for (const auto& entry : std::filesystem::directory_iterator(filename)) {
+            if (entry.path().extension() == ".h5") {
+                files_to_process.push_back(entry.path().string());
+            }
+        }
+    } else {
+        files_to_process.push_back(filename);
+    }
+
+    if (files_to_process.empty()) {
+        std::cerr << "No .h5 files found to process.\n";
+        return 1;
+    }
+    first_file = files_to_process[0];
+
     auto t0 = std::chrono::high_resolution_clock::now();
-    read_into_memory(filename, dataset_name, data, max_records, round_freq_s);
+    for (const auto& f : files_to_process) {
+        std::cout << "Loading: " << f << "\n";
+        read_into_memory(f, dataset_name, data, max_records, round_freq_s);
+    }
     auto t1 = std::chrono::high_resolution_clock::now();
-    std::cout << "Read HDF5: " << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms\n";
+    std::cout << "Read all HDF5 files: " << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms\n";
     // ----------------------------------------------------------
 
     // ----------------- Round timestamps and chunk data --------
@@ -749,7 +764,7 @@ int main(int argc, char* argv[]) {
 
     // ----------------- Copy file-level attributes ----------------
     t0 = std::chrono::high_resolution_clock::now();
-    copy_metadata(filename, outfile, round_interval, vehicles_count,
+    copy_metadata(first_file, outfile, round_interval, vehicles_count,
                   max_unique_vehicle_count, max_unique_on_segment_count);
     t1 = std::chrono::high_resolution_clock::now();
     std::cout << "Copy file-level attributes: " << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms\n";
