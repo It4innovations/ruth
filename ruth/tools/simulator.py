@@ -5,7 +5,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Type
+from typing import List, Optional
 
 import click
 import signal
@@ -37,6 +37,8 @@ class CommonArgs:
     continue_from: str = ''
     stuck_detection: int = 0
     plateau_default_route: bool = False
+    buffer_size: int = 10_000
+    max_records_per_file: int = None
 
 
 @dataclass
@@ -84,12 +86,16 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     travel_time_limit_perc = common_args.travel_time_limit_perc
     seed = common_args.seed
     speeds_path = common_args.speeds_path
+    buffer_size = common_args.buffer_size
+    max_records_per_file = common_args.max_records_per_file
     continue_from = common_args.continue_from
     stuck_detection = common_args.stuck_detection
     plateau_default_route = common_args.plateau_default_route
 
     ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
                     los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
+                    buffer_size=buffer_size,
+                    max_records_per_file=max_records_per_file,
                     stuck_detection=stuck_detection,
                     plateau_default_route=plateau_default_route)
 
@@ -200,6 +206,10 @@ def start_zeromq_cluster(
               help="Path to csv file with temporary max speeds.")
 @click.option("--out", type=str, default="simulation-record.pickle")
 @click.option("--seed", type=int, help="Fixed seed for random number generator.")
+@click.option("--buffer-size", type=int, default=10_000,
+              help="Buffer size (number of FCD records) before flushing to disk.")
+@click.option("--max-records-per-file", type=int, default=None,
+              help="Rotate HDF5 file after this many records. If not set, no rotation by size is applied.")
 @click.option("--walltime-s", type=int, help="Time limit in which the state of simulation is saved")
 @click.option("--saving-interval-s", type=int,
               help="Time interval in which the state of simulation periodically is saved")
@@ -223,6 +233,8 @@ def single_node_simulator(ctx,
                           speeds_path,
                           out,
                           seed,
+                          buffer_size,
+                          max_records_per_file,
                           walltime_s,
                           saving_interval_s,
                           continue_from,
@@ -247,6 +259,8 @@ def single_node_simulator(ctx,
         speeds_path=speeds_path,
         out=out,
         seed=seed,
+        buffer_size=buffer_size,
+        max_records_per_file=max_records_per_file,
         walltime=walltime,
         saving_interval=saving_interval,
         continue_from=continue_from,

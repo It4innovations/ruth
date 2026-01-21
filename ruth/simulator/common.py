@@ -11,7 +11,7 @@ from ..vehicle import Vehicle
 logger = logging.getLogger(__name__)
 
 
-def load_vehicles(input_path: str) -> Tuple[List[Vehicle], Optional[BBox], Optional[pd.Timestamp]]:
+def load_vehicles(input_path: str) -> Tuple[List[Vehicle], Optional[BBox], Optional[str]]:
     logger.info("Loading data... %s", input_path)
     df = pd.read_parquet(input_path, engine="fastparquet")
     if df.empty:

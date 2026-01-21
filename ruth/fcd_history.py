@@ -1,11 +1,12 @@
 import logging
-from collections import defaultdict, deque
 from datetime import datetime
-from typing import List, TYPE_CHECKING, Dict
-import pandas as pd
+from typing import List, TYPE_CHECKING
+import os
+import glob
+
+import numpy as np
+
 from .data.hdf_stream_writer import HDF5Writer
-from .data.segment import SegmentId
-from .mpi_comm.distributor import MPIDistributor
 
 if TYPE_CHECKING:
     from .simulator.simulation import FCDRecord
@@ -13,19 +14,23 @@ if TYPE_CHECKING:
 
 class FCDHistory:
 
-    def __init__(self, h5_path: str, buffer_size, keep_in_memory):
-        self.path = h5_path
+    def __init__(self, h5_path: str, buffer_size, max_records_per_file=None):
+        self.base_path = h5_path
         self.buffer_size = buffer_size
         self.buffer: List[FCDRecord] = []
 
-        self.keep_in_memory = keep_in_memory
         self.fcd_history: List[FCDRecord] = []
         self.start_time = None
         self.writer = None
 
+        self.max_records_per_file = max_records_per_file
+        if self.max_records_per_file is None:
+            self.max_records_per_file = np.max
+        self._current_part = 0
+
     def __enter__(self):
         if self.writer is None:
-            self.writer = HDF5Writer(self.path)
+            self._open_existing_writer()
         self.start_time = datetime.now()
         return self
 
@@ -35,7 +40,6 @@ class FCDHistory:
             self.writer.save_computational_time(computational_time)
         self.close()
 
-    # if pickling do not pickle the writer
     def __getstate__(self):
         state = self.__dict__.copy()
         if 'writer' in state:
@@ -46,10 +50,10 @@ class FCDHistory:
         if isinstance(state, dict):
             self.__dict__.update(state)
             self.writer = None
-        elif isinstance(state, list):
-            # backward compatibility for old pickles
-            self.keep_in_memory = True
-            self.fcd_history = state
+            if not hasattr(self, 'base_path'):
+                self.base_path = self.path
+            if not hasattr(self, "_current_part"):
+                self._current_part = 0
         else:
             print(state)
             raise TypeError(f"Expected dict for state, got {type(state)}")
@@ -58,37 +62,51 @@ class FCDHistory:
     def extend(self, fcd: List["FCDRecord"]):
         self.buffer.extend(fcd)
 
-        if self.keep_in_memory:
-            self.fcd_history.extend(fcd)
-
         if len(self.buffer) >= self.buffer_size:
+            if self.writer is None:
+                self._open_existing_writer()
             self.flush_to_disk()
 
     def flush_to_disk(self):
-        if not self.buffer: return
-        self.writer.append_file(self.buffer)
-        self.buffer.clear()
+        if not self.buffer:
+            return
+
+        # while there is data in buffer, append as much as fits in current file; rotate if needed
+        while self.buffer:
+            remaining_in_file = self.max_records_per_file - self.writer.index
+            if remaining_in_file <= 0:
+                self._rotate_writer()
+                continue
+
+            to_take = min(len(self.buffer), remaining_in_file)
+            chunk = self.buffer[:to_take]
+            self.writer.append_file(chunk)
+            # remove chunk from buffer
+            del self.buffer[:to_take]
 
     def close(self):
         if self.buffer:
             self.flush_to_disk()
-        self.writer.close()
+        if self.writer is not None:
+            self.writer.close()
 
     def to_dataframe(self):
         logging.warning("This function will be deprecated soon with migration to h5 storage for FCD history.")
-        if not self.keep_in_memory:
-            raise NotImplementedError("to_dataframe is disabled when streaming to HDF5.")
+        raise NotImplementedError("to_dataframe is disabled when streaming to HDF5.")
 
-        data = defaultdict(list)
-        for fcd in self.fcd_history:
-            data["timestamp"].append(fcd.datetime)
-            data["node_from"].append(fcd.segment.node_from)
-            data["node_to"].append(fcd.segment.node_to)
-            data["segment_length"].append(fcd.segment.length)
-            data["vehicle_id"].append(fcd.vehicle_id)
-            data["start_offset_m"].append(fcd.offset_from_start)
-            data["speed_mps"].append(fcd.vehicle_speed_mps)
-            data["status"].append(fcd.status)
-            data["active"].append(fcd.active)
+    def _open_existing_writer(self):
+        base_no_ext = os.path.splitext(self.base_path)[0]
+        new_path = f"{base_no_ext}-part{self._current_part:04d}.h5"
+        self.path = new_path
+        self.writer = HDF5Writer(self.path)
 
-        return pd.DataFrame(data)
+    def _rotate_writer(self):
+        if self.writer is not None:
+            self.writer.close()
+
+        self._current_part = self._current_part + 1
+
+        base_no_ext = os.path.splitext(self.base_path)[0]
+        new_path = f"{base_no_ext}-part{self._current_part:04d}.h5"
+        self.path = new_path
+        self.writer = HDF5Writer(self.path)

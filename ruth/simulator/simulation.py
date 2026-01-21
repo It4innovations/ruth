@@ -3,7 +3,7 @@ import pickle
 from dataclasses import InitVar, dataclass
 from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import h5py
 import pandas as pd
@@ -13,8 +13,6 @@ from ..data.map import BBox, Map
 from ..data.segment import LengthMeters, Segment, SpeedMps
 from ..fcd_history import FCDHistory
 from ..globalview import GlobalView
-from ..mpi_comm.distributor import MPIDistributor
-from ..utils import round_timedelta
 from ..vehicle import Vehicle
 
 
@@ -66,12 +64,14 @@ class SimSetting:
     map_update_freq_s: timedelta = timedelta(seconds=1)
     los_vehicles_tolerance: timedelta = timedelta(seconds=0)
     travel_time_limit_perc: float = 0.0
-    seed: InitVar = None
+    seed: InitVar[Optional[int]] = None
     speeds_path: str = None
+    buffer_size: int = 10_000
+    max_records_per_file: int = None
     stuck_detection: int = 0
     plateau_default_route: bool = False
 
-    def __post_init__(self, seed):
+    def __post_init__(self, seed: Optional[int]):
         if seed is not None:
             rnd_seed(seed)
         self.rnd_gen = random
@@ -92,8 +92,8 @@ class Simulation:
         """
 
         self.setting = setting
-        self.history = FCDHistory("fcd_history.h5", buffer_size=10_000, keep_in_memory=False)
-
+        # use configured buffer size and max records per file for FCD history
+        self.history = FCDHistory("fcd_history.h5", self.setting.buffer_size, self.setting.max_records_per_file)
         self.global_view = GlobalView()  # active global view
         self.vehicles = vehicles
         self.steps_info = []

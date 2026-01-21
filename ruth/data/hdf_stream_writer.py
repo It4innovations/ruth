@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 import os
 from typing import List
+import os
+import tempfile
 import h5py
 import numpy as np
 
@@ -23,22 +25,18 @@ compound_dtype = np.dtype([
 
 class HDF5Writer:
     def __init__(self, filename, dtype=None):
-        # check if the file exists raise an error if it does
-        if h5py.is_hdf5(filename):
-            raise FileExistsError(f"The file {filename} already exists. Use a different filename or remove the existing file.")
+        # If the path exists but is not a valid HDF5 file, raise to avoid data corruption
+        if os.path.exists(filename):
+            raise FileExistsError(f"The path {filename} exists.")
 
-        self.file = h5py.File(filename, 'x')
+        # Open file in append mode so we can continue writing to an existing file
+        self.file = h5py.File(filename, 'a')
 
-        if 'fcd' not in self.file or not isinstance(self.file['fcd'], h5py.Dataset):
-            self.dataset = self.file.create_dataset(
-                'fcd',
-                shape=(0,),
-                maxshape=(None,),
-                dtype=compound_dtype,
-                chunks=True
-            )
-        else:
-            self.dataset = self.file['fcd']
+        # Create or get the dataset; require_dataset will validate dtype if it exists
+        # Use a reasonable chunk size for growing 1D records
+        chunk_shape = (1024,)
+        self.dataset = self.file.require_dataset('fcd', shape=(0,), maxshape=(None,), dtype=compound_dtype,
+                                                chunks=chunk_shape)
         self.index = self.dataset.shape[0]
 
     def __enter__(self):
@@ -58,29 +56,41 @@ class HDF5Writer:
         if 'download_date' not in self.file.attrs:
             self.file.attrs['download_date'] = str(routing_map.download_date)
         if 'departure_time' not in self.file.attrs:
+            # store as ISO string
             self.file.attrs['departure_time'] = departure_time.isoformat()
         if 'round_freq_s' not in self.file.attrs:
-            self.file.attrs['round_freq_s'] = round_freq.total_seconds()
+            self.file.attrs['round_freq_s'] = float(round_freq.total_seconds())
         self.file.flush()
 
     def append_file(self, buffer: List):
-        # Create a structured numpy array from the FCD records in the buffer
-        # Note: All simulation datetimes are treated as UTC (timezone-naive but UTC-based)
-        # Using (datetime - epoch) avoids timezone issues across machines
         data = np.array([
-            (int((fcd.datetime - _EPOCH).total_seconds()),
-             fcd.segment.node_from, fcd.segment.node_to, fcd.segment.length,
-             fcd.vehicle_id, float(fcd.offset_from_start), fcd.vehicle_speed_mps, fcd.active)
+            (
+                int((fcd.datetime - _EPOCH).total_seconds()),
+                int(fcd.segment.node_from),
+                int(fcd.segment.node_to),
+                int(fcd.segment.length),
+                int(fcd.vehicle_id),
+                float(fcd.offset_from_start),
+                float(fcd.vehicle_speed_mps),
+                bool(fcd.active)
+            )
             for fcd in buffer
         ], dtype=compound_dtype)
 
-        # Append data to the HDF5 file
         data_len = len(data)
-        self.file["fcd"].resize((self.index + data_len,))
-        self.file["fcd"][self.index:self.index + data_len] = data
+        if data_len == 0:
+            return 0
+
+        # Resize dataset and append
+        self.file['fcd'].resize((self.index + data_len,))
+        self.file['fcd'][self.index:self.index + data_len] = data
         self.index += data_len
         self.file.flush()
         return data_len
 
     def close(self):
-        self.file.close()
+        # Close the HDF5 file
+        try:
+            self.file.close()
+        except Exception:
+            pass
