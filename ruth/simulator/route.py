@@ -127,7 +127,6 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
         if vehicle.next_node == vehicle.dest_node:
             # stop the processing in case the vehicle reached the end
             vehicle.active = False
-            queues_manager.remove_inactive_vehicle(vehicle)
 
         elif segment_pos_old != vehicle.segment_position:
             # if the vehicle is at the end of the segment and was not there before, add it to the queue
@@ -231,10 +230,11 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
 
             vehicle = vehicles_in_queues[vehicle_id]
             del vehicles_in_queues[vehicle_id]
+            prev_pos = vehicle.segment_position
             new_fcds = advance_vehicle(vehicle, departure_time, gv_db, routing_map, queues_manager,
                                        los_vehicles_tolerance)
             fcds.extend(new_fcds)
-            was_moved = len(queue) == 0 or (vehicle_id != queue[0])
+            was_moved = prev_pos != vehicle.segment_position
             vehicles_moved = vehicles_moved or was_moved
             if not was_moved:
                 break
@@ -243,4 +243,5 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
         new_fcds = advance_waiting_vehicle(vehicle, routing_map, departure_time)
         fcds.extend(new_fcds)
 
+    queues_manager.batch_update()
     return fcds, vehicles_moved
