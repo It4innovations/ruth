@@ -1,7 +1,6 @@
 import logging
-import math
 from datetime import datetime, timedelta
-from typing import List, Tuple
+from typing import List, Tuple, Generator
 
 from .queues import QueuesManager
 from ..data.map import Map
@@ -13,71 +12,141 @@ from ..vehicle import Vehicle
 logger = logging.getLogger(__name__)
 
 
-def move_on_segment(
+def get_vehicle_speeds(vehicles: List[Vehicle], departure_time: datetime,
+                      gv_db: GlobalView, routing_map: Map,
+                      los_vehicles_tolerance: timedelta) -> Generator[Tuple[Vehicle, SpeedMps, bool, List[Segment]], None, None]:
+    """
+    Generator that yields vehicles with their speeds and route information.
+    Performance optimized: processes vehicles efficiently without storing intermediate lists.
+
+    Args:
+        vehicles: List of vehicles to process
+        departure_time: Simulation departure time
+        gv_db: Global view database
+        routing_map: Map with routing info
+        los_vehicles_tolerance: Tolerance for LoS calculations
+
+    Yields:
+        (vehicle, speed_mps, changed_segment, driving_route_part)
+    """
+    for vehicle in vehicles:
+        current_vehicle_index = vehicle.start_index
+        osm_route_part = vehicle.osm_route[current_vehicle_index:current_vehicle_index + 3]
+        driving_route_part = routing_map.osm_route_to_py_segments(osm_route_part)
+
+        speed_mps, changed_segment = get_vehicle_speed(
+            vehicle, driving_route_part, departure_time + vehicle.time_offset,
+            gv_db, routing_map, los_vehicles_tolerance
+        )
+
+        yield vehicle, speed_mps, changed_segment, driving_route_part
+
+
+def get_input(departure_time: datetime, vehicle: Vehicle, gv_db: GlobalView,
+              routing_map: Map, los_vehicles_tolerance: timedelta) -> Tuple[SpeedMps, bool, List[Segment]]:
+    """
+    Get speed, segment change flag, and driving route for a vehicle.
+
+    Returns:
+        (speed_mps, changed_segment, driving_route_part)
+    """
+    current_vehicle_index = vehicle.start_index
+    osm_route_part = vehicle.osm_route[current_vehicle_index:current_vehicle_index + 3]
+    driving_route_part = routing_map.osm_route_to_py_segments(osm_route_part)
+
+    speed_mps, changed_segment = get_vehicle_speed(
+        vehicle, driving_route_part, departure_time + vehicle.time_offset,
+        gv_db, routing_map, los_vehicles_tolerance
+    )
+
+    return speed_mps, changed_segment, driving_route_part
+
+
+def get_vehicle_speed(
         vehicle: Vehicle,
         driving_route_part: List[Segment],
         current_time: datetime,
         gv_db: GlobalView,
         routing_map: Map,
-        los_vehicles_tolerance: timedelta = timedelta(seconds=0),
+        los_vehicles_tolerance: timedelta = timedelta(seconds=0)) -> Tuple[SpeedMps, bool]:
+    """
+    Calculate vehicle speed based on level of service.
+
+    Returns:
+        (speed_mps, changed_segment)
+    """
+    segment_position = vehicle.segment_position
+    start_position = segment_position.position
+    current_segment = driving_route_part[0]
+    assert segment_position.position <= current_segment.length
+    changed_segment = False
+
+    if start_position == current_segment.length:
+        # if the vehicle is at the end of a segment and there are more segments in the route
+        if vehicle.has_next_segment_closed(routing_map):
+            return SpeedMps(0.0), False
+        # if the vehicle can move to the next segment, work with the next segment
+        start_position = LengthMeters(0.0)
+        changed_segment = True
+        current_segment = driving_route_part[1]
+
+    level_of_service = gv_db.level_of_service_in_front_of_vehicle(current_time, current_segment, vehicle.id,
+                                                                  start_position, los_vehicles_tolerance)
+
+    # if car is stuck in traffic jam, it will not move and its speed will be 0
+    if level_of_service == float("inf"):
+        # in case the vehicle is stuck in traffic jam just move the time
+        return SpeedMps(0.0), False
+
+    # Speed in m/s
+    speed_mps = speed_kph_to_mps(current_segment.max_allowed_speed_kph * level_of_service)
+    return speed_mps, changed_segment
+
+def move_on_segment(
+        vehicle: Vehicle,
+        driving_route_part: List[Segment],
+        current_time: datetime,
+        speed_mps: SpeedMps,
+        changed_segment: bool,
         segment_end_delta=2
 ) -> Tuple[datetime, SegmentPosition, SpeedMps]:
     """
     Moves the car on its current segment.
     Returns (time, position, speed) at the end of the movement.
     """
-    segment_position = vehicle.segment_position
-    start_position = segment_position.position
-    current_segment = driving_route_part[0]
-    assert segment_position.position <= current_segment.length
-
-    if start_position == current_segment.length:
-        # if the vehicle is at the end of a segment and there are more segments in the route
-        if vehicle.has_next_segment_closed(routing_map):
-            return current_time + vehicle.frequency, vehicle.segment_position, SpeedMps(0.0)
-        # if the vehicle can move to the next segment, work with the next segment
-        start_position = LengthMeters(0.0)
-        segment_position = SegmentPosition(segment_position.index + 1, start_position)
+    if not changed_segment:
+        current_segment = driving_route_part[0]
+        segment_position = vehicle.segment_position
+    else:
         current_segment = driving_route_part[1]
+        segment_position = SegmentPosition(
+            index=vehicle.segment_position.index + 1,
+            position=LengthMeters(0.0)
+        )
+    start_position = segment_position.position
 
-    level_of_service = gv_db.level_of_service_in_front_of_vehicle(current_time, current_segment, vehicle.id,
-                                                                         start_position, los_vehicles_tolerance)
-
-    # if car is stuck in traffic jam, it will not move and its speed will be 0
-    if level_of_service == float("inf"):
-        # in case the vehicle is stuck in traffic jam just move the time
-        return current_time + vehicle.frequency, vehicle.segment_position, SpeedMps(0.0)
-
-    # Speed in m/s
-    speed_mps = speed_kph_to_mps(current_segment.max_allowed_speed_kph * level_of_service)
-    if math.isclose(speed_mps, 0.0):
-        # in case the vehicle is not moving, move the time and keep the previous position
+    if speed_mps == 0.0:
         return current_time + vehicle.frequency, vehicle.segment_position, SpeedMps(0.0)
 
     frequency_s = vehicle.frequency.total_seconds()
     elapsed_m = frequency_s * speed_mps
     end_position = LengthMeters(start_position + elapsed_m)
 
-    if end_position >= current_segment.length:
-        # SEGMENT LENGTH OR MORE - The car has finished the segment, it stays at the end of it
-        travel_distance_m = current_segment.length - start_position
+    segment_length = current_segment.length
+
+    # Check if vehicle reaches or passes segment end
+    if end_position >= (segment_length - segment_end_delta):
+        # Vehicle finishes segment
+        # (Segment length exactly, more or near the end)
+        travel_distance_m = segment_length - start_position
         travel_time = travel_distance_m / speed_mps
         return (
             current_time + timedelta(seconds=travel_time),
-            SegmentPosition(index=segment_position.index, position=current_segment.length),
-            speed_mps
-        )
-    elif end_position >= (current_segment.length - segment_end_delta):
-        # NEAR THE END OF THE SEGMENT - The car has finished the segment, it stays at the end of it
-        travel_distance_m = current_segment.length - start_position
-        travel_time = travel_distance_m / speed_mps
-        return (
-            current_time + timedelta(seconds=travel_time),
-            SegmentPosition(index=segment_position.index, position=current_segment.length),
+            SegmentPosition(index=segment_position.index, position=segment_length),
             speed_mps
         )
     else:
-        # LESS THAN SEGMENT LENGTH - The car moves within the segment
+        # Vehicle continues within segment
         return (
             current_time + timedelta(seconds=frequency_s),
             SegmentPosition(index=segment_position.index, position=end_position),
@@ -86,20 +155,14 @@ def move_on_segment(
 
 
 def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
-                    gv_db: GlobalView, routing_map: Map, queues_manager: QueuesManager,
-                    los_vehicles_tolerance: timedelta = timedelta(seconds=0)) -> List[FCDRecord]:
+                    speed_mps: SpeedMps, driving_route_part, changed_segment, queues_manager: QueuesManager) -> List[FCDRecord]:
     """Advance a vehicle on a route."""
 
     current_time = departure_time + vehicle.time_offset
     fcds = []
 
-    current_vehicle_index = vehicle.start_index
-    osm_route_part = vehicle.osm_route[current_vehicle_index:current_vehicle_index + 3]
-    driving_route_part = routing_map.osm_route_to_py_segments(osm_route_part)
-
     vehicle_end_time, segment_pos, assigned_speed_mps = move_on_segment(
-        vehicle, driving_route_part, current_time, gv_db, routing_map, los_vehicles_tolerance
-    )
+        vehicle, driving_route_part, current_time, speed_mps, changed_segment)
 
     segment_pos_old = vehicle.segment_position
 
@@ -211,37 +274,56 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
 
     vehicles_moved = False
     vehicles_in_queues = dict()
+    vehicles_not_in_queues = []
+
+    # SPLIT VEHICLES IN QUEUES AND NOT IN QUEUES
     for vehicle in vehicles_to_be_moved:
         queue = queues_manager.queues[(vehicle.current_node, vehicle.next_node)]
         if vehicle.id not in queue:
-            prev_pos = vehicle.segment_position
-            new_fcds = advance_vehicle(vehicle, departure_time, gv_db, routing_map, queues_manager,
-                                       los_vehicles_tolerance)
-            fcds.extend(new_fcds)
-            vehicles_moved = vehicles_moved or prev_pos != vehicle.segment_position
+            vehicles_not_in_queues.append(vehicle)
         else:
             vehicles_in_queues[vehicle.id] = vehicle
 
-    for _, queue in queues_manager.queues.copy().items():
-        queue_copy = list(queue)
-        for vehicle_id in queue_copy:
+    # Process vehicles not in queues
+    for vehicle, speed_mps, changed_segment, driving_route_part in get_vehicle_speeds(
+            vehicles_not_in_queues, departure_time, gv_db, routing_map, los_vehicles_tolerance):
+        prev_pos = vehicle.segment_position
+        new_fcds = advance_vehicle(vehicle, departure_time, speed_mps, driving_route_part, changed_segment, queues_manager)
+        if new_fcds:
+            fcds.extend(new_fcds)
+        vehicles_moved = vehicles_moved or prev_pos != vehicle.segment_position
+
+    # --------------------------------------------------------------------------------------------------------------
+    # MOVE VEHICLES IN QUEUES
+    processed_ids = set()
+    for _, queue in queues_manager.queues.items():
+        for vehicle_id in queue:
             if vehicle_id not in vehicles_in_queues:
                 break
 
             vehicle = vehicles_in_queues[vehicle_id]
-            del vehicles_in_queues[vehicle_id]
+            processed_ids.add(vehicle_id)
+
+            speed_mps, changed_segment, driving_route_part = get_input(departure_time, vehicle, gv_db,
+                                                                       routing_map, los_vehicles_tolerance)
+
             prev_pos = vehicle.segment_position
-            new_fcds = advance_vehicle(vehicle, departure_time, gv_db, routing_map, queues_manager,
-                                       los_vehicles_tolerance)
-            fcds.extend(new_fcds)
+            new_fcds = advance_vehicle(vehicle, departure_time, speed_mps, driving_route_part, changed_segment, queues_manager)
+            if new_fcds:
+                fcds.extend(new_fcds)
+
             was_moved = prev_pos != vehicle.segment_position
             vehicles_moved = vehicles_moved or was_moved
             if not was_moved:
                 break
 
-    for _, vehicle in vehicles_in_queues.items():
+    # Process unprocessed vehicles in queues (waiting vehicles)
+    for vehicle_id, vehicle in vehicles_in_queues.items():
+        if vehicle_id in processed_ids:
+            continue
         new_fcds = advance_waiting_vehicle(vehicle, routing_map, departure_time)
-        fcds.extend(new_fcds)
+        if new_fcds:
+            fcds.extend(new_fcds)
 
     queues_manager.batch_update()
     return fcds, vehicles_moved

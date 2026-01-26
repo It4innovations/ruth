@@ -53,8 +53,12 @@ class GlobalView:
         dt_min = datetime - tolerance
         dt_max = datetime + tolerance
 
+        fcd_list = self.fcd_by_segment.get(segment_id)
+        if not fcd_list:  # Early exit for empty segments
+            return 0
+
         vehicles = set()
-        for fcd in self.fcd_by_segment.get(segment_id, []):
+        for fcd in fcd_list:
             if fcd.offset_from_start > vehicle_offset_m and fcd.vehicle_id != vehicle_id:
                 if dt_min <= fcd.datetime <= dt_max:
                     vehicles.add(fcd.vehicle_id)
@@ -62,7 +66,9 @@ class GlobalView:
 
     def level_of_service_in_front_of_vehicle(self, datetime, segment, vehicle_id=-1,
                                              vehicle_offset_m=0, tolerance=None):
-        n_vehicles = self.number_of_vehicles_ahead(datetime, segment.id, tolerance,
+        # Cache segment.id locally to avoid repeated property calls
+        segment_id = segment.id
+        n_vehicles = self.number_of_vehicles_ahead(datetime, segment_id, tolerance,
                                                    vehicle_id, vehicle_offset_m)
 
         rest_segment_length = segment.length - vehicle_offset_m
