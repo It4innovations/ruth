@@ -9,6 +9,18 @@ if TYPE_CHECKING:
 
 
 class GlobalView:
+    # Class constants - density ranges for Level of Service
+    # https://transportgeography.org/contents/methods/transport-technical-economic-performance-indicators/levels-of-service-road-transportation/
+    LoS_RANGES = [
+        ((0, 12), (0.0, 0.2)),
+        ((12, 20), (0.2, 0.4)),
+        ((20, 30), (0.4, 0.6)),
+        ((30, 42), (0.6, 0.8)),
+        ((42, 67), (0.8, 1.0))
+    ]
+    MILE_TO_METERS = 1609.344
+    ENDING_LENGTH = 200
+
     def __init__(self):
         self.fcd_by_segment: Dict[SegmentId, List[FCDRecord]] = defaultdict(list)
 
@@ -38,49 +50,36 @@ class GlobalView:
         # if case vehicle_id not set, then all vehicles are counted
 
         tolerance = tolerance if tolerance is not None else timedelta(seconds=0)
+        dt_min = datetime - tolerance
+        dt_max = datetime + tolerance
+
         vehicles = set()
         for fcd in self.fcd_by_segment.get(segment_id, []):
-            if datetime - tolerance <= fcd.datetime <= datetime + tolerance:
-                if fcd.vehicle_id != vehicle_id and fcd.offset_from_start > vehicle_offset_m:
+            if fcd.offset_from_start > vehicle_offset_m and fcd.vehicle_id != vehicle_id:
+                if dt_min <= fcd.datetime <= dt_max:
                     vehicles.add(fcd.vehicle_id)
         return len(vehicles)
 
     def level_of_service_in_front_of_vehicle(self, datetime, segment, vehicle_id=-1,
                                              vehicle_offset_m=0, tolerance=None):
-        mile = 1609.344  # meters
-        # density of vehicles per mile with ranges of level of service
-        # https://transportgeography.org/contents/methods/transport-technical-economic-performance-indicators/levels-of-service-road-transportation/
-        ranges = [
-            ((0, 12), (0.0, 0.2)),
-            ((12, 20), (0.2, 0.4)),
-            ((20, 30), (0.4, 0.6)),
-            ((30, 42), (0.6, 0.8)),
-            ((42, 67), (0.8, 1.0))]
-        aprox_vehicles_length = 5  # length of the vehicle in meters
-
         n_vehicles = self.number_of_vehicles_ahead(datetime, segment.id, tolerance,
                                                    vehicle_id, vehicle_offset_m)
 
-        # NOTE: the ending length is set to avoid massive LoS increase at the end of the segments and also on short
-        # segments, can be replaced with different LoS ranges for different road types in the future
-        ending_length = 200
         rest_segment_length = segment.length - vehicle_offset_m
 
-        # rescale density
-        if rest_segment_length < ending_length:
-            n_vehicles_per_mile = n_vehicles * mile / (ending_length * segment.lanes)
-        else:
-            n_vehicles_per_mile = n_vehicles * mile / (rest_segment_length * segment.lanes)
+        # Rescale density: use ending_length to avoid massive LoS increase at segment end
+        denominator = self.ENDING_LENGTH if rest_segment_length < self.ENDING_LENGTH else rest_segment_length
+        n_vehicles_per_mile = n_vehicles * self.MILE_TO_METERS / (denominator * segment.lanes)
 
-        los = float("inf")  # in case the vehicles are stuck in traffic jam
-        for (low, high), (m, n) in ranges:
+        # Find LoS by density range
+        los = float("inf")
+        for (low, high), (m, n) in self.LoS_RANGES:
             if n_vehicles_per_mile < high:
-                d = high - low  # size of range between two densities
-                los = m + ((
-                                       n_vehicles_per_mile - low) * 0.2 / d)  # -low => shrink to the size of the range
+                d = high - low
+                los = m + ((n_vehicles_per_mile - low) * 0.2 / d)
                 break
 
-        # reverse the level of service 1.0 means 100% LoS, but the input table defines it in reverse
+        # Reverse the level of service (1.0 = 100% LoS, but ranges are inverted)
         return los if los == float("inf") else 1.0 - los
 
     def level_of_service_in_time_at_segment(self, datetime, segment):
@@ -109,8 +108,8 @@ class GlobalView:
         return SpeedKph(speed_mps_to_kph(SpeedMps(sum(speeds) / len(speeds))))
 
     def drop_old(self, dt_threshold):
-        for (segment_id, old_fcds) in self.fcd_by_segment.items():
-            new_fcds = [fcd for fcd in self.fcd_by_segment[segment_id] if fcd.datetime >= dt_threshold]
+        for segment_id, old_fcds in self.fcd_by_segment.items():
+            new_fcds = [fcd for fcd in old_fcds if fcd.datetime >= dt_threshold]
             if len(new_fcds) != len(old_fcds):
                 self.fcd_by_segment[segment_id] = new_fcds
                 # If the FCDs for the segments have changed, we need to update modified_segments
