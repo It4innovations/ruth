@@ -128,7 +128,7 @@ def move_on_segment(
     if speed_mps == 0.0:
         return current_time + vehicle.frequency, vehicle.segment_position, SpeedMps(0.0)
 
-    frequency_s = vehicle.frequency.total_seconds()
+    frequency_s = vehicle._frequency_seconds
     elapsed_m = frequency_s * speed_mps
     end_position = LengthMeters(start_position + elapsed_m)
 

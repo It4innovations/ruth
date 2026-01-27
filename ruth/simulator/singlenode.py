@@ -46,9 +46,6 @@ class Simulator:
             :param end_step_fns: An arbitrary functions that are called at the end of each step with
             the current state of simulation. It can be used for storing the state, for example.
         """
-        for v in self.sim.vehicles:
-            v.frequency = timedelta(seconds=5)
-
         self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
 
         for alternatives_provider in alternatives_providers:
@@ -75,7 +72,7 @@ class Simulator:
                 step_start_dt = datetime.now()
                 timer_set = TimerSet()
 
-                offset = self.sim.round_time_offset(self.current_offset)
+                offset, offset_seconds = self.sim.round_time_offset(self.current_offset)
 
                 if self.sim.setting.stuck_detection:
                     # check if the simulation is stuck
@@ -93,7 +90,7 @@ class Simulator:
 
                 with timer_set.get("allowed_vehicles"):
                     vehicles_to_be_moved = [v for v in self.sim.vehicles
-                                            if self.sim.is_vehicle_within_offset(v, offset)]
+                                            if self.sim.is_vehicle_within_offset(v, offset_seconds)]
 
                     need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
                                       vehicle.is_at_the_end_of_segment(self.sim.routing_map)

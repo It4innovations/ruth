@@ -103,6 +103,8 @@ class Simulation:
         self.map_download_date = map_download_date
         self._routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
         self.last_saved_speeds = None
+        # Cache round_freq as int for fast vehicle offset comparisons
+        self._freq_seconds: int = int(self.setting.round_freq.total_seconds())
 
     def __getstate__(self):
         self.last_saved_speeds = {}
@@ -123,6 +125,8 @@ class Simulation:
             self.global_view = GlobalView()
         if "last_saved_speeds" not in d:
             self.last_saved_speeds = None
+        if "_freq_seconds" not in d:
+            self._freq_seconds = int(self.setting.round_freq.total_seconds())
         self._routing_map = None  # lazy init
 
     @property
@@ -135,11 +139,21 @@ class Simulation:
     def random(self):
         return self.setting.rnd_gen()
 
-    def is_vehicle_within_offset(self, vehicle: Vehicle, offset):
-        return vehicle.active and offset == self.round_time_offset(vehicle.time_offset)
+    def is_vehicle_within_offset(self, vehicle: Vehicle, offset_seconds: int):
+        """Check if vehicle should move at this offset. offset_seconds must be pre-rounded."""
+        if not vehicle.active:
+            return False
+
+        freq = self._freq_seconds
+        vehicle_rounded = freq * round(vehicle.time_offset.total_seconds() / freq)
+        return vehicle_rounded == offset_seconds
 
     def round_time_offset(self, offset):
-        return round_timedelta(offset, self.setting.round_freq)
+        """Round offset to nearest frequency. Returns (timedelta, rounded_seconds)."""
+        td_seconds = offset.total_seconds()
+        freq = self._freq_seconds
+        rounded_seconds = freq * round(td_seconds / freq)
+        return timedelta(seconds=rounded_seconds), rounded_seconds
 
     def compute_current_offset(self):
         return min(filter(None, map(lambda v: v.time_offset if v.active else None, self.vehicles)),

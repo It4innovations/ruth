@@ -83,7 +83,7 @@ def test_vehicle_within_offset(setup_simulator):
 
     expected_count = len(to_be_moved_rounded)
 
-    vehicles_to_be_moved = [v for v in sim.vehicles if sim.is_vehicle_within_offset(v, sim_offset)]
+    vehicles_to_be_moved = [v for v in sim.vehicles if sim.is_vehicle_within_offset(v, sim_offset_seconds)]
     assert len(vehicles_to_be_moved) == expected_count
     assert len(to_be_moved_by_max) == expected_count
 

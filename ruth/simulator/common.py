@@ -1,5 +1,6 @@
 import logging
 from dataclasses import asdict
+from datetime import timedelta
 from typing import List, Tuple, Optional
 
 import pandas as pd
@@ -22,7 +23,7 @@ def load_vehicles(input_path: str) -> Tuple[List[Vehicle], Optional[BBox], Optio
         vehicles.append(Vehicle(
             id=r.get("id"),
             time_offset=r.get("time_offset"),
-            frequency=r.get("frequency"),
+            frequency=timedelta(seconds=5),  # TODO: Placeholder, actual frequency may vary
             start_index=r.get("start_index"),
             start_distance_offset=r.get("start_distance_offset"),
             origin_node=r.get("origin_node"),

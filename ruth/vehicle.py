@@ -140,15 +140,21 @@ class Vehicle:
     current_travel_time: Optional[CurrentTravelTime] = None
 
     def __post_init__(self):
-        # We want to normalize these values to datetime.timedelta, because performing operations
-        # between pandas.TimeDelta and datetime.timedelta is very slow (10x slower).
-        # The check is here because the values are pandas when initially loaded from disk,
-        # but then they are already converted to datetime when they are sent between processes
-        # and reinitialized.
-        if isinstance(self.frequency, pd.Timedelta):
-            self.frequency = self.frequency.to_pytimedelta()
+        # Normalize pandas Timedelta to datetime.timedelta (10x faster operations)
         if isinstance(self.time_offset, pd.Timedelta):
             self.time_offset = self.time_offset.to_pytimedelta()
+
+        if isinstance(self.frequency, pd.Timedelta):
+            object.__setattr__(self, 'frequency', self.frequency.to_pytimedelta())
+
+        # Initialize cached frequency in seconds
+        object.__setattr__(self, '_frequency_seconds', int(self.frequency.total_seconds()))
+
+    def __setattr__(self, name, value):
+        if name == 'frequency':
+            # Update cached frequency in seconds
+            object.__setattr__(self, '_frequency_seconds', int(value.total_seconds()))
+        object.__setattr__(self, name, value)
 
     def __getstate__(self):
         state = asdict(self)

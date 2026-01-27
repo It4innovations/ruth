@@ -213,6 +213,9 @@ class Map:
 
         self.network = MultiDiGraph(self.current_network)
 
+        # Cache for Segment objects to avoid repeated allocations
+        self._segment_cache: Dict[tuple, Segment] = {}
+
     def fix_osm_routes(self, vehicles):
         for v in vehicles:
             if v.osm_route:
@@ -343,15 +346,23 @@ class Map:
         self.data_dir = path
 
     def get_osm_segment(self, node_from: int, node_to: int):
+        """Get segment for edge, with caching to avoid repeated object creation."""
+        cache_key = (node_from, node_to)
+        cached = self._segment_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         data = self.original_network.get_edge_data(node_from, node_to)
         assert data is not None, f"Segment {node_from} -> {node_to} not found."
-        return Segment(
+        segment = Segment(
             node_from=node_from,
             node_to=node_to,
             length=data["length"],
             max_allowed_speed_kph=data["speed_kph"],
             lanes=data["lanes"],
         )
+        self._segment_cache[cache_key] = segment
+        return segment
 
     def osm_route_to_py_segments(self, osm_route: Route) -> List[Segment]:
         """Prepare list of segments based on route."""

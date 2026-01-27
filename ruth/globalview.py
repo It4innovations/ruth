@@ -58,10 +58,15 @@ class GlobalView:
             return 0
 
         vehicles = set()
+        vehicles_add = vehicles.add
         for fcd in fcd_list:
-            if fcd.offset_from_start > vehicle_offset_m and fcd.vehicle_id != vehicle_id:
-                if dt_min <= fcd.datetime <= dt_max:
-                    vehicles.add(fcd.vehicle_id)
+            fcd_offset = fcd.offset_from_start
+            if fcd_offset > vehicle_offset_m:
+                fcd_vid = fcd.vehicle_id
+                if fcd_vid != vehicle_id:
+                    fcd_dt = fcd.datetime
+                    if dt_min <= fcd_dt <= dt_max:
+                        vehicles_add(fcd_vid)
         return len(vehicles)
 
     def level_of_service_in_front_of_vehicle(self, datetime, segment, vehicle_id=-1,
