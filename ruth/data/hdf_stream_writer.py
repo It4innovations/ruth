@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import os
 from typing import List
 import h5py
@@ -6,9 +6,12 @@ import numpy as np
 
 from .map import Map
 
+# Unix epoch for timezone-independent timestamp calculation
+_EPOCH = datetime(1970, 1, 1)
+
 # Define the compound dtype for HDF5
 compound_dtype = np.dtype([
-    ("timestamp", np.int64),  # Timestamp in seconds
+    ("timestamp", np.int64),  # Timestamp in seconds (UTC)
     ("node_from", np.int64),
     ("node_to", np.int64),
     ("segment_length", np.int32),
@@ -62,8 +65,10 @@ class HDF5Writer:
 
     def append_file(self, buffer: List):
         # Create a structured numpy array from the FCD records in the buffer
+        # Note: All simulation datetimes are treated as UTC (timezone-naive but UTC-based)
+        # Using (datetime - epoch) avoids timezone issues across machines
         data = np.array([
-            (int(fcd.datetime.replace(tzinfo=timezone.utc).timestamp()),
+            (int((fcd.datetime - _EPOCH).total_seconds()),
              fcd.segment.node_from, fcd.segment.node_to, fcd.segment.length,
              fcd.vehicle_id, float(fcd.offset_from_start), fcd.vehicle_speed_mps, fcd.active)
             for fcd in buffer
