@@ -192,13 +192,13 @@ def start_zeromq_cluster(
               help="Number of alternative routes.")
 @click.option("--map-update-freq-s", type=int, default=1,
               help="Frequency of updating map with current speeds (in seconds, in simulation time).")
-@click.option("--los-vehicles-tolerance-s", type=int, default=1,
+@click.option("--los-vehicles-tolerance-s", type=int, default=5,
               help="Time tolerance (in seconds, of simulation time) to count which cars (i.e., their timestamps)"
                    "are considered for the calculation of LoS in a segment.")
 @click.option("--travel-time-limit-perc", type=float, default=0.0)
 @click.option("--speeds-path", type=click.Path(exists=True),
               help="Path to csv file with temporary max speeds.")
-@click.option("--out", type=str, default="out.pickle")
+@click.option("--out", type=str, default="simulation-record.pickle")
 @click.option("--seed", type=int, help="Fixed seed for random number generator.")
 @click.option("--walltime-s", type=int, help="Time limit in which the state of simulation is saved")
 @click.option("--saving-interval-s", type=int,
