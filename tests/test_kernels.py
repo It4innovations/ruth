@@ -1,9 +1,9 @@
 from cmath import isclose
-from time import sleep
+import os
 
 import pytest
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from ruth.data.segment import LengthMeters, SpeedKph, speed_kph_to_mps
 from ruth.simulator.kernels import FastestPathsAlternatives
@@ -49,6 +49,17 @@ def setup_simulator():
         k_alternatives=1,
         map_update_freq=timedelta(seconds=1),
         los_vehicles_tolerance=timedelta(seconds=0),
+        travel_time_limit_perc=1.5,
+        speeds_path=None,
+        out="./output",
+        seed=42,
+        walltime=None,
+        saving_interval=None,
+        continue_from="",
+        stuck_detection=5,
+        plateau_default_route=False,
+        buffer_size=1000,
+        max_records_per_file=10000,
     )
 
     alternatives_ratio = AlternativesRatio(
@@ -65,7 +76,7 @@ def setup_simulator():
         ptdr=0.0
     )
 
-    vehicles_path = "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet"
+    vehicles_path = os.path.join(os.path.dirname(__file__), "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet")
     simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
     return simulator
 

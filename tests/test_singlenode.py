@@ -44,6 +44,17 @@ def setup_simulator():
         k_alternatives=1,
         map_update_freq=timedelta(seconds=1),
         los_vehicles_tolerance=timedelta(seconds=0),
+        travel_time_limit_perc=1.5,
+        speeds_path=None,
+        out="./output",
+        seed=42,
+        walltime=None,
+        saving_interval=None,
+        continue_from="",
+        stuck_detection=5,
+        plateau_default_route=False,
+        buffer_size=1000,
+        max_records_per_file=10000,
     )
 
     alternatives_ratio = AlternativesRatio(

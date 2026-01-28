@@ -1,4 +1,4 @@
-from time import sleep
+import glob
 import os
 import pytest
 
@@ -19,7 +19,17 @@ def setup_common_args():
         k_alternatives=1,
         map_update_freq=timedelta(hours=10),
         los_vehicles_tolerance=timedelta(seconds=5),
-        stuck_detection=5
+        stuck_detection=5,
+        travel_time_limit_perc=1.5,
+        speeds_path=None,
+        out="./output",
+        seed=42,
+        walltime=None,
+        saving_interval=None,
+        continue_from="",
+        plateau_default_route=False,
+        buffer_size=1000,
+        max_records_per_file=10000,
     )
 
 
@@ -44,9 +54,26 @@ def setup_route_selection_ratio():
     )
 
 
-# set vehicle_path as constant
-vehicles_path_10 = "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet"
+vehicles_path_10 = os.path.join(os.path.dirname(__file__), "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet")
 
+# check history - handle both single file and partitioned files
+def load_fcd_history(name):
+    import glob
+    import pandas as pd
+    # Try loading single file first
+    if os.path.exists(f"fcd_history_{name}.h5"):
+        return Simulation.load_h5_df(f"fcd_history_{name}.h5")["df"]
+
+    # Try loading partitioned files
+    part_files = sorted(glob.glob(f"fcd_history_{name}-part*.h5"))
+    if part_files:
+        dfs = []
+        for part_file in part_files:
+            df = Simulation.load_h5_df(part_file)["df"]
+            dfs.append(df)
+        return pd.concat(dfs, ignore_index=True)
+
+    raise FileNotFoundError(f"No fcd_history files found for {name}")
 
 def run_inner_mock(common_args, vehicles_path, alternatives_ratio, route_selection_ratio, name,
                    distributed_alt_provider=None):
@@ -62,6 +89,9 @@ def run_inner_mock(common_args, vehicles_path, alternatives_ratio, route_selecti
     if os.path.exists(f"fcd_history.h5"):
         raise FileExistsError("fcd_history.h5 already exists. Remove it before running the test.")
 
+    existing_parts = glob.glob("fcd_history-part*.h5")
+    if existing_parts:
+        raise FileExistsError(f"fcd_history part files already exist. Remove them before running the test.")
 
     simulator.simulate(
         alternatives_providers=alternatives_providers,
@@ -69,7 +99,17 @@ def run_inner_mock(common_args, vehicles_path, alternatives_ratio, route_selecti
         end_step_fns=end_step_fns,
     )
 
-    os.rename("fcd_history.h5", f"fcd_history_{name}.h5")
+    if os.path.exists("fcd_history.h5"):
+        os.rename("fcd_history.h5", f"fcd_history_{name}.h5")
+    else:
+        part_files = sorted(glob.glob("fcd_history-part*.h5"))
+        if part_files:
+            # Rename all part files
+            for i, part_file in enumerate(part_files):
+                new_name = f"fcd_history_{name}-part{i:04d}.h5"
+                os.rename(part_file, new_name)
+        else:
+            raise FileNotFoundError("No fcd_history files were created during simulation")
 
     return simulator
 
@@ -93,9 +133,8 @@ def compare_simulation(simulation1, simulation2, sim_1_name="sim1", sim_2_name="
         assert simulation1.steps_info[i].need_new_route == simulation2.steps_info[
             i].need_new_route, f"Need new route mismatch at index {i}"
 
-    # check history
-    fcd_history_1 = Simulation.load_h5_df(f"fcd_history_{sim_1_name}.h5")["df"]
-    fcd_history_2 = Simulation.load_h5_df(f"fcd_history_{sim_2_name}.h5")["df"]
+    fcd_history_1 = load_fcd_history(sim_1_name)
+    fcd_history_2 = load_fcd_history(sim_2_name)
     assert len(fcd_history_1) == len(fcd_history_2), "FCD history mismatch"
     for i in range(len(fcd_history_1)):
         assert fcd_history_1.iloc[i]['timestamp'] == fcd_history_2.iloc[i]['timestamp'], f"Datetime mismatch at index {i}"
