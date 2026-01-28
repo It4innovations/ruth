@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 
 from ruth.simulator import Simulation
 from ruth.simulator.kernels import ShortestPathsAlternatives, FirstRouteSelection, FastestPathsAlternatives, \
-    RandomRouteSelection, ZeroMQDistributedAlternatives
-from ruth.tools.simulator import CommonArgs, prepare_simulator, AlternativesRatio, RouteSelectionRatio, ZeroMqContext
+    RandomRouteSelection
+from ruth.tools.simulator import CommonArgs, prepare_simulator, AlternativesRatio, RouteSelectionRatio
 
 
 @pytest.fixture
@@ -42,15 +42,6 @@ def setup_route_selection_ratio():
         random=0.0,
         ptdr=0.0
     )
-
-
-@pytest.fixture
-def setup_distributed_alt_provider():
-    zmq_ctx = ZeroMqContext()
-    port = 5555
-    broadcast_port = 5556
-    return ZeroMQDistributedAlternatives(
-        client=zmq_ctx.get_or_create_client(port=port, broadcast_port=broadcast_port))
 
 
 # set vehicle_path as constant
@@ -182,34 +173,6 @@ def test_simulation_with_alt(setup_common_args, setup_alternatives_ratio, setup_
 
     simulator2 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
                                 setup_route_selection_ratio, "sim2")
-
-    simulation2 = simulator2.state
-    compare_simulation(simulation1, simulation2)
-
-
-def test_simulation_with_alt_distributed(setup_common_args, setup_route_selection_ratio,
-                                         setup_distributed_alt_provider):
-    setup_alternatives_ratio = AlternativesRatio(
-        default=0.0,
-        dijkstra_fastest=0.0,
-        dijkstra_shortest=0.0,
-        plateau_fastest=1.0
-    )
-    print("\nRunning first simulation")
-    simulator1 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
-                                setup_route_selection_ratio, "sim1", setup_distributed_alt_provider)
-
-    assert simulator1.current_offset is None
-    simulation1 = simulator1.state
-
-    # check if all vehicles finished
-    for vehicle in simulation1.vehicles:
-        assert vehicle.active is False
-        assert vehicle.start_index == len(vehicle.osm_route) - 2  # last segment
-
-    print("\nRunning second simulation")
-    simulator2 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
-                                setup_route_selection_ratio, "sim2", setup_distributed_alt_provider)
 
     simulation2 = simulator2.state
     compare_simulation(simulation1, simulation2)

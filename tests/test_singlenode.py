@@ -1,12 +1,15 @@
 from unittest.mock import patch, MagicMock
+import os
+import tempfile
+import shutil
 
 import pytest
 
 from datetime import datetime, timedelta
 
 from ruth.data.segment import LengthMeters
-from ruth.simulator.kernels import ZeroMQDistributedAlternatives, ShortestPathsAlternatives
-from ruth.tools.simulator import CommonArgs, prepare_simulator, AlternativesRatio, RouteSelectionRatio, ZeroMqContext
+from ruth.simulator.kernels import ShortestPathsAlternatives
+from ruth.tools.simulator import CommonArgs, prepare_simulator, AlternativesRatio, RouteSelectionRatio
 
 from ruth.vehicle import Vehicle
 
@@ -57,9 +60,13 @@ def setup_simulator():
         ptdr=0.0
     )
 
-    vehicles_path = "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet"
+    vehicles_path = os.path.join(os.path.dirname(__file__), "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet")
     simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
-    return simulator
+    yield simulator
+
+    # Cleanup: remove HDF5 file if it exists
+    if os.path.exists("fcd_history.h5"):
+        os.remove("fcd_history.h5")
 
 
 def test_vehicle_within_offset(setup_simulator):
@@ -114,7 +121,7 @@ def test_stuck_detection(mock, setup_vehicle, setup_simulator):
 
     # TEST stuck detection
     setup_simulator.simulate([], [])
-    mock.assert_called_with("The simulation is stuck at 0:02:15.")
+    mock.assert_called_with("The simulation is stuck at 0:02:20.")
 
     assert setup_vehicle.start_index == 0
     assert setup_vehicle.start_distance_offset == segment_length

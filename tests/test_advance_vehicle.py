@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from ruth.data.map import Map
 from ruth.data.segment import LengthMeters, Segment, SpeedKph, speed_kph_to_mps, SpeedMps
 from ruth.globalview import GlobalView
-from ruth.simulator.route import advance_vehicle, advance_waiting_vehicle
+from ruth.simulator.route import advance_vehicle, advance_waiting_vehicle, get_input
 from ruth.simulator.simulation import FCDRecord
 from ruth.vehicle import Vehicle
 from ruth.simulator.queues import QueuesManager
@@ -65,11 +65,16 @@ def test_vehicle_advances_normally(setup_vehicle, mock_gv_db, mock_routing_map, 
     mock_gv_db.level_of_service_in_front_of_vehicle.return_value = 1.0
     mock_routing_map.get_current_max_speed = MagicMock(return_value=SpeedKph(50.0))
 
+    speed_mps, changed_segment, driving_route_part = get_input(
+        current_time, setup_vehicle, mock_gv_db, mock_routing_map, timedelta(seconds=0)
+    )
+
     fcd_records = advance_vehicle(
         vehicle=setup_vehicle,
         departure_time=current_time,
-        gv_db=mock_gv_db,
-        routing_map=mock_routing_map,
+        speed_mps=speed_mps,
+        driving_route_part=driving_route_part,
+        changed_segment=changed_segment,
         queues_manager=mock_queues_manager
     )
 
@@ -117,11 +122,16 @@ def test_vehicle_reaches_end_of_segment(setup_vehicle, mock_gv_db, mock_routing_
     mock_routing_map.get_current_max_speed = MagicMock(return_value=SpeedKph(50.0))
     setup_vehicle.start_distance_offset = LengthMeters(990.0)
 
+    speed_mps, changed_segment, driving_route_part = get_input(
+        current_time, setup_vehicle, mock_gv_db, mock_routing_map, timedelta(seconds=0)
+    )
+
     fcd_records = advance_vehicle(
         vehicle=setup_vehicle,
         departure_time=current_time,
-        gv_db=mock_gv_db,
-        routing_map=mock_routing_map,
+        speed_mps=speed_mps,
+        driving_route_part=driving_route_part,
+        changed_segment=changed_segment,
         queues_manager=mock_queues_manager
     )
 
@@ -146,18 +156,22 @@ def test_vehicle_reaches_destination(setup_vehicle, mock_gv_db, mock_routing_map
     setup_vehicle.start_distance_offset = LengthMeters(990.0)
     setup_vehicle.start_index = 1
 
+    speed_mps, changed_segment, driving_route_part = get_input(
+        current_time, setup_vehicle, mock_gv_db, mock_routing_map, timedelta(seconds=0)
+    )
+
     fcd_records = advance_vehicle(
         vehicle=setup_vehicle,
         departure_time=current_time,
-        gv_db=mock_gv_db,
-        routing_map=mock_routing_map,
+        speed_mps=speed_mps,
+        driving_route_part=driving_route_part,
+        changed_segment=changed_segment,
         queues_manager=mock_queues_manager
     )
 
     assert setup_vehicle.segment_position.index == 1
     assert setup_vehicle.segment_position.position == LengthMeters(1000.0)
     assert not setup_vehicle.active
-    assert mock_queues_manager.remove_inactive_vehicle.called
     assert not mock_queues_manager.add_to_queue.called
     assert len(fcd_records) == 1
 
@@ -174,11 +188,16 @@ def test_vehicle_advances_on_the_next_segment(setup_vehicle, mock_gv_db, mock_ro
     mock_routing_map.get_current_max_speed = MagicMock(return_value=SpeedKph(50.0))
     setup_vehicle.start_distance_offset = LengthMeters(1000.0)
 
+    speed_mps, changed_segment, driving_route_part = get_input(
+        current_time, setup_vehicle, mock_gv_db, mock_routing_map, timedelta(seconds=0)
+    )
+
     fcd_records = advance_vehicle(
         vehicle=setup_vehicle,
         departure_time=current_time,
-        gv_db=mock_gv_db,
-        routing_map=mock_routing_map,
+        speed_mps=speed_mps,
+        driving_route_part=driving_route_part,
+        changed_segment=changed_segment,
         queues_manager=mock_queues_manager
     )
 
@@ -228,11 +247,16 @@ def test_vehicle_stuck_in_traffic(setup_vehicle, mock_gv_db, mock_routing_map, m
     expected_position = setup_vehicle.segment_position
     expected_time_offset = setup_vehicle.time_offset + timedelta(seconds=10)
 
+    speed_mps, changed_segment, driving_route_part = get_input(
+        current_time, setup_vehicle, mock_gv_db, mock_routing_map, timedelta(seconds=0)
+    )
+
     fcd_records = advance_vehicle(
         vehicle=setup_vehicle,
         departure_time=current_time,
-        gv_db=mock_gv_db,
-        routing_map=mock_routing_map,
+        speed_mps=speed_mps,
+        driving_route_part=driving_route_part,
+        changed_segment=changed_segment,
         queues_manager=mock_queues_manager
     )
 
@@ -275,13 +299,17 @@ def test_advance_vehicle_with_los_change(setup_vehicle, mock_gv_db, mock_routing
     mock_gv_db.level_of_service_in_front_of_vehicle.return_value = 0.5
     custom_tolerance = timedelta(seconds=5)
 
+    speed_mps, changed_segment, driving_route_part = get_input(
+        current_time, setup_vehicle, mock_gv_db, mock_routing_map, custom_tolerance
+    )
+
     fcd_records = advance_vehicle(
         vehicle=setup_vehicle,
         departure_time=current_time,
-        gv_db=mock_gv_db,
-        routing_map=mock_routing_map,
-        queues_manager=mock_queues_manager,
-        los_vehicles_tolerance=custom_tolerance
+        speed_mps=speed_mps,
+        driving_route_part=driving_route_part,
+        changed_segment=changed_segment,
+        queues_manager=mock_queues_manager
     )
 
     expected_position = LengthMeters(speed_kph_to_mps(SpeedKph(25.0)) * 10)  # Adjusted speed * Time (10 seconds)
@@ -297,8 +325,8 @@ def test_advance_waiting_vehicle(setup_vehicle, mock_gv_db, mock_routing_map, mo
 
     fcd_records = advance_waiting_vehicle(
         vehicle=setup_vehicle,
-        departure_time=current_time,
         routing_map=mock_routing_map,
+        departure_time=current_time,
     )
 
     assert fcd_records

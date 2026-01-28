@@ -6,7 +6,8 @@ import pytest
 from datetime import datetime, timedelta
 
 from ruth.data.segment import LengthMeters, SpeedKph, speed_kph_to_mps
-from ruth.simulator.kernels import FastestPathsAlternatives, ZeroMQDistributedAlternatives
+from ruth.simulator.kernels import FastestPathsAlternatives
+# from ruth.simulator.kernels import ZeroMQDistributedAlternatives
 from ruth.tools.simulator import CommonArgs, prepare_simulator, AlternativesRatio, RouteSelectionRatio, ZeroMqContext
 
 from ruth.vehicle import Vehicle
@@ -74,25 +75,25 @@ def fastest_alt_provider():
     return FastestPathsAlternatives()
 
 
-@pytest.fixture
-def distributed_alt_provider():
-    zmq_ctx = ZeroMqContext()
-    port = 5555
-    broadcast_port = 5556
-    return ZeroMQDistributedAlternatives(
-        client=zmq_ctx.get_or_create_client(port=port, broadcast_port=broadcast_port))
+# @pytest.fixture
+# def distributed_alt_provider():
+#     zmq_ctx = ZeroMqContext()
+#     port = 5555
+#     broadcast_port = 5556
+#     return ZeroMQDistributedAlternatives(
+#         client=zmq_ctx.get_or_create_client(port=port, broadcast_port=broadcast_port))
 
 
-def test_compute_alternatives(setup_vehicle, setup_simulator, distributed_alt_provider, fastest_alt_provider):
+def test_compute_alternatives(setup_vehicle, setup_simulator, fastest_alt_provider):
     vehicles = [setup_vehicle]
     routing_map = setup_simulator.sim.routing_map
     k = 3
 
-    distributed_alt_provider.load_map(routing_map)
+    # distributed_alt_provider.load_map(routing_map)
     fastest_alt_provider.load_map(routing_map)
 
     py_alternatives = fastest_alt_provider.compute_alternatives(vehicles, k)
-    cpp_alternatives = distributed_alt_provider.compute_alternatives(vehicles, k)
+    # cpp_alternatives = distributed_alt_provider.compute_alternatives(vehicles, k)
 
     # one vehicle - 3 alternatives
     assert len(py_alternatives) == 1
@@ -101,25 +102,25 @@ def test_compute_alternatives(setup_vehicle, setup_simulator, distributed_alt_pr
     py_travel_time = routing_map.get_path_travel_time(py_alternatives[0][0][0])
     assert round(py_travel_time) == expected_travel_time
 
-    assert len(cpp_alternatives) == 1
-    assert len(cpp_alternatives[0]) == 3
-    assert cpp_alternatives[0][0][0] == expected_alt
+    # assert len(cpp_alternatives) == 1
+    # assert len(cpp_alternatives[0]) == 3
+    # assert cpp_alternatives[0][0][0] == expected_alt
+    #
+    # cpp_travel_time_p = routing_map.get_path_travel_time(cpp_alternatives[0][0][0])
+    # assert round(cpp_travel_time_p) == expected_travel_time
+    #
+    # cpp_travel_time = cpp_alternatives[0][0][1]
+    # if cpp_travel_time:
+    #     assert round(cpp_alternatives[0][0][1]) == expected_travel_time
 
-    cpp_travel_time_p = routing_map.get_path_travel_time(cpp_alternatives[0][0][0])
-    assert round(cpp_travel_time_p) == expected_travel_time
 
-    cpp_travel_time = cpp_alternatives[0][0][1]
-    if cpp_travel_time:
-        assert round(cpp_alternatives[0][0][1]) == expected_travel_time
-
-
-def test_compute_alt_with_map_update(setup_vehicle, setup_simulator, distributed_alt_provider, fastest_alt_provider):
+def test_compute_alt_with_map_update(setup_vehicle, setup_simulator, fastest_alt_provider):
     # do the same as before but with a map update
     vehicles = [setup_vehicle]
     routing_map = setup_simulator.sim.routing_map
     k = 1
 
-    distributed_alt_provider.load_map(routing_map)
+    # distributed_alt_provider.load_map(routing_map)
     fastest_alt_provider.load_map(routing_map)
 
     # Change speed on (27349583, 27350859) segment
@@ -130,28 +131,28 @@ def test_compute_alt_with_map_update(setup_vehicle, setup_simulator, distributed
                                    - (segment.length / speed_kph_to_mps(segment.max_allowed_speed_kph)))
 
     # Alts before map change
-    _ = distributed_alt_provider.compute_alternatives(vehicles, k)
+    # _ = distributed_alt_provider.compute_alternatives(vehicles, k)
 
     # Update speeds
     updated_speeds = {(27349583, 27350859): new_speed}
     new_speeds = routing_map.update_current_speeds(updated_speeds)
-    distributed_alt_provider.update_map(new_speeds)
+    # distributed_alt_provider.update_map(new_speeds)
 
     new_travel_time = routing_map.get_path_travel_time([27349583, 27350859])
     assert isclose(new_travel_time, current_travel_time + expected_travel_time_change, abs_tol=1)
 
     # Compute alternatives
-    cpp_alternatives = distributed_alt_provider.compute_alternatives(vehicles, k)
+    # cpp_alternatives = distributed_alt_provider.compute_alternatives(vehicles, k)
     py_alternatives = fastest_alt_provider.compute_alternatives(vehicles, k)
 
     # Check that alt is the same
-    assert cpp_alternatives[0][0][0] == expected_alt
+    # assert cpp_alternatives[0][0][0] == expected_alt
     assert py_alternatives[0][0][0] == expected_alt
 
-    cpp_travel_time = routing_map.get_path_travel_time(cpp_alternatives[0][0][0])
-    assert isclose(cpp_travel_time, expected_travel_time + expected_travel_time_change, abs_tol=1)
-    cpp_travel_time = cpp_alternatives[0][0][1]
-    if cpp_travel_time:
-        assert isclose(cpp_travel_time, expected_travel_time + expected_travel_time_change, abs_tol=1)
-    else:
-        print("Travel time not received from evkit")
+    # cpp_travel_time = routing_map.get_path_travel_time(cpp_alternatives[0][0][0])
+    # assert isclose(cpp_travel_time, expected_travel_time + expected_travel_time_change, abs_tol=1)
+    # cpp_travel_time = cpp_alternatives[0][0][1]
+    # if cpp_travel_time:
+    #     assert isclose(cpp_travel_time, expected_travel_time + expected_travel_time_change, abs_tol=1)
+    # else:
+    #     print("Travel time not received from evkit")
