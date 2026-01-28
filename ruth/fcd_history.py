@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 class FCDHistory:
 
-    def __init__(self, h5_path_base: str, buffer_size, max_records_per_file=None):
+    def __init__(self, h5_path_base: str, buffer_size: int, max_records_per_file: int):
         self.base_path = h5_path_base
         self.buffer_size = buffer_size
         self.buffer: List[FCDRecord] = []
@@ -24,8 +24,6 @@ class FCDHistory:
         self.writer = None
 
         self.max_records_per_file = max_records_per_file
-        if self.max_records_per_file is None:
-            self.max_records_per_file = sys.maxsize
         self._current_part = 0
 
     def __enter__(self):

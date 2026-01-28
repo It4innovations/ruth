@@ -72,6 +72,8 @@ class CommonArgs(CommonArgsInner):
     continue_from: str = ""
     stuck_detection: int = 0
     plateau_default_route: bool = False
+    buffer_size: int = 10_000
+    max_records_per_file: int = int(1e9)
 
 
 @serde(rename_all="kebabcase")

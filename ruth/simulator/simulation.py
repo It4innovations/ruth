@@ -69,7 +69,7 @@ class SimSetting:
     seed: InitVar[Optional[int]] = None
     speeds_path: str = None
     buffer_size: int = 10_000
-    max_records_per_file: int = None
+    max_records_per_file: int = int(1e9)
     stuck_detection: int = 0
     plateau_default_route: bool = False
     fcd_history_base_name: str = "fcd_history"

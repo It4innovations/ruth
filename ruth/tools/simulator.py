@@ -28,17 +28,17 @@ class CommonArgs:
     k_alternatives: int
     map_update_freq: timedelta
     los_vehicles_tolerance: timedelta
-    travel_time_limit_perc: float = 0.0
-    speeds_path: Optional[str] = None
-    out: str = "simulation-record.pickle"
-    seed: Optional[int] = None
-    walltime: Optional[timedelta] = None
-    saving_interval: Optional[timedelta] = None
-    continue_from: str = ''
-    stuck_detection: int = 0
-    plateau_default_route: bool = False
-    buffer_size: int = 10_000
-    max_records_per_file: int = None
+    travel_time_limit_perc: float
+    speeds_path: Optional[str]
+    out: str
+    seed: Optional[int]
+    walltime: Optional[timedelta]
+    saving_interval: Optional[timedelta]
+    continue_from: str
+    stuck_detection: int
+    plateau_default_route: bool
+    buffer_size: int
+    max_records_per_file: int
 
 
 @dataclass
@@ -206,10 +206,6 @@ def start_zeromq_cluster(
               help="Path to csv file with temporary max speeds.")
 @click.option("--out", type=str, default="simulation-record.pickle")
 @click.option("--seed", type=int, help="Fixed seed for random number generator.")
-@click.option("--buffer-size", type=int, default=10_000,
-              help="Buffer size (number of FCD records) before flushing to disk.")
-@click.option("--max-records-per-file", type=int, default=None,
-              help="Rotate HDF5 file after this many records. If not set, no rotation by size is applied.")
 @click.option("--walltime-s", type=int, help="Time limit in which the state of simulation is saved")
 @click.option("--saving-interval-s", type=int,
               help="Time interval in which the state of simulation periodically is saved")
@@ -220,6 +216,10 @@ def start_zeromq_cluster(
                    "terminated. 0 means no stuck detection.")
 @click.option("--plateau-default-route", is_flag=True,
               help="Recalculate default route to plateau fastest route.")
+@click.option("--buffer-size", type=int, default=10_000,
+              help="Buffer size (number of FCD records) before flushing to disk.")
+@click.option("--max-records-per-file", type=int, default=int(1e9),
+              help="Rotate HDF5 file after this many records. If not set, defaults to a very large number (1e9).")
 @click.pass_context
 def single_node_simulator(ctx,
                           debug,
