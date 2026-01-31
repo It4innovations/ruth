@@ -54,7 +54,7 @@ def load_vehicles(input_path: str) -> Tuple[List[Vehicle], Optional[BBox], Optio
     return vehicles, bbox, download_date
 
 
-def save_vehicles(vehicles, output_path: str):
+def save_vehicles(vehicles: List[Vehicle], output_path: str) -> None:
     logger.info("Saving vehicles ... %s", output_path)
 
     df = pd.DataFrame([asdict(v) for v in vehicles])

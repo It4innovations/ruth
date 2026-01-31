@@ -1,8 +1,6 @@
 from datetime import datetime, timedelta
 import os
 from typing import List
-import os
-import tempfile
 import h5py
 import numpy as np
 
@@ -11,7 +9,6 @@ from .map import Map
 # Unix epoch for timezone-independent timestamp calculation
 _EPOCH = datetime(1970, 1, 1)
 
-# Define the compound dtype for HDF5
 compound_dtype = np.dtype([
     ("timestamp", np.int64),  # Timestamp in seconds (UTC)
     ("node_from", np.int64),
@@ -25,15 +22,11 @@ compound_dtype = np.dtype([
 
 class HDF5Writer:
     def __init__(self, filename, dtype=None):
-        # If the path exists but is not a valid HDF5 file, raise to avoid data corruption
         if os.path.exists(filename):
             raise FileExistsError(f"The path {filename} exists.")
 
-        # Open file in append mode so we can continue writing to an existing file
         self.file = h5py.File(filename, 'a')
 
-        # Create or get the dataset; require_dataset will validate dtype if it exists
-        # Use a reasonable chunk size for growing 1D records
         chunk_shape = (1024,)
         self.dataset = self.file.require_dataset('fcd', shape=(0,), maxshape=(None,), dtype=compound_dtype,
                                                 chunks=chunk_shape)
@@ -89,7 +82,6 @@ class HDF5Writer:
         return data_len
 
     def close(self):
-        # Close the HDF5 file
         try:
             self.file.close()
         except Exception:

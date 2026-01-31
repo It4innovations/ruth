@@ -1,13 +1,11 @@
-import logging
 import random
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
 from .ptdr import PTDRInfo
-from ..data.map import Map, osm_routes_to_segment_ids
+from ..data.map import Map
 from ..data.segment import Route, SegmentId, SpeedMps, RouteWithTime
-from ..utils import is_root_debug_logging
 from ..vehicle import Vehicle, VehicleAlternatives, VehicleRouteSelection
 
 AlternativeRoutes = List[RouteWithTime]

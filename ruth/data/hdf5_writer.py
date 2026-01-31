@@ -23,7 +23,7 @@ def get_speed_from_data(data):
         return data['speed_kph']
 
     speed_str = data.get('maxspeed', "50")
-    speed_str = speed_str[0] if type(speed_str) is list else speed_str
+    speed_str = speed_str[0] if isinstance(speed_str, list) else speed_str
 
     nums = re.findall(r'\d+', speed_str)
     r = int(nums[0]) if len(nums) > 0 else 50
@@ -115,7 +115,7 @@ def save_graph_to_hdf5(g, file_path):
         #         Trucks = 4, // trucks above 3,5 t
         #         LightCommercialVehicles = 8, // trucks below 3,5 t
         #         LongerHeavierVehicle = 16, // trucks below 44 t
-        specific_info = edge_data.get('specificInfo ', 0)
+        specific_info = edge_data.get('specificInfo', 0)
         #         None = 0,
         #         TollWay = 1,
         #         SlipRoad = 2,

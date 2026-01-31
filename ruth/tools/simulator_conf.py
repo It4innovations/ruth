@@ -8,16 +8,14 @@ from typing import Optional
 
 import click
 from click import IntRange
-from serde import serde, field, Strict
+from serde import serde, field
 from serde.json import from_json
 
-from ..flowmap import animation
-from ..flowmap.app import animation_options
 from ..tools.simulator import (run_inner, AlternativesRatio as AlternativesRatioInner, CommonArgs as CommonArgsInner,
                                RouteSelectionRatio as RouteSelectionRatioInner)
 
 
-def make_animation_args_dataclass(options_dict):
+def make_animation_args_dataclass(options_dict: dict) -> type:
     fields = []
     for key, value in options_dict.items():
         field_type = value.get('type', None)
@@ -34,7 +32,7 @@ def make_animation_args_dataclass(options_dict):
     return make_dataclass("AnimationArgs", fields)
 
 
-@serde(rename_all="kebabcase", type_check=Strict)
+@serde(rename_all="kebabcase")
 @dataclass
 class CommonArgs(CommonArgsInner):
     task_id: Optional[str] = None
@@ -81,15 +79,6 @@ class CommonArgs(CommonArgsInner):
 class RunArgs:
     vehicles_path: Optional[str] = None
 
-
-@serde(rename_all="kebabcase")
-class DistributedArgs:
-    number_of_workers: int
-    evkit_dir_path: str = "evkit"
-    spawn_workers_at_main_node: bool = True
-    try_to_kill: bool = False
-
-
 @serde(rename_all="kebabcase")
 @dataclass
 class AlternativesRatio(AlternativesRatioInner):
@@ -108,9 +97,6 @@ class RouteSelectionRatio(RouteSelectionRatioInner):
     ptdr: float = 0.0
 
 
-AnimationArgs = make_animation_args_dataclass(animation_options)
-
-
 @serde(rename_all="kebabcase")
 @dataclass
 class Args:
@@ -118,11 +104,9 @@ class Args:
     run: RunArgs = field(rename="run")
     alternatives_ratio: AlternativesRatio = field(rename="alternatives")
     route_selection_ratio: RouteSelectionRatio = field(rename="route-selection")
-    distribution: DistributedArgs = field(rename="distribution", default=None)
-    animation: AnimationArgs = field(rename="animation", default=None)
 
 
-def fill_args(config_file, ctx=None, workdir=None, debug=False):
+def fill_args(config_file: str, ctx: Optional[click.Context] = None, workdir: Optional[str] = None, debug: bool = False) -> tuple[Args, Path]:
     if os.path.isfile(config_file):
         logging.info(f"Settings taken from config file {config_file}.")
         with open(config_file, 'r') as f:
@@ -130,9 +114,9 @@ def fill_args(config_file, ctx=None, workdir=None, debug=False):
             args = from_json(Args, config_data)
     else:
         logging.info(f"Config file not found.")
-        args = Args(CommonArgs(), RunArgs(), AlternativesRatio(), RouteSelectionRatio(), AnimationArgs())
+        args = Args(CommonArgs(), RunArgs(), AlternativesRatio(), RouteSelectionRatio())
 
-    p = args.run.vehicles_path if args.run.vehicles_path is not None else None
+    p = args.run.vehicles_path
     if p is None:
         raise ValueError(f"Vehicles path not set. Config file: {Path(config_file).absolute()}")
 
@@ -152,7 +136,6 @@ def fill_args(config_file, ctx=None, workdir=None, debug=False):
         ctx.obj['run-args'] = args.run
         ctx.obj['alternatives-ratio'] = args.alternatives_ratio
         ctx.obj['route-selection-ratio'] = args.route_selection_ratio
-        ctx.obj['animation'] = args.animation
         ctx.obj['path'] = p
 
     return args, p
@@ -183,18 +166,6 @@ def run(ctx):
     ctx.obj['simulation'] = run_inner(common_args, p, alternatives_ratio, route_selection_ratio)
 
 
-@single_node_simulator_conf.command()
-@click.pass_context
-def volume_animation(ctx):
-    animate(ctx, animation.SimulationVolumeAnimator, **ctx.obj["animation"].__dict__)
-
-
-@single_node_simulator_conf.command()
-@click.pass_context
-def speed_animation(ctx):
-    animate(ctx, animation.SimulationSpeedsAnimator, **ctx.obj["animation"].__dict__)
-
-
 def main():
     log_level = logging.INFO
     log_level_env = os.environ.get("LOG_LEVEL", "")
@@ -206,7 +177,7 @@ def main():
         format="%(asctime)s %(name)s:%(levelname)-4s %(message)s",
         datefmt="%d-%m-%Y %H:%M:%S",
         force=True,
-        stream = sys.stdout,
+        stream=sys.stdout,
     )
     single_node_simulator_conf(obj={})
 

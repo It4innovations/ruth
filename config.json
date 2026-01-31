@@ -14,7 +14,8 @@
     "speeds-path" : "",
     "continue-from": "",
     "stuck-detection": 0,
-    "plateau-default-route": false
+    "plateau-default-route": false,
+    "max_records_per_file": 10000000
   },
   "run" :
   {

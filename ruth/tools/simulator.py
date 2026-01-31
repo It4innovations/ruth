@@ -101,7 +101,6 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
 
     simulation = Simulation.load(continue_from) if continue_from != '' else None
 
-    # TODO: solve the debug symbol
     if simulation is None:
         if vehicles_path is None:
             raise ValueError("Either vehicles_path or continue_from must be specified.")
@@ -155,35 +154,40 @@ def start_zeromq_cluster(
         server_host: str = "localhost",
         port: int = 5559
 ):
-    from cluster.cluster import Cluster, start_process
+    raise NotImplementedError("ZeroMQ cluster is not implemented in this version.")
+    # from cluster.cluster import Cluster, start_process
+    #
+    # ROOT_DIR = Path(__file__).absolute().parent.parent.parent
+    # WORKER_SCRIPT = ROOT_DIR / "ruth" / "zeromq" / "ex_worker.py"
+    # WORKER_DIR = ROOT_DIR / "worker-dir"
 
-    ROOT_DIR = Path(__file__).absolute().parent.parent.parent
-    WORKER_SCRIPT = ROOT_DIR / "ruth" / "zeromq" / "ex_worker.py"
-    WORKER_DIR = ROOT_DIR / "worker-dir"
-
-    VIRTUAL_ENV = os.environ["VIRTUAL_ENV"]
-
-    WORKER_DIR.mkdir(parents=True, exist_ok=True)
-
-    cluster = Cluster(str(WORKER_DIR))
-    for worker_host in worker_nodes:
-        for worker_index in range(worker_per_node):
-            process = start_process(
-                commands=[
-                    sys.executable,
-                    str(WORKER_SCRIPT),
-                    "--address", server_host,
-                    "--port", str(port),
-                    "--map", str(map_path)
-                ],
-                workdir=str(WORKER_DIR),
-                pyenv=VIRTUAL_ENV,
-                hostname=worker_host,
-                name=f"worker_{worker_host}_{worker_index}"
-            )
-            logging.info(f"Started worker {worker_host}:{process.pid}")
-            cluster.add(process, key="worker")
-    return cluster
+    # ROOT_DIR = Path(__file__).absolute().parent.parent.parent
+    # WORKER_SCRIPT = ROOT_DIR / "ruth" / "zeromq" / "ex_worker.py"
+    # WORKER_DIR = ROOT_DIR / "worker-dir"
+    #
+    # VIRTUAL_ENV = os.environ["VIRTUAL_ENV"]
+    #
+    # WORKER_DIR.mkdir(parents=True, exist_ok=True)
+    #
+    # cluster = Cluster(str(WORKER_DIR))
+    # for worker_host in worker_nodes:
+    #     for worker_index in range(worker_per_node):
+    #         process = start_process(
+    #             commands=[
+    #                 sys.executable,
+    #                 str(WORKER_SCRIPT),
+    #                 "--address", server_host,
+    #                 "--port", str(port),
+    #                 "--map", str(map_path)
+    #             ],
+    #             workdir=str(WORKER_DIR),
+    #             pyenv=VIRTUAL_ENV,
+    #             hostname=worker_host,
+    #             name=f"worker_{worker_host}_{worker_index}"
+    #         )
+    #         logging.info(f"Started worker {worker_host}:{process.pid}")
+    #         cluster.add(process, key="worker")
+    # return cluster
 
 
 @click.group(chain=True)
@@ -345,7 +349,7 @@ def run(ctx,
 
 
 def run_inner(common_args: CommonArgs, vehicles_path: Path,
-              alternatives_ratio, route_selection_ratio) -> Simulation:
+              alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio) -> Optional[Simulation]:
 
     if MPIDistributor.allow_mpi():
         with MPIDistributor() as distributor:
@@ -359,7 +363,7 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
     return simulator.state if MPIDistributor.is_master() else None
 
 def setup(common_args: CommonArgs, vehicles_path: Path,
-            alternatives_ratio, route_selection_ratio) -> SingleNodeSimulator:
+            alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio) -> SingleNodeSimulator:
     out = common_args.out
     walltime = common_args.walltime
     saving_interval = common_args.saving_interval

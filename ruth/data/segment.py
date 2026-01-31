@@ -25,7 +25,7 @@ SegmentId = NewType("SegmentId", Tuple[int, int])
 class Segment:
     node_from: int
     node_to: int
-    # Length of th segment (in meters)
+    # Length of the segment (in meters)
     length: LengthMeters
     max_allowed_speed_kph: SpeedKph
     lanes: int

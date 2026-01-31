@@ -5,7 +5,7 @@ import glob
 from dataclasses import InitVar, dataclass
 from datetime import datetime, timedelta
 from random import random, seed as rnd_seed
-from typing import Dict, List, Optional, BinaryIO, cast
+from typing import Dict, List, Optional
 
 import h5py
 import pandas as pd
@@ -154,7 +154,7 @@ class Simulation:
             return False
 
         freq = self._freq_seconds
-        vehicle_rounded = freq * round(vehicle.time_offset.total_seconds() / freq)
+        vehicle_rounded = int(freq * round(vehicle.time_offset.total_seconds() / freq))
         return vehicle_rounded == offset_seconds
 
     def round_time_offset(self, offset):
@@ -214,14 +214,12 @@ class Simulation:
 
     def store(self, path):
         with open(path, 'wb') as f:
-            # cast to BinaryIO to satisfy static type checkers
-            pickle.dump(self, cast(BinaryIO, f))
+            pickle.dump(self, f)
 
     @staticmethod
     def load(path):
         with open(path, 'rb') as f:
-            # cast to BinaryIO to satisfy static type checkers
-            return pickle.load(cast(BinaryIO, f))
+            return pickle.load(f)
 
     @staticmethod
     def load_h5_df(path):

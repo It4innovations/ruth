@@ -128,7 +128,7 @@ def move_on_segment(
     if speed_mps == 0.0:
         return current_time + vehicle.frequency, vehicle.segment_position, SpeedMps(0.0)
 
-    frequency_s = vehicle._frequency_seconds
+    frequency_s = vehicle._frequency_seconds # type: ignore
     elapsed_m = frequency_s * speed_mps
     end_position = LengthMeters(start_position + elapsed_m)
 
@@ -196,8 +196,11 @@ def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
             queues_manager.add_to_queue(vehicle)
 
     # NOTE: the segment position index may end out of segments
-    if segment_pos.index < (len(vehicle.osm_route) - 1):
-        fcds = generate_fcds(current_time, vehicle_end_time, segment_pos_old, segment_pos, assigned_speed_mps, vehicle,
+    if segment_pos.index >= (len(vehicle.osm_route)):
+       print(f"Vehicle {vehicle.id} segment index {segment_pos.index} out of route bounds {len(vehicle.osm_route)}")
+       print(vehicle)
+
+    fcds = generate_fcds(current_time, vehicle_end_time, segment_pos_old, segment_pos, assigned_speed_mps, vehicle,
                              driving_route_part, remains_active=vehicle.active)
 
     return fcds

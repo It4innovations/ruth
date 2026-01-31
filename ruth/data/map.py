@@ -39,8 +39,8 @@ def segment_weight(n1, n2, data):
     return float(data['length']) + float(f"0.{n1}{n2}")
 
 
-def save(G, fname):
-    nx.write_gml(G, fname)
+def save(graph, fname):
+    nx.write_gml(graph, fname)
 
 
 def get_osm_segment_id(node_from: int, node_to: int):
@@ -193,10 +193,10 @@ class Map:
             if isinstance(lanes, list):
                 lanes = max((int(l) for l in lanes if str(l).isdigit()), default=1)
             try:
-                edge['lanes'] = int(lanes)
+                lanes = int(lanes)
             except (ValueError, TypeError):
-                edge['lanes'] = 1
-            edge["lanes"] = edge.get("lanes", 1) if edge.get("lanes", 1) > 0 else 1
+                lanes = 1
+            edge["lanes"] = lanes if lanes > 0 else 1
 
         self.current_network = self.original_network.copy()
 
@@ -309,7 +309,7 @@ class Map:
 
     def update_current_speeds(self, segments_to_update: Dict[SegmentId, Optional[SpeedKph]]):
         """
-        This methods updates the current speeds and travel times for segments
+        This method updates the current speeds and travel times for segments
         passed in `segments_to_update`.
         """
         self.map_id = self.map_id + 1
@@ -342,7 +342,7 @@ class Map:
 
     def set_data_dir(self, path):
         if self.data_dir is not None:
-            cl.warn(f"The data dir has changed from '{self.data_dir}' to '{path}.")
+            cl.warning(f"The data dir has changed from '{self.data_dir}' to '{path}.")
         self.data_dir = path
 
     def get_osm_segment(self, node_from: int, node_to: int):
@@ -372,11 +372,11 @@ class Map:
         return result
 
     def shortest_path_by_gps(self, gps_start, gps_end):
-        """Compute shortest path between two gps points."""
+        """Compute the shortest path between two gps points."""
         assert type(gps_start) == type(gps_end), \
             "Start and end gps has to be of the same type"
 
-        if type(gps_start) == "list" or type(gps_start) == tuple:
+        if isinstance(gps_start, (list, tuple)):
             gps_start_ = list(gps_start)
             gps_end_ = list(gps_end)
         else:
@@ -385,7 +385,7 @@ class Map:
 
         def nearest_nodes(gps):
             p = gps.point()
-            return ox.distance.nearest_nodes(self.network, p.x, p.y)
+            return ox.nearest_nodes(self.network, p.x, p.y)
 
         start_nodes = list(map(nearest_nodes, gps_start_))
         end_nodes = list(map(nearest_nodes, gps_end_))
@@ -395,7 +395,7 @@ class Map:
         return self.shortest_path(start_nodes, end_nodes)
 
     def shortest_path(self, origin, dest):
-        """Compute shortest path between two OSM nodes."""
+        """Compute the shortest path between two OSM nodes."""
         try:
             return nx.shortest_path(self.original_network, origin, dest, weight="length")
         except NetworkXNoPath:
@@ -412,7 +412,7 @@ class Map:
             return None
 
     def fastest_path(self, origin, dest):
-        """Compute fastest path between two OSM nodes."""
+        """Compute the fastest path between two OSM nodes."""
         try:
             return nx.dijkstra_path(self.current_network, origin, dest, weight='current_travel_time')
         except NetworkXNoPath:
@@ -428,15 +428,16 @@ class Map:
         except NetworkXNoPath:
             return None
 
-    def osm_to_hdf5_id(self, id: int) -> int:
-        return self.osm_to_hdf_map_ids[id]
+    def osm_to_hdf5_id(self, node_id: int) -> int:
+        return self.osm_to_hdf_map_ids[node_id]
 
-    def hdf5_to_osm_id(self, id: int) -> int:
-        return self.hdf_to_osm_map_ids[id]
+    def hdf5_to_osm_id(self, node_id: int) -> int:
+        return self.hdf_to_osm_map_ids[node_id]
 
     def _load(self):
         if self.file_path is None:
             cl.info("Map loaded from memory object.")
+            return self.network, False
         elif os.path.exists(self.file_path):
             cl.info(f"Loading network for '{self.name}' from local map.")
             return load_graphml(self.file_path), False

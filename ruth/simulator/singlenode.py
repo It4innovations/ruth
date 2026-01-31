@@ -7,7 +7,6 @@ from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithPl
 from .route import advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
 from ..data.map import Map
-from ..mpi_comm.distributor import MPIDistributor
 from ..utils import TimerSet
 from ..vehicle import Vehicle, VehicleAlternatives
 
@@ -58,7 +57,7 @@ class Simulator:
         updated_speeds = {}
 
         if self.sim.last_saved_speeds:
-             self.sim.routing_map.update_current_speeds(self.sim.last_saved_speeds)
+            self.sim.routing_map.update_current_speeds(self.sim.last_saved_speeds)
 
         for alternatives_provider in alternatives_providers:
             if self.sim.setting.plateau_default_route and isinstance(alternatives_provider, MPIDistributedAlternatives):
@@ -120,7 +119,7 @@ class Simulator:
                                                       self.sim.setting.travel_time_limit_perc)
 
                 with timer_set.get("advance_vehicle"):
-                    fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy(), offset)
+                    fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy())
                     moved_last_step = False
                     if has_moved or self.sim.routing_map.has_temporary_speeds_planned():
                         last_time_moved = self.current_offset
@@ -159,7 +158,7 @@ class Simulator:
             self.sim.history.writer.save_computational_time(self.sim.duration.total_seconds())
             logger.info(f"Simulation done in {self.sim.duration}.")
 
-    def advance_vehicles(self, vehicles: List[Vehicle], current_offset) -> Tuple[List[FCDRecord], bool]:
+    def advance_vehicles(self, vehicles: List[Vehicle]) -> Tuple[List[FCDRecord], bool]:
         """Move the vehicles on its route and generate FCD records"""
 
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
@@ -184,12 +183,12 @@ class Simulator:
             if alt is not None and alt != []:
                 vehicle.update_followup_route(alt[0], self.sim.routing_map, travel_time_limit_perc=None)
             else:
-                vehicle.osm_route = None
+                vehicle.osm_route = []
                 vehicle.active = False
                 vehicle.status = "no plateau route"
 
-    def update_map_speeds(self, updated_speeds: dict, last_map_update: int,
-                          alternatives_providers: List[AlternativesProvider]):
+    def update_map_speeds(self, updated_speeds: dict, last_map_update: timedelta,
+                          alternatives_providers: List[AlternativesProvider]) -> Tuple[timedelta, dict]:
         # Get segments where max speeds changed
         updated_speeds.update(self.sim.routing_map.update_temporary_max_speeds(
             self.sim.setting.departure_time + self.current_offset))
@@ -256,27 +255,11 @@ def check_travel_times(routing_map: Map, alternatives_providers: List[Alternativ
         return
 
     for provider in alternatives_providers:
-        current_routes = [v.get_followup_route() for v in vehicles_to_update
-                          if v.alternatives == provider.vehicle_behaviour]
+        filtered_vehicles = [v for v in vehicles_to_update if v.alternatives == provider.vehicle_behaviour]
+        current_routes = [v.get_followup_route() for v in filtered_vehicles]
 
         travel_times = provider.get_routes_travel_times(current_routes)
 
-        for vehicle, travel_time in zip(vehicles_to_update, travel_times):
+        for vehicle, travel_time in zip(filtered_vehicles, travel_times):
             if travel_time is not None:
                 vehicle.set_current_travel_time(travel_time, current_map_id)
-
-
-def remove_infinity_alternatives(alternatives: List[AlternativeRoutes], routing_map: Map) \
-        -> List[AlternativeRoutes]:
-    """
-    Removes alternatives that contain infinity.
-    """
-    filtered_alternatives = []
-    for alternatives_for_vehicle in alternatives:
-        for_vehicle = []
-        for alternative in alternatives_for_vehicle:
-            # calculate travel time for alternative
-            if not routing_map.is_route_closed(alternative[0]):
-                for_vehicle.append(alternative)
-        filtered_alternatives.append(for_vehicle)
-    return filtered_alternatives
