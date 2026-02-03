@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <numeric>
 #include <sstream>
 #include <thread>
 
@@ -104,40 +105,58 @@ public:
     std::vector<int> ret_ids = std::vector<int>();
     std::vector<std::vector<std::vector<int>>> ret_rpv = std::vector<std::vector<std::vector<int>>>();
     std::vector<std::vector<float>> ret_ttpv = std::vector<std::vector<float>>();
-    // for (size_t i = 0; i < vehicle_ids_->size(); ++i) {
-    //   ret_ids.push_back(vehicle_ids_->at(i));
-    //   ret_rpv.push_back(routes_per_vehicle_->at(i));
-    //   ret_ttpv.push_back(travel_times_per_vehicle_->at(i));
-    // }
-    // vehicle_ids_ = std::make_shared<std::vector<int>>();
-    // routes_per_vehicle_ = std::make_shared<std::vector<std::vector<std::vector<int>>>>();
-    // travel_times_per_vehicle_ = std::make_shared<std::vector<std::vector<float>>>();
+
     std::swap(*vehicle_ids_, ret_ids);
     std::swap(*routes_per_vehicle_, ret_rpv);
     std::swap(*travel_times_per_vehicle_,ret_ttpv);
+
+    // Sort by vehicle ID to maintain order
+    if (!ret_ids.empty()) {
+      const size_t n = ret_ids.size();
+      std::vector<size_t> indices(n);
+      std::iota(indices.begin(), indices.end(), 0);
+      std::sort(indices.begin(), indices.end(),
+                [&ret_ids](size_t i1, size_t i2) { return ret_ids[i1] < ret_ids[i2]; });
+
+      std::vector<int> sorted_ids;
+      std::vector<std::vector<std::vector<int>>> sorted_rpv;
+      std::vector<std::vector<float>> sorted_ttpv;
+
+      sorted_ids.reserve(n);
+      sorted_rpv.reserve(n);
+      sorted_ttpv.reserve(n);
+
+      for (size_t i = 0; i < n; ++i) {
+        sorted_ids.push_back(ret_ids[indices[i]]);
+        sorted_rpv.push_back(std::move(ret_rpv[indices[i]]));
+        sorted_ttpv.push_back(std::move(ret_ttpv[indices[i]]));
+      }
+
+      ret_ids = std::move(sorted_ids);
+      ret_rpv = std::move(sorted_rpv);
+      ret_ttpv = std::move(sorted_ttpv);
+    }
+
     return std::make_tuple(ret_ids, ret_rpv, ret_ttpv);
   }
 
   std::vector<std::pair<int, float>> get_travel_times() {
     std::lock_guard<std::mutex> guard(state_mutex);
-    std::vector<std::pair<int, float>> ret_travel_times = std::vector<std::pair<int, float>>();
-    for (const auto &tt : *route_travel_times_) {
-      ret_travel_times.push_back(tt);
-    }
-    route_travel_times_ = std::make_shared<std::vector<std::pair<int, float>>>();
+    std::vector<std::pair<int, float>> ret_travel_times;
+    std::swap(ret_travel_times, *route_travel_times_);
     return ret_travel_times;
   }
 
   void push_route(int v, std::vector<std::vector<int>> rpv, std::vector<float> ttpv) {
     std::lock_guard<std::mutex> guard(state_mutex);
-    vehicle_ids_->push_back(std::move(v));
-    routes_per_vehicle_->push_back(std::move(rpv));
-    travel_times_per_vehicle_->push_back(std::move(ttpv));
+    vehicle_ids_->emplace_back(v);
+    routes_per_vehicle_->emplace_back(std::move(rpv));
+    travel_times_per_vehicle_->emplace_back(std::move(ttpv));
   }
 
   void push_travel_time(int id, float travel_time) {
     std::lock_guard<std::mutex> guard(state_mutex);
-    route_travel_times_->push_back(std::make_pair(id, travel_time));
+    route_travel_times_->emplace_back(id, travel_time);
   }
 };
 
@@ -639,9 +658,11 @@ public:
         int max_routes) {
 
         const VehicleTask& task = ptr_to_data_in[i];
+        vehicle_ids[i] = task.vehicle_id;  // Always set vehicle ID to maintain order
+
         const std::unique_ptr<std::vector<Result>> routeResults = alg->GetResults(task.origin, task.destination, max_routes, false);
 
-        if (routeResults) {
+        if (routeResults && !routeResults->empty()) {
           std::vector<std::vector<int>> routes;
           std::vector<float> travel_times;
           for (const auto &result : *routeResults) {
@@ -656,14 +677,13 @@ public:
             routes.emplace_back(segments);
             travel_times.emplace_back(result.travelTime);
           }
-          // State::instance().push_route(task.vehicle_id, routes, travel_times);
-          // vehicle_ids.push_back(task.vehicle_id)
-          vehicle_ids[i] = task.vehicle_id;
-          std::swap(routes_per_vehicle[i],routes);
-          std::swap(travel_times_per_vehicle[i],travel_times);
 
-          // ace::CommInterface::instance()->async_send(result, this->header.rank);
+          std::swap(routes_per_vehicle[i], routes);
+          std::swap(travel_times_per_vehicle[i], travel_times);
         }
+
+        // If no routes found, vectors remain empty (default constructed)
+
       },
       true,
       vehicle_tasks,
@@ -881,18 +901,15 @@ namespace ruthlib{
 
     auto travel_times = State::instance().get_travel_times();
 
-    // create vector of travel times sorted by route id
-    std::vector<float> travel_times_vector;
-    travel_times_vector.resize(travel_times.size());
-    for (const auto &tt : travel_times)
-    {
-      if (tt.first >= 0 && static_cast<size_t>(tt.first) < travel_times_vector.size())
-      {
-        travel_times_vector[tt.first] = tt.second;
-      }
-      else
-      {
-        log("Invalid route ID " + std::to_string(tt.first) + ", skipping");
+    // Route IDs are guaranteed to be 0, 1, 2, ..., N-1 for N routes
+    std::vector<float> travel_times_vector(travel_times.size());
+
+    for (const auto &tt : travel_times) {
+      const int route_id = tt.first;
+      if (route_id >= 0 && static_cast<size_t>(route_id) < travel_times_vector.size()) {
+        travel_times_vector[route_id] = tt.second;
+      } else {
+        log("Invalid route ID " + std::to_string(route_id) + ", skipping");
       }
     }
 
@@ -920,73 +937,3 @@ namespace ruthlib{
     finish_workload->wait();
   }
 } // namespace ruthlib
-
-// int main(int argc, char *argv[]) {
-//   int num_vehicles = 3;
-//   ruthlib::setup_ace(10);
-
-//   ruthlib::init_routes();
-//   if (ruthlib::is_master()) {
-
-//     std::vector<std::pair<int, int>> OD_matrix = ruthlib::load_od_matrix(
-//         "/home/pav/Repos/ruth-cpp/ruth/data/OD_matrix.csv", num_vehicles);
-//     ruthlib::setup_map("/home/pav/Repos/ruth-cpp/ruth/data/map_prague.hdf5");
-
-//     ruthlib::do_alternatives(OD_matrix, 20);
-//   }
-
-//   ruthlib::barrier();
-
-//   std::vector<std::vector<int>> routes_per_one_vehicle;
-//   if (ruthlib::is_master()) {
-
-//     auto [vehicle_ids, routes_per_vehicle, travel_times_per_vehicle] = ruthlib::get_routes();
-//     routes_per_one_vehicle = routes_per_vehicle[0];
-
-//     // Print all the nodes in routes_per_vehicle[0]
-//     std::cout << "Routes for vehicle 0:" << routes_per_one_vehicle.size() << " routes" << std::endl;
-
-//     ruthlib::do_travel_times(routes_per_one_vehicle);
-//   }
-
-//   ruthlib::barrier();
-
-//   if (ruthlib::is_master()) {
-//     // Print travel times for vehicle 0
-//     auto travel_times = ruthlib::get_travel_times();
-//     // set speed to 0.1 at the first edge
-//     int edge_id = -1;
-//     auto node = State::instance().get_graph()->GetNodeById(routes_per_one_vehicle[0][0]);
-//     auto edges_out = node.GetEdgesOut();
-//     for (const auto &edge : edges_out) {
-//       if (edge->endNode.endNodePtr->id == routes_per_one_vehicle[0][1]) {
-//         edge_id = edge->edgeId;
-//         break;
-//       }
-//     }
-//     std::vector<std::pair<int, float>> edge_speeds = {{edge_id, 0.0f}};
-//     // print edge_speeds
-//     for (const auto &es : edge_speeds) {
-//       std::cout << "Edge " << es.first << " speed set to " << es.second << " m/s" << std::endl;
-//     }
-
-//     ruthlib::update_speeds(edge_speeds);
-
-//     ruthlib::do_travel_times(routes_per_one_vehicle);
-//   }
-
-//   ruthlib::barrier();
-
-//   if (ruthlib::is_master()) {
-//     // Print travel times for vehicle 0 after speed update
-//     auto travel_times = ruthlib::get_travel_times();
-//     std::cout << "Travel times after speed update:" << std::endl;
-//     for (size_t i = 0; i < travel_times.size(); ++i) {
-//       std::cout << "Route " << i << ": " << travel_times[i] << " seconds" << std::endl;
-//     }
-//   }
-
-//   log("All workloads completed, exiting...");
-
-//   ruthlib::finalize();
-// } // main

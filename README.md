@@ -49,6 +49,9 @@ make
 
 # Add build directory to Python path
 export PYTHONPATH=path_to/binding/build:$PYTHONPATH
+
+# print to verify
+echo $PYTHONPATH
 ```
 
 ## Execution

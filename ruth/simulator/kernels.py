@@ -51,6 +51,7 @@ class AlternativesProvider:
 class FastestPathsAlternatives(AlternativesProvider):
 
     def __init__(self):
+        super().__init__()
         self.vehicle_behaviour = VehicleAlternatives.DIJKSTRA_FASTEST
 
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
@@ -66,6 +67,7 @@ class FastestPathsAlternatives(AlternativesProvider):
 class ShortestPathsAlternatives(AlternativesProvider):
 
     def __init__(self):
+        super().__init__()
         self.vehicle_behaviour = VehicleAlternatives.DIJKSTRA_SHORTEST
 
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
@@ -113,37 +115,46 @@ class MPIDistributedAlternatives(AlternativesProvider):
         return
 
     def postprocess(self, li, vehicles):
-        id_to_index = {vid: i for i, vid in enumerate(li[0])}
+        """
+        Remap HDF5 node IDs to OSM IDs.
+        C++ returns routes sorted by vehicle ID (0, 1, 2, ...), so indices match directly.
+        """
+        vehicle_ids, routes_per_vehicle, travel_times_per_vehicle = li
+        num_returned = len(vehicle_ids)
+
+        # Defensive check: ensure C++ returned the expected number of results
+        if num_returned != len(vehicles):
+            raise ValueError(f"C++ returned {num_returned} results but expected {len(vehicles)} vehicles")
+
         remapped_routes = []
         for vehicle_index in range(len(vehicles)):
-            i = id_to_index.get(vehicle_index)
-            if i is not None:
-                results = [
-                    ([self.routing_map.hdf5_to_osm_id(node_id) for node_id in route],travel_time)
-                    for route, travel_time in zip(li[1][i], li[2][i])
-                ]
-                remapped_routes.append(results)
-            else:
-                remapped_routes.append([])
+            # Verify vehicle ID matches expected index (defensive programming)
+            if vehicle_ids[vehicle_index] != vehicle_index:
+                raise ValueError(
+                    f"Vehicle ID mismatch at index {vehicle_index}: "
+                    f"expected {vehicle_index}, got {vehicle_ids[vehicle_index]}"
+                )
+
+            # Remap HDF5 node IDs to OSM IDs for each route (empty list if no routes found)
+            results = [
+                ([self.routing_map.hdf5_to_osm_id(node_id) for node_id in route], travel_time)
+                for route, travel_time in zip(routes_per_vehicle[vehicle_index], travel_times_per_vehicle[vehicle_index])
+            ]
+            remapped_routes.append(results)
+
         return remapped_routes
 
     def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
         Optional[AlternativeRoutes]]:
-        OD_matrix = [
+        od_matrix = [
             (self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
                 self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[1]))
             for v in vehicles
         ]
-        self.ru.do_alternatives(OD_matrix, k)
-
-        remapped_routes = []
-
-        li = self.ru.get_routes()
+        self.ru.do_alternatives(od_matrix, k)
 
         # li[0] is a list of vehicle IDs, li[1] is a list of routes, and li[2] is a list of travel times
-        remapped_routes = self.postprocess(li, vehicles)
-
-        return remapped_routes
+        return self.postprocess(self.ru.get_routes(), vehicles)
 
     def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
         routes = [
@@ -175,6 +186,7 @@ class FirstRouteSelection(RouteSelectionProvider):
     Selects the first route for each car.
     """
     def __init__(self):
+        super().__init__()
         self.vehicle_behaviour = VehicleRouteSelection.FIRST
 
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
@@ -184,12 +196,10 @@ class FirstRouteSelection(RouteSelectionProvider):
 class RandomRouteSelection(RouteSelectionProvider):
 
     def __init__(self, seed: int = None):
+        super().__init__()
         self.vehicle_behaviour = VehicleRouteSelection.RANDOM
         self.generator = random.Random(seed)
 
-    """
-    Selects random route for each car.
-    """
 
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
         result = []
@@ -200,9 +210,12 @@ class RandomRouteSelection(RouteSelectionProvider):
 
 
 class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
-    # from ..zeromq.src.client import Client
-
+    """
+    Sends routes to a distributed node that calculates a Monte Carlo simulation and returns
+    the shortest route for each car.
+    """
     def __init__(self, client):
+        super().__init__()
         self.vehicle_behaviour = VehicleRouteSelection.PTDR
         self.client = client
         self.ptdr_info = None
@@ -211,10 +224,6 @@ class ZeroMQDistributedPTDRRouteSelection(RouteSelectionProvider):
         self.ptdr_info = ptdr_info
         # self.client.broadcast(Message(kind="load-profiles", data=str(path)))
 
-    """
-    Sends routes to a distributed node that calculates a Monte Carlo simulation and returns
-    the shortest route for each car.
-    """
 
     def select_routes(self, route_possibilities: List[VehicleWithPlans]) -> List[VehicleWithRoute]:
         raise NotImplementedError("PTDR route selection is not implemented yet.")
