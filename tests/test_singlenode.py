@@ -138,7 +138,6 @@ def test_stuck_detection(mock, setup_vehicle, setup_simulator):
     assert setup_vehicle.start_distance_offset == segment_length
 
 
-# TODO: test update map speeds - temporary max and current
 def test_update_map_speeds_no_overlap(setup_simulator):
     sim = setup_simulator.state
     last_map_update = setup_simulator.current_offset - timedelta(seconds=1)
@@ -171,8 +170,3 @@ def test_update_map_speeds_no_overlap(setup_simulator):
 # TODO: test sim update fcds
 # TODO: test drop old records
 # TODO: test change baseline alts
-
-# TODO: QUEUES in new file
-# TODO: VEHICLE file
-# TDOD: GLOBAL VIEW file
-# TODO: MAP file

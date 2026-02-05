@@ -171,15 +171,16 @@ def save_graph_to_hdf5(g, file_path):
         for id_from, id_to, edge_data in out_edges:
             edge_id = get_edge_id_from_data(edge_data)
             node_index = node_dict[osm_to_hdf_map_ids[id_to]][2]
-            computer_speed = get_speed_from_data(edge_data)
+            computed_speed = get_speed_from_data(edge_data)
             length = edge_data['length']
 
             edge_data_index = edge_data_dict[edge_id][0]
 
+            assert computed_speed == edge_data_dict[edge_id][1]
             edge_tuple = (
                 edge_id,
                 node_index,
-                computer_speed,
+                computed_speed,
                 length,
                 edge_data_index
             )

@@ -138,6 +138,7 @@ class Vehicle:
     alternatives: VehicleAlternatives = VehicleAlternatives.DEFAULT
     route_selection: VehicleRouteSelection = VehicleRouteSelection.NO_ALTERNATIVE
     current_travel_time: Optional[CurrentTravelTime] = None
+    _frequency_seconds: int = None
 
     def __post_init__(self):
         # Normalize pandas Timedelta to datetime.timedelta (10x faster operations)
@@ -300,9 +301,6 @@ class Vehicle:
     def set_position(self, sp: SegmentPosition):
         self.start_index = sp.index
         self.start_distance_offset = sp.position
-
-    def is_active(self, within_offset, freq):
-        return self.active and within_offset == round_timedelta(self.time_offset, freq)
 
     def is_at_the_end_of_segment(self, routing_map: Map):
         node_from, node_to = self.osm_route[self.start_index], self.osm_route[self.start_index + 1]

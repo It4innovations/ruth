@@ -140,7 +140,17 @@ def remove_roundabouts(network):
 
 
 class Map:
-    """Routing map."""
+    """
+    Routing map.
+    self.network: changes at the end of __init__ to be MultiDiGraph of current_network
+    self.original_network: original network with roundabouts removed (DiGraph)
+    self.current_network: current network with updated speeds (DiGraph)
+        .maxspeed (kph) - maximum allowed speed, rounded int, does not change during simulation
+        .speed_kph - maximum allowed speed, rounded int, changes during simulation due to temporary speed limits
+        .current_speed (kph) - current speed, rounded int, changes during simulation as average speed of vehicles on the segment
+        .current_travel_time (s) - current travel time based on current speed
+        .length (m) - length of the segment
+    """
 
     def __init__(self, bbox=None, download_date=None, graphml_file=None, data_dir="./data", with_speeds=True, save_hdf=True):
         """
