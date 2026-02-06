@@ -6,10 +6,7 @@ from datetime import datetime, timedelta
 def round_timedelta(td: timedelta, freq: timedelta):
     td_seconds = td.total_seconds()
     freq_seconds = freq.total_seconds()
-    result = timedelta(seconds=freq_seconds * round(td_seconds / freq_seconds))
-    expected = freq * round(td / freq)
-    assert result == expected, f"round_timedelta mismatch: {result} != {expected} (td={td}, freq={freq})"
-    return result
+    return timedelta(seconds=freq_seconds * round(td_seconds / freq_seconds))
 
 
 def round_datetime(dt: datetime, freq: timedelta):

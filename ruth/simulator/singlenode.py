@@ -59,9 +59,10 @@ class Simulator:
         if self.sim.last_saved_speeds:
             self.sim.routing_map.update_current_speeds(self.sim.last_saved_speeds)
 
-        for alternatives_provider in alternatives_providers:
-            if self.sim.setting.plateau_default_route and isinstance(alternatives_provider, MPIDistributedAlternatives):
-                self.change_baseline_alternatives(self.sim.vehicles, alternatives_provider)
+        if step == 0:
+            for alternatives_provider in alternatives_providers:
+                if self.sim.setting.plateau_default_route and isinstance(alternatives_provider, MPIDistributedAlternatives):
+                    self.change_baseline_alternatives(self.sim.vehicles, alternatives_provider)
 
         with self.sim.history:
             # save the initial map to hdf5
