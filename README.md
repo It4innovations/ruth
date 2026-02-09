@@ -71,7 +71,7 @@ echo $PYTHONPATH
    ```
 
 4. **View results:**
-   - Output is saved in fcd_history.h5 file and specified pickle file
+   - Output is saved in fcd_history-partXXXX.h5 file and specified pickle file
    - Use the animation tools to visualize traffic flow (see [Animation](#animation))
 
 ### Multi-node Execution with MPI
@@ -108,7 +108,9 @@ Configuration file with all available options:
     "ptdr-path": "",
     "continue-from": "",
     "stuck-detection": 0,
-    "plateau-default-route": false
+    "plateau-default-route": false,
+    "buffer-size": 10000,
+    "max-records-per-file": 1000000000
   },
   "run": {
     "vehicles-path": "benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet"
@@ -128,23 +130,25 @@ Configuration file with all available options:
 
 **Configuration Parameters Explained:**
 
-| Parameter | Description                                                  | Default                  |
-|-----------|--------------------------------------------------------------|--------------------------|
-| `departure-time` | Simulation start time                                        | required                 |
-| `round-frequency-s` | Time step duration in seconds                                | 5                        |
-| `k-alternatives` | Number of alternative routes to compute                      | 1                        |
-| `map-update-freq-s` | Frequency to update traffic conditions                       | 1                        |
+| Parameter                  | Description                                                  | Default                  |
+|----------------------------|--------------------------------------------------------------|--------------------------|
+| `departure-time`           | Simulation start time                                        | required                 |
+| `round-frequency-s`        | Time step duration in seconds                                | 5                        |
+| `k-alternatives`           | Number of alternative routes to compute                      | 1                        |
+| `map-update-freq-s`        | Frequency to update traffic conditions                       | 1                        |
 | `los-vehicles-tolerance-s` | Tolerance for vehicle loss-of-service detection              | 5                        |
-| `out` | Output file path for simulation results                      | simulation-record.pickle |
-| `seed` | Random seed for reproducibility                              | random                   |
-| `walltime-s` | Time limit when simulation is saved                          | -                        |
-| `saving-interval-s` | Interval for saving intermediate results                     | -                        |
-| `speeds-path` | Path to CSV with temporary speed restrictions                | -                        |
-| `travel-time-limit-perc` | Travel time limit as percentage                              | 0.1                      |
-| `ptdr-path` | Path to PTDR route selection data                            | -                        |
-| `continue-from` | Path to pickle file to continue previous simulation          | -                        |
-| `stuck-detection` | Number of steps before stuck detection triggers (0=disabled) | 0                        |
-| `plateau-default-route` | Recalculate default route with Plateau                       | false                    |
+| `out`                      | Output file path for simulation results                      | simulation-record.pickle |
+| `seed`                     | Random seed for reproducibility                              | random                   |
+| `walltime-s`               | Time limit when simulation is saved                          | -                        |
+| `saving-interval-s`        | Interval for saving intermediate results                     | -                        |
+| `speeds-path`              | Path to CSV with temporary speed restrictions                | -                        |
+| `travel-time-limit-perc`   | Travel time limit as percentage                              | 0.1                      |
+| `ptdr-path`                | Path to PTDR route selection data                            | -                        |
+| `continue-from`            | Path to pickle file to continue previous simulation          | -                        |
+| `stuck-detection`          | Number of steps before stuck detection triggers (0=disabled) | 0                        |
+| `plateau-default-route`    | Recalculate default route with Plateau                       | false                    |
+| `buffer-size`              | Number of FCD records to buffer before flushing to disk       | 10000                    |
+| `max-records-per-file`     | Rotate HDF5 file after this many records                     | 1000000000               |
 
 ### Command-line Arguments
 
