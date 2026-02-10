@@ -14,8 +14,14 @@ from .queues import QueuesManager
 from ..data.map import BBox, Map
 from ..data.segment import LengthMeters, Segment, SpeedMps
 from ..fcd_history import FCDHistory
-from ..globalview import GlobalView
 from ..vehicle import Vehicle
+
+try:
+    from ..globalview_wrapper import GlobalView
+    logging.info("Using C++ GlobalView module for improved performance.")
+except ImportError:
+    logging.warning("C++ GlobalView module not found, using Python fallback (performance may be degraded).")
+    from ..globalview import GlobalView
 
 
 @dataclass(frozen=True)
@@ -92,27 +98,19 @@ class Simulation:
     def __init__(self, vehicles: List[Vehicle], setting: SimSetting, bbox: BBox, map_download_date: str):
         """
         Construct a new simulation.
-
-        Parameters:
-        -----------
-            vehicles: List[Vehicles]
-              a list of vehicles for simulation
-            setting: SimSetting
         """
 
         self.setting = setting
-        # use configured buffer size and max records per file for FCD history
         self.history = FCDHistory(self.setting.fcd_history_base_name, self.setting.buffer_size, self.setting.max_records_per_file)
-        self.global_view = GlobalView()  # active global view
+        self.bbox = bbox
+        self.map_download_date = map_download_date
+        self._routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
+        self.global_view = GlobalView(routing_map=self._routing_map)
         self.vehicles = vehicles
         self.steps_info = []
         self.duration = timedelta(seconds=0)
         self.queues_manager = QueuesManager()
-        self.bbox = bbox
-        self.map_download_date = map_download_date
-        self._routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
         self.last_saved_speeds = None
-        # Cache round_freq as int for fast vehicle offset comparisons
         self._freq_seconds: int = int(self.setting.round_freq.total_seconds())
 
     def __getstate__(self):
@@ -124,19 +122,19 @@ class Simulation:
         d = self.__dict__.copy()
         if "_routing_map" in d:
             d.pop("_routing_map")
-        # if "global_view" in d:
-        #     d.pop("global_view")
         return d
 
     def __setstate__(self, d):
         self.__dict__.update(d)
-        if "global_view" not in d:
-            self.global_view = GlobalView()
         if "last_saved_speeds" not in d:
             self.last_saved_speeds = None
         if "_freq_seconds" not in d:
             self._freq_seconds = int(self.setting.round_freq.total_seconds())
         self._routing_map = None  # lazy init
+
+        # TODO: check when necessary to recreate global_view and when not
+        if "global_view" not in d:
+            self.global_view = GlobalView(routing_map=self.routing_map)
 
     @property
     def routing_map(self):
@@ -169,8 +167,12 @@ class Simulation:
                    default=None)
 
     def update(self, fcds: List[FCDRecord]):
-        for fcd in fcds:
-            self.global_view.add(fcd)
+        # TODO: consider adding a batch update to python global view as well for better performance
+        if hasattr(self.global_view, 'add_batch'):
+            self.global_view.add_batch(fcds)
+        else:
+            for fcd in fcds:
+                self.global_view.add(fcd)
 
     def drop_old_records(self, offset_threshold):
         if offset_threshold is not None:

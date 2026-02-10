@@ -48,6 +48,13 @@ target_include_directories(ruthlib PRIVATE RoutingAlg)
 target_include_directories(ruthlib PRIVATE RoutingAlg/include)
 target_include_directories(ruthlib PRIVATE ${HDF5_INCLUDE_DIRS})
 
+# GlobalView C++ module with spatial indexing
+pybind11_add_module(globalview_cpp src/globalview_bindings.cpp)
+target_include_directories(globalview_cpp PRIVATE src)
+set_target_properties(globalview_cpp PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
+)
+
 # Add executable target from main.cpp
 add_executable(ruth_exec src/main.cpp)
 target_link_libraries(ruth_exec PRIVATE ruth)

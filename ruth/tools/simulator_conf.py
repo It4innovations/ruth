@@ -11,6 +11,24 @@ from click import IntRange
 from serde import serde, field
 from serde.json import from_json
 
+
+def configure_logging():
+    """Configure logging early, before any imports that might use it."""
+    log_level = logging.INFO
+    if os.environ.get("LOG_LEVEL", "").lower() == "debug":
+        log_level = logging.DEBUG
+
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s %(name)s:%(levelname)-4s %(message)s",
+        datefmt="%d-%m-%Y %H:%M:%S",
+        force=True,
+        stream=sys.stdout,
+    )
+
+
+configure_logging()
+
 from ..tools.simulator import (run_inner, AlternativesRatio as AlternativesRatioInner, CommonArgs as CommonArgsInner,
                                RouteSelectionRatio as RouteSelectionRatioInner)
 
@@ -167,18 +185,6 @@ def run(ctx):
 
 
 def main():
-    log_level = logging.INFO
-    log_level_env = os.environ.get("LOG_LEVEL", "")
-    if log_level_env.lower() == "debug":
-        log_level = logging.DEBUG
-
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s %(name)s:%(levelname)-4s %(message)s",
-        datefmt="%d-%m-%Y %H:%M:%S",
-        force=True,
-        stream=sys.stdout,
-    )
     single_node_simulator_conf(obj={})
 
 
