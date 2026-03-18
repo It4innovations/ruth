@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import timedelta
 from typing import Dict, List, Optional, Set, TYPE_CHECKING
 
-from .data.segment import SegmentId, SpeedKph
+from .data.segment import SegmentId, SpeedKph, speed_mps_to_kph, SpeedMps
 
 if TYPE_CHECKING:
     from .simulator.simulation import FCDRecord
@@ -111,7 +111,7 @@ class GlobalView:
         speeds = list(speeds.values())
         if len(speeds) == 0:
             return None
-        return SpeedKph(sum(speeds) / len(speeds))
+        return SpeedKph(speed_mps_to_kph(SpeedMps(sum(speeds) / len(speeds))))
 
     def drop_old(self, dt_threshold):
         for (segment_id, old_fcds) in self.fcd_by_segment.items():
