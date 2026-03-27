@@ -206,6 +206,12 @@ class Map:
                 lanes = int(lanes)
             except (ValueError, TypeError):
                 lanes = 1
+            # NOTE: osmnx stores total lanes for bidirectional roads (both directions
+            # share the same 'lanes' tag from OSM), so divide by 2 for non-oneway edges.
+            oneway = edge.get('oneway', False)
+            oneway = oneway is True or str(oneway).lower() == 'true'
+            if not oneway and lanes > 1:
+                lanes = max(1, (lanes + 1) // 2)
             edge["lanes"] = lanes if lanes > 0 else 1
 
         self.current_network = self.original_network.copy()
