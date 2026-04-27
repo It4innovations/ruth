@@ -63,7 +63,7 @@ cmake .. -DPYTHON_EXECUTABLE="$PYTHON_FOR_CMAKE"
 make
 
 # Add build directory to Python path
-export PYTHONPATH=path_to/binding/build:$PYTHONPATH
+export PYTHONPATH=$(pwd):$PYTHONPATH
 
 # print to verify
 echo $PYTHONPATH
