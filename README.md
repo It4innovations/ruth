@@ -23,7 +23,8 @@ source venv/bin/activate
 
 # Option 1: Install from local copy
 git clone --recurse-submodules https://github.com/It4innovations/ruth.git
-pip install path_to/ruth
+cd ruth
+pip install -e .
 
 # Option 2: Install directly from GitHub
 pip install git+https://github.com/It4innovations/ruth.git
