@@ -28,7 +28,14 @@ pip install -e .
 
 # Option 2: Install directly from GitHub
 pip install git+https://github.com/It4innovations/ruth.git
+
+# Option 3: Offline installation (e.g., HPC without Internet)
+python -m pip download -r requirements.txt -d ruth-wheels
+## Copy `ruth-wheels/` to the cluster, then:
+python -m pip install --no-index --find-links ruth-wheels -e .
 ```
+
+
 
 To use **Plateau** algorithm or **multi-node** execution, ACE library must be compiled from source.
 
