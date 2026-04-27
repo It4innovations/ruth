@@ -18,7 +18,7 @@ Create and activate a python virtual environment and install `ruth`:
 
 ```bash
 # Create virtual environment
-python3 -m venv venv
+python3.11 -m venv venv
 source venv/bin/activate
 
 # Option 1: Install from local copy
