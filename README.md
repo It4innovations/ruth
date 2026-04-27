@@ -35,6 +35,13 @@ To use **Plateau** algorithm or **multi-node** execution, ACE library must be co
 #### Load Required Modules (HPC environments)
 
 ```bash
+# Load required modules (HPC environments)
+# Some HPC systems (e.g., those using EasyBuild) require loading
+# a base module environment first to expose the software stack.
+
+# Example (system-dependent):
+# ml EB/apps EB/install OR  ml GCCcore/<version>  OR  ml foss/<version>
+
 ml Python/3.11.3-GCCcore-12.3.0 CMake/3.26.3-GCCcore-12.3.0 \
    HDF5/1.14.0-gompi-2023a OpenMPI/4.1.5-GCC-12.3.0 SQLite/3.42.0-GCCcore-12.3.0
 ```
