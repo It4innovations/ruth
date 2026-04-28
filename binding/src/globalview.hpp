@@ -7,6 +7,7 @@
 #include <cmath>
 #include <algorithm>
 #include <set>
+#include <mutex>
 
 struct FCDRecord {
     double datetime_seconds;      // Timestamp as seconds (epoch)
