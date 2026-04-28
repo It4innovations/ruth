@@ -18,9 +18,9 @@ from ..vehicle import Vehicle
 
 try:
     from ..globalview_wrapper import GlobalView
-    logging.info("Using C++ GlobalView module for improved performance.")
+    logging.info("Using C++ GlobalView module.")
 except ImportError:
-    logging.warning("C++ GlobalView module not found, using Python fallback (performance may be degraded).")
+    logging.warning("C++ GlobalView module not found, using Python fallback.")
     from ..globalview import GlobalView
 
 
