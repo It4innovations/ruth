@@ -51,6 +51,9 @@ To use **Plateau** algorithm or **multi-node** execution, ACE library must be co
 
 ml Python/3.11.3-GCCcore-12.3.0 CMake/3.26.3-GCCcore-12.3.0 \
    HDF5/1.14.0-gompi-2023a OpenMPI/4.1.5-GCC-12.3.0 SQLite/3.42.0-GCCcore-12.3.0
+
+# In case there is no connectivity on the machine, load pybind to avoid fetching online
+ml pybind11/2.11.1-GCCcore-12.3.0
 ```
 
 #### Build Instructions
@@ -59,11 +62,12 @@ ml Python/3.11.3-GCCcore-12.3.0 CMake/3.26.3-GCCcore-12.3.0 \
 cd ruth/binding
 mkdir build && cd build
 PYTHON_FOR_CMAKE=$(which python)
-cmake .. -DPYTHON_EXECUTABLE="$PYTHON_FOR_CMAKE"
+cmake .. -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DPYTHON_EXECUTABLE="$PYTHON_FOR_CMAKE"
 make
 
 # Add build directory to Python path
 export PYTHONPATH=$(pwd):$PYTHONPATH
+export PYTHONPATH=$(pwd)/lib:$PYTHONPATH
 
 # print to verify
 echo $PYTHONPATH
