@@ -136,6 +136,10 @@ class Simulation:
         if "global_view" not in d:
             self.global_view = GlobalView(routing_map=self.routing_map)
 
+        # if it is cpp globalview, set the routing map there as well
+        if hasattr(self.global_view, 'set_routing_map'):
+            self.global_view.set_routing_map(self.routing_map)
+
     @property
     def routing_map(self):
         if self._routing_map is None:
