@@ -11,27 +11,46 @@ built on top of [osmnx](https://github.com/gboeing/osmnx) library.
 
 ### Basic Installation
 
-Python packages listed in `requirements.txt` are pinned for Python 3.9 - 3.11.
-Change versions in requirements.txt if needed.
+Python packages listed in `requirements.txt` are pinned for Python 3.9 - 3.11. Change versions in `requirements.txt` if needed.
 
-Create and activate a python virtual environment and install `ruth`:
+Create and activate a Python virtual environment:
 
 ```bash
-# Create virtual environment
 python3.11 -m venv venv
 source venv/bin/activate
+```
 
-# Option 1: Install from local copy
-git clone --recurse-submodules https://github.com/It4innovations/ruth.git
+Then install `ruth` using one of the following options.
+
+#### Option 1: Install from a local copy of this branch
+
+```bash
+git clone --recurse-submodules --branch v2.4-globalview-optimization https://github.com/It4innovations/ruth.git
 cd ruth
 pip install -e .
+```
 
-# Option 2: Install directly from GitHub
-pip install git+https://github.com/It4innovations/ruth.git
+#### Option 2: Install this branch directly from GitHub
 
-# Option 3: Offline installation (e.g., HPC without Internet)
+```bash
+pip install git+https://github.com/It4innovations/ruth.git@v2.4-globalview-optimization
+```
+
+#### Option 3: Offline installation, e.g. HPC without Internet
+
+Use this option when the target machine or cluster does not have Internet access.
+
+On a machine with Internet access, go to a local copy of the RUTH repository and prepare the local wheel directory:
+
+```bash
 python -m pip download -r requirements.txt -d ruth-wheels
-## Copy `ruth-wheels/` to the cluster, then:
+```
+
+Copy both the local RUTH repository and the `ruth-wheels/` directory to the cluster.
+
+Then, on the cluster, from inside the RUTH repository, install using the local wheel directory:
+
+```bash
 python -m pip install --no-index --find-links ruth-wheels -e .
 ```
 
@@ -41,18 +60,21 @@ To use **Plateau** algorithm or **multi-node** execution, ACE library must be co
 
 #### Load Required Modules (HPC environments)
 
-```bash
-# Load required modules (HPC environments)
-# Some HPC systems (e.g., those using EasyBuild) require loading
-# a base module environment first to expose the software stack.
+The exact modules depend on the target HPC system. Some systems using EasyBuild require loading a base module environment first to expose the software stack.
 
-# Example (system-dependent):
-# ml EB/apps EB/install OR  ml GCCcore/<version>  OR  ml foss/<version>
+```bash
+# Example, system-dependent:
+# ml EB/apps EB/install
+# or
+# ml GCCcore/<version>
+# or
+# ml foss/<version>
 
 ml Python/3.11.3-GCCcore-12.3.0 CMake/3.26.3-GCCcore-12.3.0 \
    HDF5/1.14.0-gompi-2023a OpenMPI/4.1.5-GCC-12.3.0 SQLite/3.42.0-GCCcore-12.3.0
 
-# In case there is no connectivity on the machine, load pybind to avoid fetching online
+# If there is no Internet connectivity on the machine, load pybind11 locally
+# to avoid fetching it during the build.
 ml pybind11/2.11.1-GCCcore-12.3.0
 ```
 
@@ -62,14 +84,19 @@ ml pybind11/2.11.1-GCCcore-12.3.0
 cd ruth/binding
 mkdir build && cd build
 PYTHON_FOR_CMAKE=$(which python)
-cmake .. -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DPYTHON_EXECUTABLE="$PYTHON_FOR_CMAKE"
-make
+
+cmake .. \
+  -DCMAKE_C_COMPILER=gcc \
+  -DCMAKE_CXX_COMPILER=g++ \
+  -DPYTHON_EXECUTABLE="$PYTHON_FOR_CMAKE"
+
+make -j
 
 # Add build directory to Python path
 export PYTHONPATH=$(pwd):$PYTHONPATH
 export PYTHONPATH=$(pwd)/lib:$PYTHONPATH
 
-# print to verify
+# Print to verify
 echo $PYTHONPATH
 ```
 
@@ -106,6 +133,12 @@ mpirun -n 2 ruth-simulator-conf --config-file="config.json" run
 mpirun -n 16 --map-by ppr:8:node:PE=16 -bind-to core ruth-simulator-conf --config-file="config.json" run
 ```
 
+## Tested Platforms
+
+RUTH has been tested on local development environments and on several HPC systems. Local execution has been tested on Linux/x86_64 and macOS systems, including both Intel and Apple Silicon machines. HPC executions have been tested on Linux-based systems including Karolina, Barbora, LUMI-C, MareNostrum 5, and Deucalion, covering both x86_64 and ARM-based environments.
+
+Platform-specific compiler, MPI, and module configurations may vary between systems. The build and run instructions may therefore require adaptation to the target environment.
+
 ### Configuration File
 
 Configuration file with all available options:
@@ -113,7 +146,7 @@ Configuration file with all available options:
 ```json
 {
   "ruth-simulator": {
-    "departure-time": "2024-10-03 00:00:00",
+    "departure-time": "2026-05-05 07:00:00",
     "round-frequency-s": 5,
     "k-alternatives": 1,
     "map-update-freq-s": 1,
@@ -175,7 +208,7 @@ Alternatively, use command-line arguments instead of a configuration file:
 
 ```sh
 ruth-simulator \
-  --departure-time="2024-10-03 07:00:00" --k-alternatives=4 --seed=7 \
+  --departure-time="2026-05-05 07:00:00" --k-alternatives=4 --seed=7 \
   run \
   --alt-dijkstra-fastest=0.3 --selection-random=0.3 \
   "INPUT-od-matrix-10-vehicles.parquet"
@@ -220,11 +253,8 @@ You can specify temporary speed restrictions via CSV file using the `speeds-path
 
 ```csv
 node_from;node_to;speed;timestamp_from;timestamp_to
-8400868548;10703818;0;2024-08-03 00:10:00;2024-08-03 00:25:00
+8400868548;10703818;0;2026-08-03 00:10:00;2026-08-03 00:25:00
 ```
-
-## Tools
-Other tools can be found in the `ruth/tools` directory. See **ruth/tools/README.md**.
 
 ## Animation
 To create animation of the simulation, `FFmpeg` needs to be installed. Using option `--gif` to generate 
@@ -236,9 +266,11 @@ There are two types of animation:
 
 For more information how to create an animation of an existing simulation, see **ruth/flowmap/README.md**.
 
+
+## Tools
+Other tools can be found in the `ruth/tools` directory. See **ruth/tools/README.md**.
+
+
 # Acknowledgement
 
-* This project has received funding from the European Union’s Horizon 2020 research and innovation programme under grant agreement No 957269. 
-
-* Everest project web page: https://everest-h2020.eu
-
+RUTH has been developed and extended through several research activities at IT4Innovations. Contributions to its development, optimisation, deployment, and large-scale execution experiments have been supported by projects and initiatives including LEXIS,EVEREST, EuroCC, EuroCC2, EuroHPC compute-time projects, and INNOVAITE.
