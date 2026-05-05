@@ -1,11 +1,10 @@
-# RUTH - Routing and Urban Traffic Handler
+# RUTH 
+
+RUTH is a software tool for large-scale routing, traffic simulation, and mobility data generation using OpenStreetMap road networks. The main simulation workflow is exposed through Python, while selected performance-critical components are implemented in C++. Ongoing development continues to extend the C++ components to improve execution efficiency for larger workloads and HPC environments.
 
 <p align="center">
     <img width="60%" src="docs/images/ruth.svg?sanitize=true">
 </p>
-
-A Python library for large-scale traffic simulation and routing on OpenStreetMap (OSM) networks,
-built on top of [osmnx](https://github.com/gboeing/osmnx) library.
 
 ## Installation
 
