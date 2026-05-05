@@ -78,7 +78,7 @@ for routing_id in range(1, min(201, len(routing_map_scaled.routing_id_to_node_id
 # Load C++ module first with error handling
 sys.path.insert(0, './binding/build/lib')
 try:
-    from ruth.globalview_cpp import GlobalView as CppGlobalView
+    from ruth.globalview_wrapper import GlobalView as CppGlobalView
     CPP_AVAILABLE = True
     print("✓ C++ GlobalView module loaded successfully\n")
 except ImportError as e:
@@ -115,7 +115,8 @@ def benchmark_scenario(scenario_name, routing_map, segments_list, num_add_calls=
     print("Python Linear - add_batch times:")
     for call_num in range(num_add_calls):
         start = time.perf_counter()
-        py_linear_gv.add_batch(fcds)
+        for fcd in fcds:
+            py_linear_gv.add(fcd)
         elapsed = (time.perf_counter() - start) * 1000
         py_linear_add_times.append(elapsed)
         print(f"  Call {call_num+1}: {elapsed:.2f} ms")

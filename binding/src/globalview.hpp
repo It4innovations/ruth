@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <vector>
+#include <deque>
 #include <shared_mutex>
 #include <cstring>
 #include <cmath>
@@ -23,22 +24,48 @@ struct FCDRecord {
           offset_from_start(offset), vehicle_speed_mps(speed) {}
 };
 
+/**
+ * Batch of FCD records from a single simulation step
+ */
+struct FCDBatch {
+    std::vector<FCDRecord> fcds;
+    double max_datetime_seconds;
+
+    FCDBatch() : max_datetime_seconds(0.0) {}
+
+    explicit FCDBatch(std::vector<FCDRecord> records) : fcds(std::move(records)) {
+        max_datetime_seconds = 0.0;
+        for (const auto& fcd : fcds) {
+            if (fcd.datetime_seconds > max_datetime_seconds) {
+                max_datetime_seconds = fcd.datetime_seconds;
+            }
+        }
+    }
+};
 
 /**
  * SegmentGlobalView - Thread-safe container for FCD records on a single segment
  */
 class SegmentGlobalView {
 private:
-    std::vector<FCDRecord> fcds_;
+    std::deque<FCDBatch> fcd_batches_;
     mutable std::shared_mutex lock_;
 
 public:
     SegmentGlobalView() = default;
 
-    // Add an FCD record to this segment (write-locked)
+    // Add an FCD record to this segment
     void add(const FCDRecord& fcd) {
         std::unique_lock lock(lock_);
-        fcds_.push_back(fcd);
+        std::vector<FCDRecord> single_record = {fcd};
+        fcd_batches_.emplace_back(std::move(single_record));
+    }
+
+    // Add a batch of FCD records
+    void add_batch(const std::vector<FCDRecord>& fcds) {
+        if (fcds.empty()) return;
+        std::unique_lock lock(lock_);
+        fcd_batches_.emplace_back(fcds);
     }
 
     /* Count vehicles ahead of a given position within a time window */
@@ -48,23 +75,30 @@ public:
         const double dt_min = datetime_seconds - tolerance_seconds;
         const double dt_max = datetime_seconds + tolerance_seconds;
 
-
         std::set<int> unique_vehicles;
 
-        // Iterate through FCDs - compiler can vectorize this loop
-        // because FCDs are contiguous in memory and comparisons are independent
-        const size_t size = fcds_.size();
-        const FCDRecord* data = fcds_.data();
-        for (size_t i = 0; i < size; ++i) {
-            const FCDRecord& fcd = data[i];
-            if (fcd.offset_from_start <= vehicle_offset_m) {
-                continue;
+        // Iterate through all batches
+        for (const auto& batch : fcd_batches_) {
+            const size_t size = batch.fcds.size();
+            const FCDRecord* data = batch.fcds.data();
+
+            // check batch max datetime for quick skip
+            if (batch.max_datetime_seconds < dt_min) {
+                printf("Skipping batch with max datetime %.2f < dt_min %.2f\n", batch.max_datetime_seconds, dt_min);
+                continue;  // Batch is too old, skip entirely
             }
-            if (fcd.vehicle_id == exclude_vehicle_id) {
-                continue;
-            }
-            if (fcd.datetime_seconds >= dt_min && fcd.datetime_seconds <= dt_max) {
-                unique_vehicles.insert(fcd.vehicle_id);
+
+            for (size_t i = 0; i < size; ++i) {
+                const FCDRecord& fcd = data[i];
+                if (fcd.offset_from_start <= vehicle_offset_m) {
+                    continue;
+                }
+                if (fcd.vehicle_id == exclude_vehicle_id) {
+                    continue;
+                }
+                if (fcd.datetime_seconds >= dt_min && fcd.datetime_seconds <= dt_max) {
+                    unique_vehicles.insert(fcd.vehicle_id);
+                }
             }
         }
         return static_cast<int>(unique_vehicles.size());
@@ -73,39 +107,44 @@ public:
     /* Get all FCD records for this segment (read-locked) */
     std::vector<FCDRecord> get_fcds() const {
         std::shared_lock lock(lock_);
-        return fcds_;
+
+        // Flatten all batches into a single vector
+        std::vector<FCDRecord> result;
+        for (const auto& batch : fcd_batches_) {
+            result.insert(result.end(), batch.fcds.begin(), batch.fcds.end());
+        }
+        return result;
     }
 
     /**
-     * Remove old FCD records before a given datetime
+     * Remove old FCD batches before a given datetime
      * Returns true if any were removed (used to track modifications)
      */
     bool drop_old(double dt_threshold) {
         std::unique_lock lock(lock_);
 
-        const size_t old_size = fcds_.size();
-
-        fcds_.erase(
-            std::remove_if(fcds_.begin(), fcds_.end(),
-                [dt_threshold](const FCDRecord& fcd) {
-                    return fcd.datetime_seconds < dt_threshold;
-                }),
-            fcds_.end()
-        );
-
-        return fcds_.size() != old_size;
+        bool modified = false;
+        while (!fcd_batches_.empty() && fcd_batches_.front().max_datetime_seconds < dt_threshold) {
+            fcd_batches_.pop_front();
+            modified = true;
+        }
+        return modified;
     }
 
     /* Clear all FCD records */
     void clear() {
         std::unique_lock lock(lock_);
-        fcds_.clear();
+        fcd_batches_.clear();
     }
 
     /* Get count of FCD records */
     size_t size() const {
         std::shared_lock lock(lock_);
-        return fcds_.size();
+        size_t total = 0;
+        for (const auto& batch : fcd_batches_) {
+            total += batch.fcds.size();
+        }
+        return total;
     }
 };
 
@@ -145,8 +184,7 @@ public:
     }
 
     /**
-     * Add multiple FCD records in batch (more efficient than individual adds)
-     * Reduces Python-C++ boundary overhead by ~3x
+     * Add multiple FCD records in batch
      */
     void add_batch(const std::vector<FCDRecord>& fcds) {
         if (fcds.empty()) return;
@@ -157,12 +195,9 @@ public:
             by_segment[fcd.segment_id].push_back(fcd);
         }
 
-        // Add all FCDs for each segment with a single lock
         for (auto& [segment_id, segment_fcds] : by_segment) {
             std::unique_lock lock(segments_lock_);
-            for (const auto& fcd : segment_fcds) {
-                segments_[segment_id].add(fcd);
-            }
+            segments_[segment_id].add_batch(segment_fcds);
         }
     }
 
