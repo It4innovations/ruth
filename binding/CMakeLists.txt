@@ -56,7 +56,7 @@ set_target_properties(globalview_cpp PROPERTIES
 )
 
 # Add executable target from main.cpp
-add_executable(ruth_exec src/main.cpp)
-target_link_libraries(ruth_exec PRIVATE ruth)
-target_include_directories(ruth_exec PRIVATE src)
-target_include_directories(ruth_exec PRIVATE ace/src)
+# add_executable(ruth_exec src/main.cpp)
+# target_link_libraries(ruth_exec PRIVATE ruth)
+# target_include_directories(ruth_exec PRIVATE src)
+# target_include_directories(ruth_exec PRIVATE ace/src)
