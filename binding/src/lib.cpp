@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <numeric>
 #include <sstream>
 #include <thread>
 
@@ -16,8 +17,9 @@
 #include "scheduler/scheduler.hpp"
 #include "workload/workload.hpp"
 #include "workload/parallelfor.hpp"
+#include "lib.hpp"
 
-#define MULTUPLIER 16
+#define MULTIPLIER 16
 
 void log(const std::string &message) {
   // Variable commented out to avoid unused variable warning
@@ -79,7 +81,7 @@ public:
   std::shared_ptr<Routing::Algorithms::AlternativesPlateauAlgorithm> get_alg() {
     return alg_;
   }
-  
+
   /// routes need to be protected with mutex as many threads may be willing to "push" new items. so i cannot return the shared pointer.
   // the get will return a shared ptr, but contextually reset the internal variable to another empty pointer.
   // the push will add one route to the vector
@@ -96,7 +98,7 @@ public:
 
     route_travel_times_ = std::make_shared<std::vector<std::pair<int, float>>>();
   }
-  
+
   std::tuple<std::vector<int>, std::vector<std::vector<std::vector<int>>>,std::vector<std::vector<float>>>
       get_routes() {
     std::lock_guard<std::mutex> guard(state_mutex);
@@ -104,40 +106,59 @@ public:
     std::vector<int> ret_ids = std::vector<int>();
     std::vector<std::vector<std::vector<int>>> ret_rpv = std::vector<std::vector<std::vector<int>>>();
     std::vector<std::vector<float>> ret_ttpv = std::vector<std::vector<float>>();
-    // for (size_t i = 0; i < vehicle_ids_->size(); ++i) {
-    //   ret_ids.push_back(vehicle_ids_->at(i));
-    //   ret_rpv.push_back(routes_per_vehicle_->at(i));
-    //   ret_ttpv.push_back(travel_times_per_vehicle_->at(i));
-    // }
-    // vehicle_ids_ = std::make_shared<std::vector<int>>();
-    // routes_per_vehicle_ = std::make_shared<std::vector<std::vector<std::vector<int>>>>();
-    // travel_times_per_vehicle_ = std::make_shared<std::vector<std::vector<float>>>();
+
     std::swap(*vehicle_ids_, ret_ids);
     std::swap(*routes_per_vehicle_, ret_rpv);
     std::swap(*travel_times_per_vehicle_,ret_ttpv);
+
+    // Sort by vehicle ID to maintain order
+    if (!ret_ids.empty()) {
+      const size_t n = ret_ids.size();
+      std::vector<size_t> indices(n);
+      std::iota(indices.begin(), indices.end(), 0);
+      std::sort(indices.begin(), indices.end(),
+                [&ret_ids](size_t i1, size_t i2) { return ret_ids[i1] < ret_ids[i2]; });
+
+      std::vector<int> sorted_ids;
+      std::vector<std::vector<std::vector<int>>> sorted_rpv;
+      std::vector<std::vector<float>> sorted_ttpv;
+
+      sorted_ids.reserve(n);
+      sorted_rpv.reserve(n);
+      sorted_ttpv.reserve(n);
+
+      for (size_t i = 0; i < n; ++i) {
+        sorted_ids.push_back(ret_ids[indices[i]]);
+        sorted_rpv.push_back(std::move(ret_rpv[indices[i]]));
+        sorted_ttpv.push_back(std::move(ret_ttpv[indices[i]]));
+      }
+
+      ret_ids = std::move(sorted_ids);
+      ret_rpv = std::move(sorted_rpv);
+      ret_ttpv = std::move(sorted_ttpv);
+    }
+
     return std::make_tuple(ret_ids, ret_rpv, ret_ttpv);
   }
 
   std::vector<std::pair<int, float>> get_travel_times() {
     std::lock_guard<std::mutex> guard(state_mutex);
-    std::vector<std::pair<int, float>> ret_travel_times = std::vector<std::pair<int, float>>();
-    for (const auto &tt : *route_travel_times_) {
-      ret_travel_times.push_back(tt);
-    }
+    std::vector<std::pair<int, float>> ret_travel_times;
+    std::swap(*route_travel_times_, ret_travel_times);
     route_travel_times_ = std::make_shared<std::vector<std::pair<int, float>>>();
     return ret_travel_times;
   }
 
   void push_route(int v, std::vector<std::vector<int>> rpv, std::vector<float> ttpv) {
     std::lock_guard<std::mutex> guard(state_mutex);
-    vehicle_ids_->push_back(std::move(v));
-    routes_per_vehicle_->push_back(std::move(rpv));
-    travel_times_per_vehicle_->push_back(std::move(ttpv));
+    vehicle_ids_->emplace_back(v);
+    routes_per_vehicle_->emplace_back(std::move(rpv));
+    travel_times_per_vehicle_->emplace_back(std::move(ttpv));
   }
 
   void push_travel_time(int id, float travel_time) {
     std::lock_guard<std::mutex> guard(state_mutex);
-    route_travel_times_->push_back(std::make_pair(id, travel_time));
+    route_travel_times_->emplace_back(id, travel_time);
   }
 };
 
@@ -340,7 +361,7 @@ public:
 
   void execute() override {
 
-    const size_t chunk_size = std::max(1ul, routes.size() / (ace::Scheduler::instance()->num_workers() * MULTUPLIER));
+    const size_t chunk_size = std::max(1ul, routes.size() / (ace::Scheduler::instance()->num_workers() * MULTIPLIER));
 
     ace::parallelfor(
       ace::Range<size_t>(0, routes.size(), chunk_size),
@@ -625,7 +646,7 @@ public:
     // std::vector<VehicleTask> ptr_to_data = std::vector<VehicleTask>(vehicle_tasks);
     auto alg = State::instance().get_alg();
     const size_t num_vehicles = vehicle_tasks.size();
-    const size_t chunk_size = std::max(1ul, num_vehicles / (ace::Scheduler::instance()->num_workers() * MULTUPLIER));
+    const size_t chunk_size = std::max(1ul, num_vehicles / (ace::Scheduler::instance()->num_workers() * MULTIPLIER));
 
     std::vector<int> vehicle_ids(num_vehicles);
     std::vector<std::vector<std::vector<int>>> routes_per_vehicle(num_vehicles);
@@ -639,9 +660,11 @@ public:
         int max_routes) {
 
         const VehicleTask& task = ptr_to_data_in[i];
+        vehicle_ids[i] = task.vehicle_id;  // Always set vehicle ID to maintain order
+
         const std::unique_ptr<std::vector<Result>> routeResults = alg->GetResults(task.origin, task.destination, max_routes, false);
 
-        if (routeResults) {
+        if (routeResults && !routeResults->empty()) {
           std::vector<std::vector<int>> routes;
           std::vector<float> travel_times;
           for (const auto &result : *routeResults) {
@@ -656,14 +679,13 @@ public:
             routes.emplace_back(segments);
             travel_times.emplace_back(result.travelTime);
           }
-          // State::instance().push_route(task.vehicle_id, routes, travel_times);
-          // vehicle_ids.push_back(task.vehicle_id)
-          vehicle_ids[i] = task.vehicle_id;
+
           std::swap(routes_per_vehicle[i],routes);
           std::swap(travel_times_per_vehicle[i],travel_times);
-
-          // ace::CommInterface::instance()->async_send(result, this->header.rank);
         }
+
+        // If no routes found, vectors remain empty (default constructed)
+
       },
       true,
       vehicle_tasks,
@@ -748,66 +770,68 @@ namespace ruthlib{
 
     auto comm = ace::CommInterface::instance();
     int num_ranks = comm->get_size();
-    std::vector<std::vector<std::vector<int>>> tasks_per_rank(
-        num_ranks);
 
     size_t size_offset = 0;
-    size_t work_size = std::max(routes.size() / (num_ranks * MULTUPLIER), static_cast<size_t>(1));
+    size_t work_size = std::max(1ul, routes.size() / (num_ranks * MULTIPLIER));
 
     do {
-    std::vector<std::vector<int>> work_list;
+      std::vector<std::vector<int>> work_list;
+      size_t start_index = size_offset * work_size;
+      for (size_t i = start_index; i < start_index + work_size && i < routes.size(); i++)
+        work_list.push_back(routes[i]);
 
-    for (size_t i = size_offset * work_size; i < (size_offset * work_size) + work_size && i < routes.size(); i++) {
-      work_list.push_back(routes[i]);
-    }
+      if (work_list.empty()) break;
 
-      auto task = std::make_shared<CalculateTravelTimesWorkload>(size_offset * work_size, work_list);
+      auto task = std::make_shared<CalculateTravelTimesWorkload>(start_index, work_list);
       size_offset++;
       comm->async_send(task, size_offset % num_ranks);
       distributed_tasks.push_back(task);
-
     } while (size_offset * work_size < routes.size());
+
     for (auto &task : distributed_tasks) {
       task->wait();
     }
   }
 
-  void do_alternatives(std::vector<std::pair<int, int>> OD_matrix, int max_routes) {
-    // Calculate alternatives
+  void do_alternatives(const int* od_data, size_t n_pairs, int max_routes) {
     std::vector<std::shared_ptr<ace::workload>> distributed_tasks;
 
     auto comm = ace::CommInterface::instance();
     int num_ranks = comm->get_size();
-    std::vector<std::vector<VehicleTask>> tasks_per_rank(
-        num_ranks);
 
     size_t size_offset = 0;
-    size_t work_size = std::max(OD_matrix.size() / (num_ranks * MULTUPLIER), static_cast<size_t>(1));
-
-    // std::cout << "Rank " << comm->get_rank() << ": " << "OD matrix size: " << OD_matrix.size() << std::endl << std::flush;
-    // std::cout << "Rank " << comm->get_rank() << ": " << "Num ranks: " << num_ranks << std::endl << std::flush;
-    // std::cout << "Rank " << comm->get_rank() << ": " << "Work size: " << work_size << " / " << (OD_matrix.size() / work_size) << " total tasks" << std::endl << std::flush;
+    size_t work_size = std::max(1ul, n_pairs / (num_ranks * MULTIPLIER));
 
     do {
       std::vector<VehicleTask> work_list;
 
-      for (size_t i = size_offset * work_size; i < (size_offset * work_size) + work_size && i < OD_matrix.size(); i++) {
-        work_list.push_back({static_cast<int>(i), OD_matrix[i].first, OD_matrix[i].second});
+      for (size_t i = size_offset * work_size; i < (size_offset * work_size) + work_size && i < n_pairs; i++) {
+        work_list.push_back({static_cast<int>(i), od_data[i * 2], od_data[i * 2 + 1]});
       }
+
+      if (work_list.empty()) break;
 
       auto task = std::make_shared<AlternativesWorkload>(work_list, max_routes);
       size_offset++;
       comm->async_send(task, size_offset % num_ranks);
       distributed_tasks.push_back(task);
-    
-    } while (size_offset * work_size < OD_matrix.size());
-    // log("Distributed");
+
+    } while (size_offset * work_size < n_pairs);
 
     for (auto &task : distributed_tasks) {
       task->wait();
     }
 
-    // log("Finished");
+  }
+
+  void do_alternatives(std::vector<std::pair<int, int>> OD_matrix, int max_routes) {
+    std::vector<int> flat;
+    flat.reserve(OD_matrix.size() * 2);
+    for (const auto& p : OD_matrix) {
+      flat.push_back(p.first);
+      flat.push_back(p.second);
+    }
+    do_alternatives(flat.data(), OD_matrix.size(), max_routes);
   }
 
   bool is_master() {
@@ -867,11 +891,42 @@ namespace ruthlib{
     State::instance().init_routes();
   }
 
-  std::tuple<std::vector<int>, std::vector<std::vector<std::vector<int>>>, std::vector<std::vector<float>>> get_routes() {
-    // auto bc_wl = std::make_shared<CollectWorkloads>();
-    // ace::CommInterface::instance()->async_broadcast(bc_wl);
-    // bc_wl->wait();
-    return State::instance().get_routes();
+  RoutesFlat get_routes_flat() {
+    auto [vehicle_ids, routes_per_vehicle, travel_times_per_vehicle] = State::instance().get_routes();
+
+    RoutesFlat flat;
+    const size_t V = vehicle_ids.size();
+    flat.vehicle_ids = std::move(vehicle_ids);
+    flat.route_offsets.resize(V + 1, 0);
+
+    // first pass: count totals so we can reserve before filling
+    size_t total_routes = 0;
+    size_t total_nodes = 0;
+    for (size_t v = 0; v < V; ++v) {
+      total_routes += routes_per_vehicle[v].size();
+      for (const auto& route : routes_per_vehicle[v])
+        total_nodes += route.size();
+    }
+    flat.travel_times.reserve(total_routes);
+    flat.node_offsets.resize(total_routes + 1, 0);
+    flat.nodes.reserve(total_nodes);
+
+    // second pass: fill
+    size_t route_idx = 0;
+    for (size_t v = 0; v < V; ++v) {
+      flat.route_offsets[v] = static_cast<int>(route_idx);
+      for (size_t r = 0; r < routes_per_vehicle[v].size(); ++r) {
+        flat.travel_times.push_back(travel_times_per_vehicle[v][r]);
+        flat.node_offsets[route_idx] = static_cast<int>(flat.nodes.size());
+        for (int node : routes_per_vehicle[v][r])
+          flat.nodes.push_back(node);
+        ++route_idx;
+      }
+    }
+    flat.route_offsets[V] = static_cast<int>(route_idx);
+    flat.node_offsets[total_routes] = static_cast<int>(flat.nodes.size());
+
+    return flat;
   }
 
   std::vector<float> get_travel_times() {
@@ -899,12 +954,24 @@ namespace ruthlib{
     return travel_times_vector;
   }
 
-  // update speeds
-  void update_speeds(std::vector<std::pair<int, float>> edge_speeds) {
+  void update_speeds(const int* edge_ids, const float* speeds, size_t n) {
+    std::vector<std::pair<int, float>> edge_speeds(n);
+    for (size_t i = 0; i < n; ++i)
+      edge_speeds[i] = {edge_ids[i], speeds[i]};
     auto workload = std::make_shared<UpdateSpeedsWorkload>(edge_speeds);
     auto comm = ace::CommInterface::instance();
     comm->async_broadcast(workload);
     workload->wait();
+  }
+
+  void update_speeds(std::vector<std::pair<int, float>> edge_speeds) {
+    std::vector<int> ids(edge_speeds.size());
+    std::vector<float> spds(edge_speeds.size());
+    for (size_t i = 0; i < edge_speeds.size(); ++i) {
+      ids[i] = edge_speeds[i].first;
+      spds[i] = edge_speeds[i].second;
+    }
+    update_speeds(ids.data(), spds.data(), edge_speeds.size());
   }
 
   bool is_simulation_running() {
@@ -920,73 +987,3 @@ namespace ruthlib{
     finish_workload->wait();
   }
 } // namespace ruthlib
-
-// int main(int argc, char *argv[]) {
-//   int num_vehicles = 3;
-//   ruthlib::setup_ace(10);
-
-//   ruthlib::init_routes();
-//   if (ruthlib::is_master()) {
-
-//     std::vector<std::pair<int, int>> OD_matrix = ruthlib::load_od_matrix(
-//         "/home/pav/Repos/ruth-cpp/ruth/data/OD_matrix.csv", num_vehicles);
-//     ruthlib::setup_map("/home/pav/Repos/ruth-cpp/ruth/data/map_prague.hdf5");
-
-//     ruthlib::do_alternatives(OD_matrix, 20);
-//   }
-
-//   ruthlib::barrier();
-
-//   std::vector<std::vector<int>> routes_per_one_vehicle;
-//   if (ruthlib::is_master()) {
-
-//     auto [vehicle_ids, routes_per_vehicle, travel_times_per_vehicle] = ruthlib::get_routes();
-//     routes_per_one_vehicle = routes_per_vehicle[0];
-
-//     // Print all the nodes in routes_per_vehicle[0]
-//     std::cout << "Routes for vehicle 0:" << routes_per_one_vehicle.size() << " routes" << std::endl;
-
-//     ruthlib::do_travel_times(routes_per_one_vehicle);
-//   }
-
-//   ruthlib::barrier();
-
-//   if (ruthlib::is_master()) {
-//     // Print travel times for vehicle 0
-//     auto travel_times = ruthlib::get_travel_times();
-//     // set speed to 0.1 at the first edge
-//     int edge_id = -1;
-//     auto node = State::instance().get_graph()->GetNodeById(routes_per_one_vehicle[0][0]);
-//     auto edges_out = node.GetEdgesOut();
-//     for (const auto &edge : edges_out) {
-//       if (edge->endNode.endNodePtr->id == routes_per_one_vehicle[0][1]) {
-//         edge_id = edge->edgeId;
-//         break;
-//       }
-//     }
-//     std::vector<std::pair<int, float>> edge_speeds = {{edge_id, 0.0f}};
-//     // print edge_speeds
-//     for (const auto &es : edge_speeds) {
-//       std::cout << "Edge " << es.first << " speed set to " << es.second << " m/s" << std::endl;
-//     }
-
-//     ruthlib::update_speeds(edge_speeds);
-
-//     ruthlib::do_travel_times(routes_per_one_vehicle);
-//   }
-
-//   ruthlib::barrier();
-
-//   if (ruthlib::is_master()) {
-//     // Print travel times for vehicle 0 after speed update
-//     auto travel_times = ruthlib::get_travel_times();
-//     std::cout << "Travel times after speed update:" << std::endl;
-//     for (size_t i = 0; i < travel_times.size(); ++i) {
-//       std::cout << "Route " << i << ": " << travel_times[i] << " seconds" << std::endl;
-//     }
-//   }
-
-//   log("All workloads completed, exiting...");
-
-//   ruthlib::finalize();
-// } // main

@@ -15,6 +15,8 @@ AlternativeRoutes = List[RouteWithTime]
 VehicleWithPlans = Tuple[Vehicle, AlternativeRoutes]
 VehicleWithRoute = Tuple[Vehicle, RouteWithTime]
 
+logger = logging.getLogger(__name__)
+
 
 # Alternatives
 class AlternativesProvider:
@@ -105,13 +107,20 @@ class MPIDistributedAlternatives(AlternativesProvider):
         """
         Update speeds of the passed segments in a previously passed map.
         """
-        message = []
+        ids = []
+        speeds = []
         for segment_id, speed in segments.items():
             edge_id = self.routing_map.get_hdf5_edge_id(segment_id)
-            speed = speed if speed is not None else self.routing_map.get_current_max_speed(segment_id[0], segment_id[1])
-            message.append((edge_id, speed))
+            actual_speed = speed if speed is not None else self.routing_map.get_current_max_speed(segment_id[0],
+                                                                                                  segment_id[1])
 
-        self.ru.update_speeds(message)
+            ids.append(edge_id)
+            speeds.append(actual_speed)
+
+        ids_array = np.array(ids, dtype=np.int32)
+        speeds_array = np.array(speeds, dtype=np.float32)
+
+        self.ru.update_speeds(ids_array, speeds_array)
         return
 
     def postprocess(self, li, vehicles):
@@ -129,22 +138,71 @@ class MPIDistributedAlternatives(AlternativesProvider):
                 remapped_routes.append([])
         return remapped_routes
 
-    def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
-        Optional[AlternativeRoutes]]:
-        OD_matrix = [
-            (self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
-                self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[1]))
-            for v in vehicles
-        ]
-        self.ru.do_alternatives(OD_matrix, k)
+    def postprocess_flat(self, flat_routes, vehicles):
+        v_ids = flat_routes['vehicle_ids']
+
+        if not np.all(v_ids[:-1] <= v_ids[1:]):
+            raise ValueError("vehicle_ids are not sorted as expected.")
+
+        id_to_idx = {vid: i for i, vid in enumerate(v_ids)}
 
         remapped_routes = []
+
+        r_offsets = flat_routes['route_offsets']
+        n_offsets = flat_routes['node_offsets']
+        nodes = flat_routes['nodes']
+        t_times = flat_routes['travel_times']
+
+        for v_idx in range(len(vehicles)):
+            flat_v_idx = id_to_idx.get(v_idx)
+
+            if flat_v_idx is not None:
+                vehicle_results = []
+                r_start, r_end = r_offsets[flat_v_idx], r_offsets[flat_v_idx + 1]
+
+                for r in range(r_start, r_end):
+                    n_start, n_end = n_offsets[r], n_offsets[r + 1]
+
+                    travel_time = t_times[r]
+                    osm_nodes = [
+                        self.routing_map.hdf5_to_osm_id(node_id)
+                        for node_id in nodes[n_start:n_end]
+                    ]
+
+                    vehicle_results.append((osm_nodes, travel_time))
+
+                remapped_routes.append(vehicle_results)
+            else:
+                remapped_routes.append([])
+
+        return remapped_routes
+
+    def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
+        Optional[AlternativeRoutes]]:
+        # OD_matrix = [
+        #     (self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
+        #         self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[1]))
+        #     for v in vehicles
+        # ]
+        # self.ru.do_alternatives(OD_matrix, k)
+        # 1. Create the list of tuples as you did before
+        OD_list = [
+            (self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
+             self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[1]))
+            for v in vehicles
+        ]
+
+        # 2. Convert to a NumPy array with the correct type
+        # C++ 'int' usually maps to np.int32
+        OD_matrix = np.array(OD_list, dtype=np.int32)
+
+        self.ru.do_alternatives(OD_matrix, k)
 
         li = self.ru.get_routes()
 
         # li[0] is a list of vehicle IDs, li[1] is a list of routes, and li[2] is a list of travel times
-        remapped_routes = self.postprocess(li, vehicles)
-
+        # remapped_routes = self.postprocess(li, vehicles)
+        remapped_routes = self.postprocess_flat(li, vehicles)
         return remapped_routes
 
     def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:

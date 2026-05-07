@@ -49,7 +49,7 @@ target_include_directories(ruthlib PRIVATE RoutingAlg/include)
 target_include_directories(ruthlib PRIVATE ${HDF5_INCLUDE_DIRS})
 
 # Add executable target from main.cpp
-add_executable(ruth_exec src/main.cpp)
-target_link_libraries(ruth_exec PRIVATE ruth)
-target_include_directories(ruth_exec PRIVATE src)
-target_include_directories(ruth_exec PRIVATE ace/src)
+# add_executable(ruth_exec src/main.cpp)
+# target_link_libraries(ruth_exec PRIVATE ruth)
+# target_include_directories(ruth_exec PRIVATE src)
+# target_include_directories(ruth_exec PRIVATE ace/src)
