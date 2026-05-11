@@ -202,13 +202,27 @@ Configuration file with all available options:
 
 ### Command-line Arguments
 
-Alternatively, use command-line arguments instead of a configuration file:
+Alternatively, you can use command-line arguments instead of a configuration file. 
+For the Python-based execution, select Dijkstra-based routing, and set remaining parameters as needed: 
 
 ```sh
 ruth-simulator \
   --departure-time="2026-05-05 07:00:00" --k-alternatives=4 --seed=7 \
   run \
   --alt-dijkstra-fastest=0.3 --selection-random=0.3 \
+  "INPUT-od-matrix-10-vehicles.parquet"
+```
+
+For the C++-based execution (with MPI), select Plateau-based routing, and set remaining parameters as needed: 
+
+```bash
+ruth-simulator mpirun -n 128 \
+  --departure-time="2024-10-03 07:00:00" \
+  --k-alternatives=4 \
+  --seed=7 \
+  run \
+  --alt-plateau-fastest=1.0 \
+  --selection-random=1.0 \
   "INPUT-od-matrix-10-vehicles.parquet"
 ```
 
