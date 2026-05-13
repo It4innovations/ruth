@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <set>
 #include <mutex>
+#include <unordered_set>
 
 struct FCDRecord {
     double datetime_seconds;      // Timestamp as seconds (epoch)
@@ -24,69 +25,68 @@ struct FCDRecord {
           offset_from_start(offset), vehicle_speed_mps(speed) {}
 };
 
-/**
- * Batch of FCD records from a single simulation step
- */
 struct FCDBatch {
     std::vector<FCDRecord> fcds;
     double max_datetime_seconds;
 
     FCDBatch() : max_datetime_seconds(0.0) {}
 
-    explicit FCDBatch(std::vector<FCDRecord> records) : fcds(std::move(records)) {
-        max_datetime_seconds = 0.0;
-        for (const auto& fcd : fcds) {
-            if (fcd.datetime_seconds > max_datetime_seconds) {
-                max_datetime_seconds = fcd.datetime_seconds;
-            }
-        }
-    }
+    explicit FCDBatch(std::vector<FCDRecord>&& records, double max_dt)
+        : fcds(std::move(records)), max_datetime_seconds(max_dt) {}
 };
 
-/**
- * SegmentGlobalView - Thread-safe container for FCD records on a single segment
- */
 class SegmentGlobalView {
 private:
     std::deque<FCDBatch> fcd_batches_;
-    mutable std::shared_mutex lock_;
-
 public:
     SegmentGlobalView() = default;
 
-    // Add an FCD record to this segment
     void add(const FCDRecord& fcd) {
-        std::unique_lock lock(lock_);
-        std::vector<FCDRecord> single_record = {fcd};
-        fcd_batches_.emplace_back(std::move(single_record));
+        std::vector<FCDRecord> single_vec;
+        single_vec.reserve(1);
+        single_vec.push_back(fcd);
+        fcd_batches_.emplace_back(std::move(single_vec), fcd.datetime_seconds);
     }
 
-    // Add a batch of FCD records
     void add_batch(const std::vector<FCDRecord>& fcds) {
         if (fcds.empty()) return;
-        std::unique_lock lock(lock_);
-        fcd_batches_.emplace_back(fcds);
+
+        double max_dt = fcds[0].datetime_seconds;
+        for (size_t i = 1; i < fcds.size(); ++i) {
+            if (fcds[i].datetime_seconds > max_dt) {
+                max_dt = fcds[i].datetime_seconds;
+            }
+        }
+        fcd_batches_.emplace_back(std::vector<FCDRecord>(fcds), max_dt);
     }
 
-    /* Count vehicles ahead of a given position within a time window */
-    int count_vehicles_ahead(double datetime_seconds, double tolerance_seconds, double vehicle_offset_m, int exclude_vehicle_id) const {
-        std::shared_lock lock(lock_);
+    void add_batch(std::vector<FCDRecord>&& fcds) {
+        if (fcds.empty()) return;
 
+        double max_dt = fcds[0].datetime_seconds;
+        for (size_t i = 1; i < fcds.size(); ++i) {
+            if (fcds[i].datetime_seconds > max_dt) {
+                max_dt = fcds[i].datetime_seconds;
+            }
+        }
+        fcd_batches_.emplace_back(std::move(fcds), max_dt);
+    }
+
+    int count_vehicles_ahead(double datetime_seconds, double tolerance_seconds, double vehicle_offset_m, int exclude_vehicle_id) const {
         const double dt_min = datetime_seconds - tolerance_seconds;
         const double dt_max = datetime_seconds + tolerance_seconds;
 
-        std::set<int> unique_vehicles;
+        std::unordered_set<int> unique_vehicles;
+        unique_vehicles.reserve(64);  // Pre-allocate reasonable size
 
-        // Iterate through all batches
         for (const auto& batch : fcd_batches_) {
+            // Skip entire batch if it's too old
+            if (batch.max_datetime_seconds < dt_min) {
+                continue;
+            }
+
             const size_t size = batch.fcds.size();
             const FCDRecord* data = batch.fcds.data();
-
-            // check batch max datetime for quick skip
-            if (batch.max_datetime_seconds < dt_min) {
-                printf("Skipping batch with max datetime %.2f < dt_min %.2f\n", batch.max_datetime_seconds, dt_min);
-                continue;  // Batch is too old, skip entirely
-            }
 
             for (size_t i = 0; i < size; ++i) {
                 const FCDRecord& fcd = data[i];
@@ -104,25 +104,20 @@ public:
         return static_cast<int>(unique_vehicles.size());
     }
 
-    /* Get all FCD records for this segment (read-locked) */
     std::vector<FCDRecord> get_fcds() const {
-        std::shared_lock lock(lock_);
-
-        // Flatten all batches into a single vector
         std::vector<FCDRecord> result;
+        size_t total_size = 0;
+        for (const auto& batch : fcd_batches_) {
+            total_size += batch.fcds.size();
+        }
+        result.reserve(total_size);
         for (const auto& batch : fcd_batches_) {
             result.insert(result.end(), batch.fcds.begin(), batch.fcds.end());
         }
         return result;
     }
 
-    /**
-     * Remove old FCD batches before a given datetime
-     * Returns true if any were removed (used to track modifications)
-     */
     bool drop_old(double dt_threshold) {
-        std::unique_lock lock(lock_);
-
         bool modified = false;
         while (!fcd_batches_.empty() && fcd_batches_.front().max_datetime_seconds < dt_threshold) {
             fcd_batches_.pop_front();
@@ -131,15 +126,11 @@ public:
         return modified;
     }
 
-    /* Clear all FCD records */
     void clear() {
-        std::unique_lock lock(lock_);
         fcd_batches_.clear();
     }
 
-    /* Get count of FCD records */
     size_t size() const {
-        std::shared_lock lock(lock_);
         size_t total = 0;
         for (const auto& batch : fcd_batches_) {
             total += batch.fcds.size();
@@ -148,22 +139,15 @@ public:
     }
 };
 
-/**
- * GlobalView - C++ implementation of ruth/globalview.py
- */
 class GlobalView {
 private:
     // Hash map: segment_id -> segment's FCD records
     std::unordered_map<int64_t, SegmentGlobalView> segments_;
-    mutable std::shared_mutex segments_lock_;
 
-
-    // Level of Service constants (from Python globalview.py)
     static constexpr double MILE_TO_METERS = 1609.344;
     static constexpr double ENDING_LENGTH = 200.0;
 
 public:
-    // LoS ranges: (low_speed, high_speed) -> (m, n) where LoS = m + (density - low) * 0.2 / (high - low)
     struct LoSRange {
         double low_speed;
         double high_speed;
@@ -175,36 +159,24 @@ public:
 
     GlobalView() = default;
 
-    /**
-     * Add an FCD record to the global view
-     */
     void add(const FCDRecord& fcd) {
-        std::unique_lock lock(segments_lock_);
         segments_[fcd.segment_id].add(fcd);
     }
 
-    /**
-     * Add multiple FCD records in batch
-     */
     void add_batch(const std::vector<FCDRecord>& fcds) {
         if (fcds.empty()) return;
-
-        // Group FCDs by segment to minimize lock contention
         std::unordered_map<int64_t, std::vector<FCDRecord>> by_segment;
+        by_segment.reserve(32);  // Pre-allocate for common case
+
         for (const auto& fcd : fcds) {
             by_segment[fcd.segment_id].push_back(fcd);
         }
 
         for (auto& [segment_id, segment_fcds] : by_segment) {
-            std::unique_lock lock(segments_lock_);
             segments_[segment_id].add_batch(segment_fcds);
         }
     }
 
-    /**
-     * Count vehicles ahead of a given vehicle on a segment
-     * Returns unique vehicle count within time window
-     */
     int number_of_vehicles_ahead(
         double datetime_seconds,
         int64_t segment_id,
@@ -212,8 +184,6 @@ public:
         int vehicle_id = -1,
         double vehicle_offset_m = 0.0
     ) const {
-        std::shared_lock lock(segments_lock_);
-
         const auto it = segments_.find(segment_id);
         if (it == segments_.end()) {
             return 0;  // No FCD records for this segment
@@ -224,10 +194,6 @@ public:
         );
     }
 
-    /**
-     * Calculate level of service in front of a vehicle
-     * Based on vehicle density and segment parameters
-     */
     double level_of_service_in_front_of_vehicle(
         double datetime_seconds,
         int64_t segment_id,
@@ -237,20 +203,16 @@ public:
         int vehicle_id = -1,
         double vehicle_offset_m = 0.0
     ) const {
-        // Count vehicles ahead
         const int n_vehicles = number_of_vehicles_ahead(
             datetime_seconds, segment_id, tolerance_seconds, vehicle_id, vehicle_offset_m
         );
 
-        // Calculate rest of segment length
         const double rest_segment_length = segment_length - vehicle_offset_m;
 
-        // Rescale density: use ENDING_LENGTH to avoid massive LoS increase at segment end
         const double denominator = (rest_segment_length < ENDING_LENGTH) ? ENDING_LENGTH : rest_segment_length;
         const double n_vehicles_per_mile =
             static_cast<double>(n_vehicles) * MILE_TO_METERS / (denominator * segment_lanes);
 
-        // Find LoS by density range
         double los = std::numeric_limits<double>::infinity();
         for (const auto& range : LoS_RANGES) {
             if (n_vehicles_per_mile < range.high_speed) {
@@ -260,13 +222,9 @@ public:
             }
         }
 
-        // Reverse the level of service (1.0 = 100% LoS, but ranges are inverted)
         return (los == std::numeric_limits<double>::infinity()) ? los : 1.0 - los;
     }
 
-    /**
-     * Calculate level of service for entire segment (no vehicle exclusion)
-     */
     double level_of_service_in_time_at_segment(
         double datetime_seconds,
         int64_t segment_id,
@@ -280,13 +238,7 @@ public:
         );
     }
 
-    /**
-     * Get average speed in m/s on a segment from FCD records
-     * Only considers unique vehicles (one speed per vehicle)
-     */
     double get_segment_speed(int64_t segment_id) const {
-        std::shared_lock lock(segments_lock_);
-
         const auto it = segments_.find(segment_id);
         if (it == segments_.end()) {
             return std::numeric_limits<double>::quiet_NaN();
@@ -297,8 +249,9 @@ public:
             return std::numeric_limits<double>::quiet_NaN();
         }
 
-        // Track speeds by vehicle_id to get unique speeds
         std::unordered_map<int, double> speeds;
+        speeds.reserve(fcds.size() / 2);  // Pre-allocate
+
         for (const auto& fcd : fcds) {
             speeds[fcd.vehicle_id] = fcd.vehicle_speed_mps;
         }
@@ -312,38 +265,40 @@ public:
         return sum / static_cast<double>(speeds.size());
     }
 
-    /**
-     * Remove FCD records older than a given threshold
-     * Returns set of segments that were modified
-     */
     std::set<int64_t> drop_old(double dt_threshold) {
-        std::unique_lock lock(segments_lock_);
+        std::vector<int64_t> modified_vec;
 
-        std::set<int64_t> modified;
+        std::vector<std::pair<int64_t, SegmentGlobalView*>> segment_ptrs;
+        segment_ptrs.reserve(segments_.size());
         for (auto& [segment_id, seg_view] : segments_) {
-            if (seg_view.drop_old(dt_threshold)) {
-                modified.insert(segment_id);
+            segment_ptrs.emplace_back(segment_id, &seg_view);
+        }
+
+        #pragma omp parallel
+        {
+            std::vector<int64_t> local_modified;
+
+            #pragma omp for nowait
+            for (size_t i = 0; i < segment_ptrs.size(); ++i) {
+                if (segment_ptrs[i].second->drop_old(dt_threshold)) {
+                    local_modified.push_back(segment_ptrs[i].first);
+                }
+            }
+
+            #pragma omp critical
+            {
+                modified_vec.insert(modified_vec.end(), local_modified.begin(), local_modified.end());
             }
         }
 
-        return modified;
+        return std::set<int64_t>(modified_vec.begin(), modified_vec.end());
     }
 
-    /**
-     * Clear all FCD records (for testing/reset)
-     */
     void clear() {
-        std::unique_lock lock(segments_lock_);
         segments_.clear();
     }
 
-    /**
-     * Export all FCD records for serialization (pickling)
-     * Returns a flat vector of all FCDs across all segments
-     */
     std::vector<FCDRecord> export_all_fcds() const {
-        std::shared_lock lock(segments_lock_);
-
         std::vector<FCDRecord> all_fcds;
         for (const auto& [segment_id, seg_view] : segments_) {
             auto fcds = seg_view.get_fcds();
@@ -353,13 +308,7 @@ public:
         return all_fcds;
     }
 
-    /**
-     * Import FCD records from serialization (unpickling)
-     * Rebuilds internal state from a flat vector of FCDs
-     */
     void import_all_fcds(const std::vector<FCDRecord>& fcds) {
-        std::unique_lock lock(segments_lock_);
-
         segments_.clear();
 
         for (const auto& fcd : fcds) {

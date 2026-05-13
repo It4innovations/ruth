@@ -28,6 +28,7 @@ FetchContent_Declare(
 fetchContent_MakeAvailable(pybind11)
 
 find_package(MPI REQUIRED)
+find_package(OpenMP REQUIRED)
 
 # Add the directories for the libraries
 add_subdirectory(RoutingAlg)
@@ -51,6 +52,7 @@ target_include_directories(ruthlib PRIVATE ${HDF5_INCLUDE_DIRS})
 # GlobalView C++ module with spatial indexing
 pybind11_add_module(globalview_cpp src/globalview_bindings.cpp)
 target_include_directories(globalview_cpp PRIVATE src)
+target_link_libraries(globalview_cpp PRIVATE OpenMP::OpenMP_CXX)
 set_target_properties(globalview_cpp PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
 )
