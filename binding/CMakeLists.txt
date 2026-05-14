@@ -6,12 +6,12 @@ set(CMAKE_CXX_STANDARD 20)
 
 # Set default build type to Release if not specified
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release CACHE STRING 
+    set(CMAKE_BUILD_TYPE Release CACHE STRING
         "Choose the type of build: Debug Release RelWithDebInfo MinSizeRel" FORCE)
 endif()
 
 # Set the possible values of build type for cmake-gui
-set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS 
+set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
     "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-invalid-offsetof")
@@ -19,13 +19,17 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wno-invalid-offsetof")
 add_definitions(-DNDEBUG)
 
 # --- Fetch pybind11 from GitHub ---
-include(FetchContent)
-FetchContent_Declare(
-    pybind11
-    GIT_REPOSITORY https://github.com/pybind/pybind11.git
-    GIT_TAG        v2.12.0   # or latest stable tag
-)
-fetchContent_MakeAvailable(pybind11)
+find_package(pybind11 CONFIG QUIET)
+
+if(NOT pybind11_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(
+        pybind11
+        GIT_REPOSITORY https://github.com/pybind/pybind11.git
+        GIT_TAG v2.11.1
+    )
+    FetchContent_MakeAvailable(pybind11)
+endif()
 
 find_package(MPI REQUIRED)
 find_package(OpenMP REQUIRED)
@@ -57,8 +61,3 @@ set_target_properties(globalview_cpp PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
 )
 
-# Add executable target from main.cpp
-# add_executable(ruth_exec src/main.cpp)
-# target_link_libraries(ruth_exec PRIVATE ruth)
-# target_include_directories(ruth_exec PRIVATE src)
-# target_include_directories(ruth_exec PRIVATE ace/src)
