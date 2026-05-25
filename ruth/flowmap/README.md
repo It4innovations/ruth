@@ -40,16 +40,24 @@ make
 ### Preprocessing CLI tool help
 Use either --round-interval or --length and --fps to specify the length of the output video.
 ```
-<input_file> : input file with Ruth simulation data in HDF5 format (default: fcd_history.h5)
----round-interval : time interval (in seconds) for aggregating data (default 60)
----length : length of the output video (in seconds)
----fps : frames per second in the output video (default 25)
----outfile : output file for preprocessed data in HDF5 format (default: fcd_aggregated.h5)
----maxrecords : maximum number of records to consider in the visualization (optional)
+<input_file_or_dir> : input HDF5 file or a directory containing multiple .h5 files
+--round-interval : time interval (in seconds) for aggregating data (default 60)
+--length : length of the output video (in seconds)
+--fps : frames per second in the output video (default 25)
+--outfile : output file for preprocessed data in HDF5 format (default: fcd_aggregated.h5)
+--maxrecords : maximum number of records to consider in the visualization (optional)
+--streaming : enable streaming mode for lower memory usage (optional)
+--chunk-size : number of records per chunk in streaming mode (optional)
 ```
 ### Example
+Single file:
 ```
 ./video_preprocess fcd_history.h5 --outfile fcd_aggregated.h5 --length 30
+```
+
+Directory of .h5 files:
+```
+./video_preprocess /path/to/sim_output/ --outfile fcd_aggregated.h5 --length 30
 ```
 
 ## Run video generation CLI tool
@@ -76,10 +84,10 @@ traffic-flow-map generate-speeds-animation --help
 
 #### Example
 ```
-traffic-flow-map generate-speeds-animation aggregated_fcd.h5 --dask_workers 20 --title "Traffic flow" --description_path "description.txt"
+traffic-flow-map generate-speeds-animation aggregated_fcd.h5 --dask-workers 20 --title "Traffic flow" --description_path "description.txt"
 ```
 
-For fixed number of vehicles that will be depicted with maximum line width, use the `--max-width-density` parameter (important when making multiple videos to compare).  
+For fixed number of vehicles that will be depicted with maximum line width, use the `--max-width-count` parameter (important when making multiple videos to compare).  
 
 ### Parallelization with Dask
 If `--dask-workers` is not specified, the tool will run in single-threaded mode.
@@ -105,7 +113,7 @@ where each worker will render a subset of the frames into separate image files, 
     traffic-flow-map get-info <PATH_TO_DATA> --status-at-point 0.5
     ```
 ### Generate CSV file with simulation progress
-* generate from fcd_history.h5 file, not from preprocessed aggregated file
+* works with `.pickle` simulation files only (not `.h5`)
 * generate CSV file with data calculated for every n minutes of the simulation
 * use `get-comparison-csv` to generate CSV file with simulation progress for 5 minute intervals
     #### Example 
