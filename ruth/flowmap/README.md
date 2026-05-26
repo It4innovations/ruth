@@ -90,7 +90,7 @@ traffic-flow-map generate-speeds-animation aggregated_fcd.h5 --dask_workers 20 -
 For fixed number of vehicles that will be depicted with maximum line width, use the `--max-width-count` parameter (important when making multiple videos to compare).  
 
 ### Parallelization with Dask
-If `--dask-workers` is not specified, the tool will run in single-threaded mode.
+If `--dask_workers` is not specified, the tool will run in single-threaded mode.
 If it is specified, the tool will use Dask to parallelize the frame rendering across multiple workers,
 where each worker will render a subset of the frames into separate image files, which will then be combined into a video.
 
