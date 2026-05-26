@@ -84,7 +84,7 @@ traffic-flow-map generate-speeds-animation --help
 
 #### Example
 ```
-traffic-flow-map generate-speeds-animation aggregated_fcd.h5 --dask-workers 20 --title "Traffic flow" --description_path "description.txt"
+traffic-flow-map generate-speeds-animation aggregated_fcd.h5 --dask_workers 20 --title "Traffic flow" --description_path "description.txt"
 ```
 
 For fixed number of vehicles that will be depicted with maximum line width, use the `--max-width-count` parameter (important when making multiple videos to compare).  
