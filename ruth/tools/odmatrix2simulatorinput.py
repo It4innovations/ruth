@@ -21,7 +21,7 @@ def create_routing_map(bbox, download_date, data_dir):
     return Map(bbox, download_date=download_date, data_dir=data_dir, save_hdf=False)
 
 
-def gps_to_nodes_with_shortest_path(od_for_id, bbox, download_date, data_dir):
+def gps_to_nodes_with_shortest_path(od_for_id, bbox, download_date, data_dir, no_routing=False):
     global routing_map
     if routing_map is None:
         routing_map = create_routing_map(bbox, download_date, data_dir)
@@ -30,10 +30,14 @@ def gps_to_nodes_with_shortest_path(od_for_id, bbox, download_date, data_dir):
 
     origin_node_id = ox.nearest_nodes(routing_map.network, origin_lon, origin_lat)
     dest_node_id = ox.nearest_nodes(routing_map.network, destination_lon, destination_lat)
-    try:
-        osm_route = routing_map.fastest_path(origin_node_id, dest_node_id)
-    except networkx.NetworkXNoPath:
-        osm_route = None
+
+    if no_routing:
+        osm_route = [origin_node_id, dest_node_id]
+    else:
+        try:
+            osm_route = routing_map.fastest_path(origin_node_id, dest_node_id)
+        except networkx.NetworkXNoPath:
+            osm_route = None
 
     return id, origin_node_id, dest_node_id, time_offset, osm_route
 
@@ -78,17 +82,21 @@ def plot_origin_destination(df, g):
 @click.option("--data-dir", type=click.Path(), default="./data", help="Default './data'.")
 @click.option("--out", type=click.Path(), default="out.parquet", help="Default 'out.parquet'.")
 @click.option("--show-only", is_flag=True, help="Show map with cars without computing output.")
+@click.option("--no-routing", is_flag=True, help="Skip route calculation; osm_route will be [origin_node, dest_node].")
 def convert(od_matrix_path, download_date, increase_lat, increase_lon,
             lat_min, lat_max, lon_min, lon_max,
             csv_separator, frequency, fcd_sampling_period, nproc,
-            data_dir, out, show_only):
+            data_dir, out, show_only, no_routing):
     global routing_map
 
     if not os.path.exists(data_dir) or not os.path.isdir(data_dir):
         os.mkdir(data_dir)
 
+    print(f"Reading OD matrix from '{od_matrix_path}' ...")
     odm_df = pd.read_csv(od_matrix_path, sep=csv_separator)
+    print(f"Loaded {len(odm_df)} OD pairs.")
 
+    print("Computing bounding box ...")
     lat_min = min(odm_df["lat_from"].min(), odm_df["lat_to"].min(), lat_min)
     lat_max = max(odm_df["lat_from"].max(), odm_df["lat_to"].max(), lat_max)
     lon_min = min(odm_df["lon_from"].min(), odm_df["lon_to"].min(), lon_min)
@@ -108,21 +116,27 @@ def convert(od_matrix_path, download_date, increase_lat, increase_lon,
     lon_max = min(lon_max, 180)
 
     bbox = BBox(lat_max, lon_min, lat_min, lon_max)
+    print(f"BBox: lat=[{lat_min:.4f}, {lat_max:.4f}], lon=[{lon_min:.4f}, {lon_max:.4f}]")
+
     download_date = download_date.replace(hour=0, minute=0, second=0, microsecond=0)
     download_date = download_date.strftime("%Y-%m-%dT%H:%M:%S")
+
+    print(f"Loading routing map (date: {download_date}) ...")
     routing_map = create_routing_map(bbox, download_date, data_dir)
+    print(f"Map loaded: {len(routing_map.network.nodes)} nodes, {len(routing_map.network.edges)} edges.")
 
     if show_only:
         plot_origin_destination(odm_df, routing_map.network)
         return
 
+    routing_label = "nearest nodes only (no routing)" if no_routing else "shortest paths"
+    print(f"Computing {routing_label} for {len(odm_df)} OD pairs using {nproc} processes ...")
     with Pool(processes=nproc) as p:
-
         od_nodes = []
-        with tqdm(total=len(odm_df)) as pbar:
+        with tqdm(total=len(odm_df), desc="Routing", unit="pair") as pbar:
             for odn in p.imap(partial(gps_to_nodes_with_shortest_path,
                                       bbox=bbox, download_date=download_date,
-                                      data_dir=data_dir),
+                                      data_dir=data_dir, no_routing=no_routing),
                               odm_df[["id",
                                       "lon_from", "lat_from",
                                       "lon_to", "lat_to",
@@ -130,6 +144,7 @@ def convert(od_matrix_path, download_date, increase_lat, increase_lon,
                 od_nodes.append(odn)
                 pbar.update()
 
+    print("Building output dataframe and saving ...")
     od_nodes = sorted(od_nodes, key=lambda id_origin_dest: id_origin_dest[0])
 
     df = pd.DataFrame(od_nodes, columns=["id", "origin_node", "dest_node", "time_offset", "osm_route"])
@@ -140,17 +155,18 @@ def convert(od_matrix_path, download_date, increase_lat, increase_lon,
         0, 0.0, frequency, fcd_sampling_period, download_date, lat_max, lon_min, lat_min, lon_max)
 
     df[["time_offset", "frequency", "fcd_sampling_period"]] = \
-        df[["time_offset", "frequency", "fcd_sampling_period"]].applymap(lambda seconds: timedelta(seconds=seconds))
+        df[["time_offset", "frequency", "fcd_sampling_period"]].map(lambda seconds: timedelta(seconds=seconds))
 
     df["active"], df["status"] = zip(*df.apply(get_active_and_state, axis=1))
 
-    # count number of active vehicles
     active_vehicles = df[df["active"] == True].count()["id"]
-    print(f"Number of active vehicles: {active_vehicles}")
+    inactive_vehicles = len(df) - active_vehicles
+    print(f"Active vehicles:   {active_vehicles}")
+    print(f"Inactive vehicles: {inactive_vehicles} (same origin/destination or no route found)")
 
     out = out.replace(".parquet", f"-{active_vehicles}.parquet")
-
     df.to_parquet(out, engine="fastparquet")
+    print(f"Output saved to '{out}'.")
 
 
 if __name__ == "__main__":
