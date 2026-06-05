@@ -3,7 +3,7 @@
 RUTH is a traffic simulator for large-scale routing, traffic simulation, and mobility data generation using OpenStreetMap road networks. The main simulation workflow is exposed through Python, while selected performance-critical components are implemented in C++. Ongoing development continues to extend the C++ components to improve execution efficiency for larger workloads and HPC environments.
 
 <p align="center">
-    <img width="60%" src="docs/images/ruth.svg?sanitize=true">
+    <img width="60%" src="ruth.svg?sanitize=true">
 </p>
 
 ## Installation
