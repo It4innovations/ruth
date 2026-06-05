@@ -71,6 +71,7 @@ ruth-od-matrix-to-simulator-input od_matrix.csv --out simulation_input.parquet
 - `--data-dir` - directory to save map graphml
 - `--out` - output parquet name
 - `--show-only` - flag to show map with cars without computing output parquet file
+- `--no-routing`, - flag to skip route calculation; osm_route will be [origin_node, dest_node].
 
 Tool calculates the map borders. It takes the rectangle where the vehicles have their origin and destination points. In case of lat/lon min/max options enlarging the map, rectangle border is moved according to this value. This setting cannot make the map smaller, all the origin and destination points are always in the map area. This rectangle is then enlarged according to the increase lat/lon options.   
 

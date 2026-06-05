@@ -1,6 +1,10 @@
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+
+def datetime_to_timestamp(dt) -> float:
+    return dt.replace(tzinfo=timezone.utc).timestamp()
 
 
 def round_timedelta(td: timedelta, freq: timedelta):

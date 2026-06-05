@@ -21,7 +21,7 @@ class GlobalView:
     MILE_TO_METERS = 1609.344
     ENDING_LENGTH = 200
 
-    def __init__(self):
+    def __init__(self, routing_map=None):
         self.fcd_by_segment: Dict[SegmentId, List[FCDRecord]] = defaultdict(list)
 
         """

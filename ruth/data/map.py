@@ -206,6 +206,12 @@ class Map:
                 lanes = int(lanes)
             except (ValueError, TypeError):
                 lanes = 1
+            # NOTE: osmnx stores total lanes for bidirectional roads (both directions
+            # share the same 'lanes' tag from OSM), so divide by 2 for non-oneway edges.
+            oneway = edge.get('oneway', False)
+            oneway = oneway is True or str(oneway).lower() == 'true'
+            if not oneway and lanes > 1:
+                lanes = max(1, (lanes + 1) // 2)
             edge["lanes"] = lanes if lanes > 0 else 1
 
         self.current_network = self.original_network.copy()
@@ -443,6 +449,14 @@ class Map:
 
     def hdf5_to_osm_id(self, node_id: int) -> int:
         return self.hdf_to_osm_map_ids[node_id]
+
+    def segment_id_to_int(self, segment_id: SegmentId) -> int:
+        node_from, node_to = segment_id
+        edge_data = self.original_network.get_edge_data(node_from, node_to)
+        return edge_data['routing_id']
+
+    def int_to_segment_id(self, routing_id: int) -> SegmentId:
+        return self.routing_id_to_node_ids[routing_id]
 
     def _load(self):
         if self.file_path is None:

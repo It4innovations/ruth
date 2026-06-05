@@ -12,3 +12,4 @@ geopandas==0.14.3
 setuptools==68.2.0
 h5py==3.10.0
 pyserde==0.12.2
+scikit-learn==1.5.0
