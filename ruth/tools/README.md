@@ -69,9 +69,14 @@ ruth-od-matrix-to-simulator-input od_matrix.csv --out simulation_input.parquet
 - `--fcd-sampling-period` - a period in which FCD is stored, it sub samples the frequency (default is 5 s)
 - `--nproc` - number of used processes
 - `--data-dir` - directory to save map graphml
+- `--map-graphml` - load the routing map from an existing GraphML file instead of loading/downloading by bbox and date;
+  bbox metadata is inferred from graph node coordinates
 - `--out` - output parquet name
 - `--show-only` - flag to show map with cars without computing output parquet file
 - `--no-routing`, - flag to skip route calculation; osm_route will be [origin_node, dest_node].
+- `--chunk-size` - number of OD rows processed in one generator chunk (default is 200000)
+- `--partition-seconds` - start-time bucket size for directory dataset output (default is 900 s)
+- `--output-format` - `auto`, `single`, or `dataset`; `single` writes one parquet file and `dataset` writes a partitioned parquet directory
 
 Tool calculates the map borders. It takes the rectangle where the vehicles have their origin and destination points. In case of lat/lon min/max options enlarging the map, rectangle border is moved according to this value. This setting cannot make the map smaller, all the origin and destination points are always in the map area. This rectangle is then enlarged according to the increase lat/lon options.   
 
@@ -85,3 +90,7 @@ Output is a pandas dataframe saved in parquet file. This dataframe consists of:
 - Columns taken from parameters (same for each vehicle):  `frequency`, `fcd_sampling_period`,
 - Columns defining the map (same for each vehicle): `download_date`, `bbox_lat_max`, `bbox_lon_min`, `bbox_lat_min`, `bbox_lon_max`
 - Columns describing the state of the vehicle: `active`,`status`
+
+The generator also writes a manifest sidecar with shared metadata. For single-file output it is written next to the
+parquet file as `*.manifest.json`; for directory dataset output it is written as `manifest.json` inside the dataset
+directory. These duplicated per-row metadata columns are kept for compatibility with the current simulator loader.

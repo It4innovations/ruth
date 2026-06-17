@@ -45,10 +45,20 @@ class Simulator:
             :param end_step_fns: An arbitrary functions that are called at the end of each step with
             the current state of simulation. It can be used for storing the state, for example.
         """
-        self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
-
         for alternatives_provider in alternatives_providers:
             alternatives_provider.load_map(self.sim.routing_map)
+
+        if self.sim.streaming:
+            self.prepare_loaded_vehicles(self.sim.vehicles, alternatives_providers)
+            self.sim.prune_inactive_vehicles()
+            self.load_due_streaming_vehicles(alternatives_providers)
+            self.current_offset = self.sim.compute_current_offset()
+
+        if self.current_offset is None:
+            logger.warning("No active vehicles found. Simulation cannot proceed.")
+            return
+
+        self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
 
         step = self.sim.number_of_steps
         moved_last_step = True
@@ -59,7 +69,7 @@ class Simulator:
         if self.sim.last_saved_speeds:
             self.sim.routing_map.update_current_speeds(self.sim.last_saved_speeds)
 
-        if step == 0:
+        if step == 0 and not self.sim.streaming:
             for alternatives_provider in alternatives_providers:
                 if self.sim.setting.plateau_default_route and isinstance(alternatives_provider, MPIDistributedAlternatives):
                     self.change_baseline_alternatives(self.sim.vehicles, alternatives_provider)
@@ -131,8 +141,13 @@ class Simulator:
                     self.sim.history.extend(fcds)
 
                 with timer_set.get("compute_offset"):
+                    previous_offset = self.current_offset
+                    self.sim.prune_inactive_vehicles()
                     current_offset_new = self.sim.compute_current_offset()
-                    if current_offset_new == self.current_offset:
+                    if self.sim.streaming:
+                        self.load_due_streaming_vehicles(alternatives_providers)
+                        current_offset_new = self.sim.compute_current_offset()
+                    if current_offset_new == previous_offset:
                         logger.error(
                             f"The consecutive step with the same offset: {self.current_offset}.")
                         break
@@ -187,6 +202,45 @@ class Simulator:
                 vehicle.osm_route = []
                 vehicle.active = False
                 vehicle.status = "no plateau route"
+
+    def prepare_loaded_vehicles(self, vehicles: List[Vehicle],
+                                alternatives_providers: List[AlternativesProvider]):
+        vehicles = [v for v in vehicles if not getattr(v, "streaming_prepared", False)]
+        if not vehicles:
+            return
+
+        routed_vehicles = [v for v in vehicles if not getattr(v, "needs_default_route", False)]
+        if routed_vehicles:
+            self.sim.routing_map.fix_osm_routes(routed_vehicles)
+
+        unrouted_vehicles = [
+            v for v in vehicles
+            if v.active and getattr(v, "needs_default_route", False)
+        ]
+        if unrouted_vehicles:
+            plateau_provider = next(
+                (provider for provider in alternatives_providers
+                 if isinstance(provider, MPIDistributedAlternatives)),
+                None,
+            )
+            if plateau_provider is None:
+                logger.error("Cannot compute default Plateau routes for %d streamed vehicles: Plateau provider missing.",
+                             len(unrouted_vehicles))
+                for vehicle in unrouted_vehicles:
+                    vehicle.active = False
+                    vehicle.status = "no plateau provider for default route"
+            else:
+                self.change_baseline_alternatives(unrouted_vehicles, plateau_provider)
+
+        for vehicle in vehicles:
+            vehicle.streaming_prepared = True
+            vehicle.needs_default_route = False
+
+    def load_due_streaming_vehicles(self, alternatives_providers: List[AlternativesProvider]):
+        while self.sim.should_load_next_vehicle_bucket():
+            vehicles = self.sim.load_next_vehicle_bucket()
+            self.prepare_loaded_vehicles(vehicles, alternatives_providers)
+            self.sim.prune_inactive_vehicles()
 
     def update_map_speeds(self, updated_speeds: dict, last_map_update: timedelta,
                           alternatives_providers: List[AlternativesProvider]) -> Tuple[timedelta, dict]:

@@ -95,7 +95,8 @@ class SimSetting:
 class Simulation:
     """A simulation state."""
 
-    def __init__(self, vehicles: List[Vehicle], setting: SimSetting, bbox: BBox, map_download_date: str):
+    def __init__(self, vehicles: List[Vehicle], setting: SimSetting, bbox: BBox, map_download_date: str,
+                 vehicle_source=None):
         """
         Construct a new simulation.
         """
@@ -107,6 +108,7 @@ class Simulation:
         self._routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
         self.global_view = GlobalView(routing_map=self._routing_map)
         self.vehicles = vehicles
+        self.vehicle_source = vehicle_source
         self.steps_info = []
         self.duration = timedelta(seconds=0)
         self.queues_manager = QueuesManager()
@@ -128,6 +130,8 @@ class Simulation:
         self.__dict__.update(d)
         if "last_saved_speeds" not in d:
             self.last_saved_speeds = None
+        if "vehicle_source" not in d:
+            self.vehicle_source = None
         if "_freq_seconds" not in d:
             self._freq_seconds = int(self.setting.round_freq.total_seconds())
         self._routing_map = None  # lazy init
@@ -169,6 +173,39 @@ class Simulation:
     def compute_current_offset(self):
         return min(filter(None, map(lambda v: v.time_offset if v.active else None, self.vehicles)),
                    default=None)
+
+    @property
+    def streaming(self):
+        return self.vehicle_source is not None
+
+    def has_pending_vehicle_buckets(self):
+        return self.vehicle_source is not None and self.vehicle_source.has_next_bucket()
+
+    def next_vehicle_bucket_offset(self):
+        if not self.has_pending_vehicle_buckets():
+            return None
+        return timedelta(seconds=self.vehicle_source.next_bucket_start_s())
+
+    def should_load_next_vehicle_bucket(self):
+        if not self.has_pending_vehicle_buckets():
+            return False
+
+        current_offset = self.compute_current_offset()
+        if current_offset is None:
+            return True
+
+        return self.next_vehicle_bucket_offset() <= current_offset
+
+    def load_next_vehicle_bucket(self):
+        if not self.has_pending_vehicle_buckets():
+            return []
+        vehicles = self.vehicle_source.load_next_bucket()
+        self.vehicles.extend(vehicles)
+        return vehicles
+
+    def prune_inactive_vehicles(self):
+        if self.streaming:
+            self.vehicles = [v for v in self.vehicles if v.active]
 
     def update(self, fcds: List[FCDRecord]):
         # TODO: consider adding a batch update to python global view as well for better performance
@@ -216,7 +253,7 @@ class Simulation:
         return len(self.steps_info)
 
     def finished(self):
-        return all(not v.active for v in self.vehicles)
+        return all(not v.active for v in self.vehicles) and not self.has_pending_vehicle_buckets()
 
     def store(self, path):
         with open(path, 'wb') as f:

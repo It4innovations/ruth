@@ -13,6 +13,7 @@ import signal
 from ..vehicle import set_vehicle_behavior
 from ..simulator import SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
+from ..simulator.common import VehicleDatasetSource
 from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, FirstRouteSelection, \
     RandomRouteSelection, RouteSelectionProvider, ShortestPathsAlternatives, \
     MPIDistributedAlternatives, ZeroMQDistributedPTDRRouteSelection
@@ -104,13 +105,25 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     if simulation is None:
         if vehicles_path is None:
             raise ValueError("Either vehicles_path or continue_from must be specified.")
-        vehicles, bbox, download_date = load_vehicles(vehicles_path)
+        if os.path.isdir(vehicles_path):
+            vehicle_source = VehicleDatasetSource(
+                vehicles_path,
+                alternatives_ratio.to_list(),
+                route_selection_ratio.to_list(),
+                seed,
+            )
+            vehicles = vehicle_source.load_next_bucket()
+            simulation = Simulation(vehicles, ss, vehicle_source.bbox,
+                                    vehicle_source.download_date,
+                                    vehicle_source=vehicle_source)
+        else:
+            vehicles, bbox, download_date = load_vehicles(vehicles_path)
 
-        set_vehicle_behavior(vehicles, alternatives_ratio.to_list(), route_selection_ratio.to_list())
+            set_vehicle_behavior(vehicles, alternatives_ratio.to_list(), route_selection_ratio.to_list())
 
-        simulation = Simulation(vehicles, ss, bbox, download_date)
+            simulation = Simulation(vehicles, ss, bbox, download_date)
 
-        simulation.routing_map.fix_osm_routes(vehicles)
+            simulation.routing_map.fix_osm_routes(vehicles)
 
         if speeds_path is not None:
             simulation.routing_map.init_temporary_max_speeds(speeds_path)
