@@ -79,7 +79,7 @@ def vehicle_from_record(record, frequency_default=None, fcd_sampling_period_defa
     vehicle = Vehicle(
         id=record.get("id"),
         time_offset=record.get("time_offset"),
-        frequency=frequency_default if frequency_default is not None else record.get("frequency")
+        frequency=frequency_default if frequency_default is not None else record.get("frequency"),
         start_index=record.get("start_index", 0),
         start_distance_offset=record.get("start_distance_offset", 0.0),
         origin_node=origin_node,
@@ -204,8 +204,8 @@ class VehicleDatasetSource:
         if df.empty:
             return []
 
-        frequency_default = self.shared_defaults.get("frequency")
-        fcd_sampling_period_default = self.shared_defaults.get("fcd_sampling_period")
+        frequency_default = timedelta(seconds=self.shared_defaults.get("frequency"))
+        fcd_sampling_period_default =  timedelta(seconds=self.shared_defaults.get("fcd_sampling_period"))
         vehicles = []
         for record in df.to_dict(orient="records"):
             vehicle = vehicle_from_record(

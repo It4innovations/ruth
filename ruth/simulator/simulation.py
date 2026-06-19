@@ -95,8 +95,7 @@ class SimSetting:
 class Simulation:
     """A simulation state."""
 
-    def __init__(self, vehicles: List[Vehicle], setting: SimSetting, bbox: BBox, map_download_date: str,
-                 vehicle_source=None):
+    def __init__(self, vehicles: List[Vehicle], setting: SimSetting, bbox: BBox, map_download_date: str, vehicle_source=None):
         """
         Construct a new simulation.
         """
