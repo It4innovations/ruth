@@ -1,8 +1,11 @@
 import glob
+import json
 import os
 import pytest
+import pandas as pd
 
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from ruth.simulator import Simulation
 from ruth.simulator.kernels import ShortestPathsAlternatives, FirstRouteSelection, FastestPathsAlternatives, \
@@ -55,6 +58,61 @@ def setup_route_selection_ratio():
 
 
 vehicles_path_10 = os.path.join(os.path.dirname(__file__), "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet")
+test_graphml_path = Path(__file__).resolve().parent / "data/50_16568920000002-14_321441000000016-50_020240399999985-14_592499399999983_2024-01-10T00-00-00.graphml"
+
+
+def write_bucket_dataset_copy(single_path, dataset_path, partition_seconds=10):
+    df = pd.read_parquet(single_path, engine="fastparquet")
+    df["time_offset_s"] = df["time_offset"].dt.total_seconds().astype("int64")
+    df["start_bucket_s"] = (df["time_offset_s"] // partition_seconds) * partition_seconds
+
+    first_row = df.iloc[0]
+    manifest = {
+        "shared_columns": {
+            "frequency": int(first_row["frequency"].total_seconds()),
+            "fcd_sampling_period": int(first_row["fcd_sampling_period"].total_seconds()),
+            "download_date": first_row["download_date"],
+            "bbox": {
+                "lat_max": first_row["bbox_lat_max"],
+                "lon_min": first_row["bbox_lon_min"],
+                "lat_min": first_row["bbox_lat_min"],
+                "lon_max": first_row["bbox_lon_max"],
+            },
+        }
+    }
+
+    dataset_path.mkdir()
+    (dataset_path / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    for bucket, bucket_df in df.groupby("start_bucket_s", sort=True):
+        bucket_path = dataset_path / f"start_bucket_s={int(bucket)}"
+        bucket_path.mkdir()
+        bucket_df = bucket_df.drop(columns=["frequency", "fcd_sampling_period"])
+        bucket_df.to_parquet(bucket_path / "part.0.parquet", engine="fastparquet", index=False)
+
+
+def prepare_input_equivalence_run_dir(run_dir):
+    data_dir = run_dir / "data"
+    data_dir.mkdir(parents=True)
+    (data_dir / test_graphml_path.name).symlink_to(test_graphml_path)
+
+
+def run_input_equivalence_simulation(common_args, vehicles_path, alternatives_ratio,
+                                     route_selection_ratio, run_dir, name):
+    prepare_input_equivalence_run_dir(run_dir)
+
+    cwd = Path.cwd()
+    os.chdir(run_dir)
+    try:
+        simulator = run_inner_mock(common_args, str(vehicles_path), alternatives_ratio,
+                                   route_selection_ratio, name)
+        step_summary = [
+            (step.simulation_offset, step.step, step.n_active, step.need_new_route)
+            for step in simulator.state.steps_info
+        ]
+        return step_summary, load_fcd_history(name)
+    finally:
+        os.chdir(cwd)
+
 
 # check history - handle both single file and partitioned files
 def load_fcd_history(name):
@@ -215,3 +273,44 @@ def test_simulation_with_alt(setup_common_args, setup_alternatives_ratio, setup_
 
     simulation2 = simulator2.state
     compare_simulation(simulation1, simulation2)
+
+
+def test_single_file_and_bucket_simulations_emit_same_fcd_history(setup_common_args, tmp_path):
+    dataset_path = tmp_path / "vehicles_dataset"
+    write_bucket_dataset_copy(Path(vehicles_path_10), dataset_path)
+
+    alternatives_ratio = AlternativesRatio(
+        default=0.0,
+        dijkstra_fastest=0.5,
+        dijkstra_shortest=0.5,
+        plateau_fastest=0.0,
+    )
+    route_selection_ratio = RouteSelectionRatio(
+        no_alternative=0.0,
+        first=1.0,
+        random=0.0,
+        ptdr=0.0,
+    )
+
+    single_steps, single_fcd = run_input_equivalence_simulation(
+        setup_common_args,
+        Path(vehicles_path_10),
+        alternatives_ratio,
+        route_selection_ratio,
+        tmp_path / "single_run",
+        "single",
+    )
+    dataset_steps, dataset_fcd = run_input_equivalence_simulation(
+        setup_common_args,
+        dataset_path,
+        alternatives_ratio,
+        route_selection_ratio,
+        tmp_path / "dataset_run",
+        "dataset",
+    )
+
+    assert single_steps == dataset_steps
+    pd.testing.assert_frame_equal(
+        single_fcd.reset_index(drop=True),
+        dataset_fcd.reset_index(drop=True),
+    )

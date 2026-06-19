@@ -193,7 +193,8 @@ class Simulation:
         if current_offset is None:
             return True
 
-        return self.next_vehicle_bucket_offset() <= current_offset
+        _, current_offset_seconds = self.round_time_offset(current_offset)
+        return self.vehicle_source.next_bucket_start_s() <= current_offset_seconds
 
     def load_next_vehicle_bucket(self):
         if not self.has_pending_vehicle_buckets():

@@ -67,27 +67,38 @@ def set_vehicle_behavior_stable(vehicle: Vehicle,
     vehicle.route_selection = choose_by_stable_ratio(selection_ratios, ROUTE_SELECTION_BY_INDEX[1:],
                                                      seed, vehicle.id, "route-selection")
 
+
+def set_vehicle_behavior_stable_for_vehicles(vehicles: List[Vehicle],
+                                             alternatives_ratio: List[float],
+                                             route_selection_ratio: List[float],
+                                             seed: Optional[int]):
+    for vehicle in vehicles:
+        set_vehicle_behavior_stable(vehicle, alternatives_ratio, route_selection_ratio, seed)
+
+
 def vehicle_from_record(record, frequency_default=None, fcd_sampling_period_default=None):
-    osm_route = record.get("osm_route")
-    origin_node = record.get("origin_node")
-    dest_node = record.get("dest_node")
+    osm_route = record["osm_route"]
+    origin_node = record["origin_node"]
+    dest_node = record["dest_node"]
     needs_default_route = not osm_route or len(osm_route) <= 2
 
     if (not osm_route or len(osm_route) < 2) and origin_node is not None and dest_node is not None:
         osm_route = [origin_node, dest_node]
 
     vehicle = Vehicle(
-        id=record.get("id"),
-        time_offset=record.get("time_offset"),
-        frequency=frequency_default if frequency_default is not None else record.get("frequency"),
-        start_index=record.get("start_index", 0),
-        start_distance_offset=record.get("start_distance_offset", 0.0),
+        id=record["id"],
+        time_offset=record["time_offset"],
+        frequency=frequency_default if frequency_default is not None else record["frequency"],
+        start_index=record["start_index"],
+        start_distance_offset=record["start_distance_offset"],
         origin_node=origin_node,
         dest_node=dest_node,
         osm_route=osm_route,
-        active=record.get("active", True),
-        fcd_sampling_period=fcd_sampling_period_default if fcd_sampling_period_default is not None else record.get("fcd_sampling_period"),
-        status=record.get("status"),
+        active=record["active"],
+        fcd_sampling_period=(fcd_sampling_period_default
+                             if fcd_sampling_period_default is not None
+                             else record["fcd_sampling_period"]),
+        status=record["status"],
     )
     vehicle.needs_default_route = needs_default_route
     return vehicle
@@ -205,7 +216,7 @@ class VehicleDatasetSource:
             return []
 
         frequency_default = timedelta(seconds=self.shared_defaults.get("frequency"))
-        fcd_sampling_period_default =  timedelta(seconds=self.shared_defaults.get("fcd_sampling_period"))
+        fcd_sampling_period_default = timedelta(seconds=self.shared_defaults.get("fcd_sampling_period"))
         vehicles = []
         for record in df.to_dict(orient="records"):
             vehicle = vehicle_from_record(
@@ -214,9 +225,9 @@ class VehicleDatasetSource:
                 fcd_sampling_period_default
             )
             if vehicle.active and vehicle.osm_route and len(vehicle.osm_route) >= 2:
-                set_vehicle_behavior_stable(vehicle, self.alternatives_ratio,
-                                            self.route_selection_ratio, self.seed)
                 vehicles.append(vehicle)
+        set_vehicle_behavior_stable_for_vehicles(vehicles, self.alternatives_ratio,
+                                                 self.route_selection_ratio, self.seed)
         logger.info("Loaded %d active vehicles from %s", len(vehicles), bucket_path.name)
         return vehicles
 
@@ -227,22 +238,10 @@ def load_vehicles(input_path: str) -> Tuple[List[Vehicle], Optional[BBox], Optio
     if df.empty:
         raise ValueError(f"No vehicle data found in {input_path}")
 
-    records = df.to_dict(orient="records")
-    vehicles: List[Vehicle] = []
-    for r in records:
-        vehicles.append(Vehicle(
-            id=r.get("id"),
-            time_offset=r.get("time_offset"),
-            frequency=timedelta(seconds=5),  # TODO: Placeholder, actual frequency may vary
-            start_index=r.get("start_index"),
-            start_distance_offset=r.get("start_distance_offset"),
-            origin_node=r.get("origin_node"),
-            dest_node=r.get("dest_node"),
-            osm_route=r.get("osm_route"),
-            active=r.get("active", True),
-            fcd_sampling_period=r.get("fcd_sampling_period"),
-            status=r.get("status"),
-        ))
+    vehicles = [
+        vehicle_from_record(record)
+        for record in df.to_dict(orient="records")
+    ]
 
     # Filter vehicles with missing or too-short routes or inactive flag
     pre_count = len(vehicles)

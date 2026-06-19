@@ -148,6 +148,9 @@ class Vehicle:
         if isinstance(self.frequency, pd.Timedelta):
             object.__setattr__(self, 'frequency', self.frequency.to_pytimedelta())
 
+        if isinstance(self.fcd_sampling_period, pd.Timedelta):
+            self.fcd_sampling_period = self.fcd_sampling_period.to_pytimedelta()
+
         # Initialize cached frequency in seconds
         object.__setattr__(self, '_frequency_seconds', int(self.frequency.total_seconds()))
 

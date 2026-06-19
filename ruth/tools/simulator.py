@@ -10,10 +10,9 @@ from typing import List, Optional
 import click
 import signal
 
-from ..vehicle import set_vehicle_behavior
 from ..simulator import SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
-from ..simulator.common import VehicleDatasetSource
+from ..simulator.common import VehicleDatasetSource, set_vehicle_behavior_stable_for_vehicles
 from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, FirstRouteSelection, \
     RandomRouteSelection, RouteSelectionProvider, ShortestPathsAlternatives, \
     MPIDistributedAlternatives, ZeroMQDistributedPTDRRouteSelection
@@ -119,7 +118,12 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
         else:
             vehicles, bbox, download_date = load_vehicles(vehicles_path)
 
-            set_vehicle_behavior(vehicles, alternatives_ratio.to_list(), route_selection_ratio.to_list())
+            set_vehicle_behavior_stable_for_vehicles(
+                vehicles,
+                alternatives_ratio.to_list(),
+                route_selection_ratio.to_list(),
+                seed,
+            )
 
             simulation = Simulation(vehicles, ss, bbox, download_date)
 
