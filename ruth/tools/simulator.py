@@ -127,7 +127,11 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
 
             simulation = Simulation(vehicles, ss, bbox, download_date)
 
-            simulation.routing_map.fix_osm_routes(vehicles)
+            routed_vehicles = [
+                vehicle for vehicle in vehicles
+                if not getattr(vehicle, "needs_default_route", False)
+            ]
+            simulation.routing_map.fix_osm_routes(routed_vehicles)
 
         if speeds_path is not None:
             simulation.routing_map.init_temporary_max_speeds(speeds_path)

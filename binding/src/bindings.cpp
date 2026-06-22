@@ -30,14 +30,20 @@ PYBIND11_MODULE(ruthlib, m) {
     m.def("setup_map", &ruthlib::setup_map, "setup the map of the simulation");
     m.def("setup_ace", &ruthlib::setup_ace, "setup the ace library (MPI is included in ace)");
     m.def("do_alternatives",
-        [](py::array_t<int, py::array::c_style | py::array::forcecast> od, int max_routes) {
+        [](py::array_t<int, py::array::c_style | py::array::forcecast> od, int max_routes,
+           bool use_origin_speeds) {
             auto buf = od.request();
             if (buf.ndim != 2 || buf.shape[1] != 2)
                 throw std::runtime_error("OD matrix must be shape (N, 2)");
             ruthlib::do_alternatives(static_cast<const int*>(buf.ptr),
                                      static_cast<size_t>(buf.shape[0]),
-                                     max_routes);
-        }, "perform alternative routes calculation");
+                                     max_routes,
+                                     use_origin_speeds);
+        },
+        py::arg("od"),
+        py::arg("max_routes"),
+        py::arg("use_origin_speeds") = false,
+        "perform alternative routes calculation");
 
     m.def("is_master", &ruthlib::is_master, "checks if the rank is the master");
     m.def("finalize", &ruthlib::finalize, "performs ace teardown (include MPI finalize");
@@ -80,4 +86,3 @@ PYBIND11_MODULE(ruthlib, m) {
     m.def("is_simulation_running", &ruthlib::is_simulation_running, "check if the simulation is running");
     m.def("finish_simulation", &ruthlib::finish_simulation, "finish the simulation and clean up resources");
 }
-

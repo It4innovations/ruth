@@ -361,13 +361,15 @@ public:
 
   void execute() override {
 
-    const size_t chunk_size = std::max(1ul, routes.size() / (ace::Scheduler::instance()->num_workers() * MULTIPLIER));
+    const size_t worker_count = std::max<size_t>(1, std::thread::hardware_concurrency());
+    const size_t chunk_size = std::max<size_t>(1, routes.size() / (worker_count * MULTIPLIER));
+    auto routes_ptr = std::make_shared<std::vector<std::vector<int>>>(routes);
+    const int first_request_index = start_index;
+    const float infinite_travel_time = INFINITE_TRAVEL_TIME;
 
     ace::parallelfor(
       ace::Range<size_t>(0, routes.size(), chunk_size),
-      [](const size_t &i,
-         const std::shared_ptr<std::vector<std::vector<int>>> routes_ptr,
-         int start_index, float INFINITE_TRAVEL_TIME) {
+      [routes_ptr, first_request_index, infinite_travel_time](const size_t &i) {
         try {
           auto graph = State::instance().get_graph();
           if (!graph) {
@@ -375,12 +377,12 @@ public:
             return;
           }
           const auto &route = routes_ptr->at(i);
-          const int request_index = start_index + i;
+          const int request_index = first_request_index + i;
 
           float total_time = 0.0f;
           if (route.empty()) {
             log("Empty route for index " + std::to_string(i));
-            State::instance().push_travel_time(request_index, INFINITE_TRAVEL_TIME);
+            State::instance().push_travel_time(request_index, infinite_travel_time);
             return;
           }
 
@@ -399,13 +401,13 @@ public:
 
             if (!edge) {
               log("No edge found from " + std::to_string(node.id) + " to " + std::to_string(next_id));
-              State::instance().push_travel_time(request_index, INFINITE_TRAVEL_TIME);
+              State::instance().push_travel_time(request_index, infinite_travel_time);
               return;
             }
 
             float speedMPS = static_cast<float>(edge->GetSpeed()) / 3.6f;
             if (speedMPS <= 0.0f) {
-              State::instance().push_travel_time(request_index, INFINITE_TRAVEL_TIME);
+              State::instance().push_travel_time(request_index, infinite_travel_time);
               return;
             }
             float travelTime = edge->length / speedMPS;
@@ -420,13 +422,10 @@ public:
         catch (const std::exception &e)
         {
           log("Error calculating travel time for route " + std::to_string(i) + ": " + e.what());
-          State::instance().push_travel_time(start_index + i, INFINITE_TRAVEL_TIME);
+          State::instance().push_travel_time(first_request_index + i, infinite_travel_time);
         }
       },
-    true,
-    std::make_shared<std::vector<std::vector<int>>>(routes),
-    start_index,
-    INFINITE_TRAVEL_TIME);
+    true);
   }
 
   size_t size() const override {
@@ -620,11 +619,12 @@ class AlternativesWorkload : public ace::workload {
 public:
   std::vector<VehicleTask> vehicle_tasks;
   int max_routes;
+  bool use_origin_speeds;
 
-  AlternativesWorkload() : workload(), max_routes(20) {}
+  AlternativesWorkload() : workload(), max_routes(20), use_origin_speeds(false) {}
 
-  AlternativesWorkload(const std::vector<VehicleTask> &tasks, int max_routes)
-      : workload(), vehicle_tasks(tasks), max_routes(max_routes) {}
+  AlternativesWorkload(const std::vector<VehicleTask> &tasks, int max_routes, bool use_origin_speeds = false)
+      : workload(), vehicle_tasks(tasks), max_routes(max_routes), use_origin_speeds(use_origin_speeds) {}
 
   AlternativesWorkload(const std::shared_ptr<char> data, size_t size)
       : workload(data, size) {
@@ -640,13 +640,18 @@ public:
     offset += num_tasks * sizeof(VehicleTask);
 
     std::memcpy(&max_routes, data.get() + offset, sizeof(int));
+    offset += sizeof(int);
+    std::memcpy(&use_origin_speeds, data.get() + offset, sizeof(bool));
   }
 
   void execute() override {
     // std::vector<VehicleTask> ptr_to_data = std::vector<VehicleTask>(vehicle_tasks);
     auto alg = State::instance().get_alg();
     const size_t num_vehicles = vehicle_tasks.size();
-    const size_t chunk_size = std::max(1ul, num_vehicles / (ace::Scheduler::instance()->num_workers() * MULTIPLIER));
+    const size_t worker_count = std::max<size_t>(1, std::thread::hardware_concurrency());
+    const size_t chunk_size = std::max<size_t>(1, num_vehicles / (worker_count * MULTIPLIER));
+    const bool use_origin_speed_for_routes = use_origin_speeds;
+    const int requested_max_routes = max_routes;
 
     std::vector<int> vehicle_ids(num_vehicles);
     std::vector<std::vector<std::vector<int>>> routes_per_vehicle(num_vehicles);
@@ -654,15 +659,13 @@ public:
 
     ace::parallelfor(
       ace::Range<size_t>(0, num_vehicles, chunk_size),
-      [&](const size_t &i,
-        const std::vector<VehicleTask>& ptr_to_data_in,
-        const std::shared_ptr<Routing::Algorithms::AlternativesPlateauAlgorithm> &alg,
-        int max_routes) {
+      [&](const size_t &i) {
 
-        const VehicleTask& task = ptr_to_data_in[i];
+        const VehicleTask& task = vehicle_tasks[i];
         vehicle_ids[i] = task.vehicle_id;  // Always set vehicle ID to maintain order
 
-        const std::unique_ptr<std::vector<Result>> routeResults = alg->GetResults(task.origin, task.destination, max_routes, false);
+        const std::unique_ptr<std::vector<Result>> routeResults = alg->GetResults(
+          task.origin, task.destination, requested_max_routes, false, 0, use_origin_speed_for_routes);
 
         if (routeResults && !routeResults->empty()) {
           std::vector<std::vector<int>> routes;
@@ -687,10 +690,7 @@ public:
         // If no routes found, vectors remain empty (default constructed)
 
       },
-      true,
-      vehicle_tasks,
-      alg,
-      max_routes);
+      true);
 
       auto send_result = std::make_shared<CollectAlternativesWorkload>(vehicle_ids, routes_per_vehicle, travel_times_per_vehicle);
       ace::CommInterface::instance()->async_send(send_result, this->header.rank);
@@ -699,7 +699,7 @@ public:
 
   size_t size() const override {
     return sizeof(size_t) + vehicle_tasks.size() * sizeof(VehicleTask) +
-           sizeof(int);
+           sizeof(int) + sizeof(bool);
   }
 
   char *marshal() const override {
@@ -715,6 +715,8 @@ public:
     offset += num_tasks * sizeof(VehicleTask);
 
     std::memcpy(data + offset, &max_routes, sizeof(int));
+    offset += sizeof(int);
+    std::memcpy(data + offset, &use_origin_speeds, sizeof(bool));
     return data;
   }
 };
@@ -793,7 +795,7 @@ namespace ruthlib{
     }
   }
 
-  void do_alternatives(const int* od_data, size_t n_pairs, int max_routes) {
+  void do_alternatives(const int* od_data, size_t n_pairs, int max_routes, bool use_origin_speeds) {
     std::vector<std::shared_ptr<ace::workload>> distributed_tasks;
 
     auto comm = ace::CommInterface::instance();
@@ -811,7 +813,7 @@ namespace ruthlib{
 
       if (work_list.empty()) break;
 
-      auto task = std::make_shared<AlternativesWorkload>(work_list, max_routes);
+      auto task = std::make_shared<AlternativesWorkload>(work_list, max_routes, use_origin_speeds);
       size_offset++;
       comm->async_send(task, size_offset % num_ranks);
       distributed_tasks.push_back(task);
@@ -824,14 +826,14 @@ namespace ruthlib{
 
   }
 
-  void do_alternatives(std::vector<std::pair<int, int>> OD_matrix, int max_routes) {
+  void do_alternatives(std::vector<std::pair<int, int>> OD_matrix, int max_routes, bool use_origin_speeds) {
     std::vector<int> flat;
     flat.reserve(OD_matrix.size() * 2);
     for (const auto& p : OD_matrix) {
       flat.push_back(p.first);
       flat.push_back(p.second);
     }
-    do_alternatives(flat.data(), OD_matrix.size(), max_routes);
+    do_alternatives(flat.data(), OD_matrix.size(), max_routes, use_origin_speeds);
   }
 
   bool is_master() {

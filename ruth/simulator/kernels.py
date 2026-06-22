@@ -36,7 +36,7 @@ class AlternativesProvider:
         """
         pass
 
-    def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
+    def compute_alternatives(self, vehicles: List[Vehicle], k: int, use_origin_speeds: bool = False) -> List[
         Optional[AlternativeRoutes]]:
         """
         Provides implementation of computing alternatives.
@@ -57,7 +57,7 @@ class FastestPathsAlternatives(AlternativesProvider):
         super().__init__()
         self.vehicle_behaviour = VehicleAlternatives.DIJKSTRA_FASTEST
 
-    def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
+    def compute_alternatives(self, vehicles: List[Vehicle], k: int, use_origin_speeds: bool = False) -> List[
         Optional[AlternativeRoutes]]:
         return [[(route, None) for route in vehicle.k_fastest_paths(k, self.routing_map)]
                 for vehicle in vehicles]
@@ -73,7 +73,7 @@ class ShortestPathsAlternatives(AlternativesProvider):
         super().__init__()
         self.vehicle_behaviour = VehicleAlternatives.DIJKSTRA_SHORTEST
 
-    def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
+    def compute_alternatives(self, vehicles: List[Vehicle], k: int, use_origin_speeds: bool = False) -> List[
         Optional[AlternativeRoutes]]:
         return [[(route, None) for route in vehicle.k_shortest_paths(k, self.routing_map)]
                 for vehicle in vehicles]
@@ -193,7 +193,7 @@ class MPIDistributedAlternatives(AlternativesProvider):
 
         return remapped_routes
 
-    def compute_alternatives(self, vehicles: List[Vehicle], k: int) -> List[
+    def compute_alternatives(self, vehicles: List[Vehicle], k: int, use_origin_speeds: bool = False) -> List[
         Optional[AlternativeRoutes]]:
         # OD_matrix = [
         #     (self.routing_map.osm_to_hdf5_id(v.next_routing_od_nodes[0]),
@@ -212,7 +212,7 @@ class MPIDistributedAlternatives(AlternativesProvider):
         # C++ 'int' usually maps to np.int32
         OD_matrix = np.array(OD_list, dtype=np.int32)
 
-        self.ru.do_alternatives(OD_matrix, k)
+        self.ru.do_alternatives(OD_matrix, k, use_origin_speeds)
 
         li = self.ru.get_routes()
 

@@ -190,7 +190,8 @@ class Simulator:
         logger.info(f"Computing default routes with {alternatives_provider.vehicle_behaviour}")
         alts = alternatives_provider.compute_alternatives(
             vehicles,
-            k=1
+            k=1,
+            use_origin_speeds=True
         )
 
         assert len(vehicles) == len(alts)
