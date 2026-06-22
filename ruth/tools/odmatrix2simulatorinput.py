@@ -269,6 +269,21 @@ def resolve_output_format(out: str, output_format: str) -> str:
     return "dataset"
 
 
+def output_specs(out: str, output_format: str):
+    if output_format != "both":
+        return [(out, output_format)]
+
+    out_path = Path(out)
+    if out_path.suffix == ".parquet":
+        dataset_path = out_path.with_suffix("")
+    else:
+        dataset_path = out_path
+    return [
+        (str(out_path), "single"),
+        (str(dataset_path), "dataset"),
+    ]
+
+
 def final_single_output_path(out: str, active_vehicles: int) -> Path:
     out_path = Path(out)
     if out_path.suffix == ".parquet":
@@ -428,8 +443,9 @@ def write_manifest(manifest: Dict, output_path: Path, output_format: str) -> Pat
               help="Default: 200000. Number of OD rows processed per chunk.")
 @click.option("--partition-seconds", type=int, default=900,
               help="Default: 900. Start-time bucket size for dataset output.")
-@click.option("--output-format", type=click.Choice(["auto", "single", "dataset"]), default="auto",
-              help="Default: auto. 'single' writes one parquet file; 'dataset' writes a parquet directory.")
+@click.option("--output-format", type=click.Choice(["auto", "single", "dataset", "both"]), default="auto",
+              help="Default: auto. 'single' writes one parquet file; 'dataset' writes a parquet directory; "
+                   "'both' writes both for comparison.")
 def convert(od_matrix_path, download_date, increase_lat, increase_lon,
             lat_min, lat_max, lon_min, lon_max,
             csv_separator, frequency, fcd_sampling_period, nproc,
@@ -489,7 +505,10 @@ def convert(od_matrix_path, download_date, increase_lat, increase_lon,
 
     routing_label = "nearest nodes only (no routing)" if no_routing else "dijkstra fastest paths"
     output_format = resolve_output_format(out, output_format)
-    writer = ParquetOutputWriter(out, output_format)
+    writers = [
+        ParquetOutputWriter(output_path, writer_format)
+        for output_path, writer_format in output_specs(out, output_format)
+    ]
     pool = None
     active_vehicles = 0
     inactive_vehicles = 0
@@ -515,7 +534,8 @@ def convert(od_matrix_path, download_date, increase_lat, increase_lon,
                 chunk_active = int(df["active"].sum())
                 active_vehicles += chunk_active
                 inactive_vehicles += len(df) - chunk_active
-                writer.write(df)
+                for writer in writers:
+                    writer.write(df)
                 pbar.update(len(chunk))
     finally:
         if pool is not None:
@@ -525,16 +545,17 @@ def convert(od_matrix_path, download_date, increase_lat, increase_lon,
     logger.info("Active vehicles:   %d", active_vehicles)
     logger.info("Inactive vehicles: %d (same origin/destination or no route found)", inactive_vehicles)
 
-    final_output = writer.close(active_vehicles)
-    manifest = build_manifest(od_matrix_path, final_output, output_format, metadata,
-                              bbox_values, download_date, frequency, fcd_sampling_period,
-                              active_vehicles, inactive_vehicles, no_routing,
-                              chunk_size, partition_seconds,
-                              map_graphml=map_graphml,
-                              download_date_source=download_date_source)
-    manifest_path = write_manifest(manifest, final_output, output_format)
-    logger.info("Output saved to '%s'.", final_output)
-    logger.info("Manifest saved to '%s'.", manifest_path)
+    for writer in writers:
+        final_output = writer.close(active_vehicles)
+        manifest = build_manifest(od_matrix_path, final_output, writer.output_format, metadata,
+                                  bbox_values, download_date, frequency, fcd_sampling_period,
+                                  active_vehicles, inactive_vehicles, no_routing,
+                                  chunk_size, partition_seconds,
+                                  map_graphml=map_graphml,
+                                  download_date_source=download_date_source)
+        manifest_path = write_manifest(manifest, final_output, writer.output_format)
+        logger.info("Output saved to '%s'.", final_output)
+        logger.info("Manifest saved to '%s'.", manifest_path)
 
 
 if __name__ == "__main__":
