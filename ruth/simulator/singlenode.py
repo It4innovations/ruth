@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Callable, List, Optional, Tuple
 
@@ -11,6 +12,7 @@ from ..utils import TimerSet
 from ..vehicle import Vehicle, VehicleAlternatives
 
 logger = logging.getLogger(__name__)
+PLATEAU_DEFAULT_ROUTE_SPEEDS_ENV = "RUTH_PLATEAU_DEFAULT_ROUTE_SPEEDS"
 
 
 class Simulator:
@@ -187,11 +189,13 @@ class Simulator:
                                      vehicles: List[Vehicle],
                                      alternatives_provider: AlternativesProvider):
         vehicles = [v for v in vehicles if v.osm_route is not None]
-        logger.info(f"Computing default routes with {alternatives_provider.vehicle_behaviour}")
+        use_origin_speeds = not self.plateau_default_route_uses_current_speeds()
+        speed_mode = "max" if use_origin_speeds else "current"
+        logger.info(f"Computing default routes with {alternatives_provider.vehicle_behaviour} using {speed_mode} speeds")
         alts = alternatives_provider.compute_alternatives(
             vehicles,
             k=1,
-            use_origin_speeds=True
+            use_origin_speeds=use_origin_speeds
         )
 
         assert len(vehicles) == len(alts)
@@ -242,6 +246,13 @@ class Simulator:
             vehicles = self.sim.load_next_vehicle_bucket()
             self.prepare_loaded_vehicles(vehicles, alternatives_providers)
             self.sim.prune_inactive_vehicles()
+
+    def plateau_default_route_uses_current_speeds(self):
+        return os.environ.get(PLATEAU_DEFAULT_ROUTE_SPEEDS_ENV, "max").strip().lower() in {
+            "current",
+            "current_speed",
+            "current_speeds",
+        }
 
     def update_map_speeds(self, updated_speeds: dict, last_map_update: timedelta,
                           alternatives_providers: List[AlternativesProvider]) -> Tuple[timedelta, dict]:
