@@ -237,13 +237,14 @@ class Map:
             if v.osm_route:
                 v.osm_route = [key for key, _ in itertools.groupby(
                     [self.remapped_nodes.get(node, node) for node in v.osm_route])]
-
-                for node_from, node_to in zip(v.osm_route[:-1], v.osm_route[1:]):
-                    if not self.original_network.has_edge(node_from, node_to):
-                        cl.error(f"No link between {node_from} and {node_to} in the network.")
-                        v.osm_route = []
-                        v.active = False
-                        break
+                
+                if len(v.osm_route) > 2:
+                    for node_from, node_to in zip(v.osm_route[:-1], v.osm_route[1:]):
+                        if not self.original_network.has_edge(node_from, node_to):
+                            cl.error(f"No link between {node_from} and {node_to} in the network.")
+                            v.osm_route = []
+                            v.active = False
+                            break
 
                 if v.osm_route:
                     v.origin_node = v.osm_route[0]
