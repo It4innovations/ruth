@@ -472,9 +472,20 @@ class Map:
             osmnx.settings.overpass_settings = f"[out:json][timeout:{{timeout}}][date:'{self.download_date}']"
 
             north, west, south, east = self.bbox.get_coords()
+            custom_drive_filter = (
+                '["highway"]'
+                '["area"!~"yes"]'
+                '["access"!~"private"]'
+                '["highway"!~"abandoned|bridleway|bus_guideway|corridor|cycleway|elevator|escalator'
+                '|footway|no|path|pedestrian|planned|platform|proposed|raceway|razed|steps|track|closed"]'
+                '["motor_vehicle"!~"no"]'
+                '["motorcar"!~"no"]'
+                '["service"!~"alley|driveway|emergency_access|parking|parking_aisle|private"]'
+            )
             network = graph_from_bbox(bbox=(north, south, east, west),
                                       network_type="drive",
-                                      retain_all=False)
+                                      retain_all=False,
+                                      custom_filter=custom_drive_filter)
 
             cl.info(f"{self.name}'s map loaded.")
             return network, True
