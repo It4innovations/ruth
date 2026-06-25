@@ -2,8 +2,9 @@
 import json
 import logging
 import os.path
+import re
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Tuple
 
 import click
 import fastparquet
@@ -170,12 +171,39 @@ def bbox_values_from_map(routing_map: Map) -> Dict:
     }
 
 
-def get_graph_download_date(routing_map: Map):
-    for key in ("download_date", "created_date", "created_at", "osm_date"):
-        value = routing_map.network.graph.get(key)
-        if value:
-            return str(value)
-    return None
+def parse_map_metadata_from_filename(map_graphml: str) -> Tuple[Dict, str]:
+    stem = Path(map_graphml).stem
+    match = re.match(
+        r"^(?P<bbox>.+)_(?P<date>\d{4}-\d{2}-\d{2}[T ]\d{2}-\d{2}-\d{2})$",
+        stem,
+    )
+    if not match:
+        raise ValueError(
+            f"Cannot infer bbox and download date from GraphML filename: {map_graphml}"
+        )
+
+    coord_pattern = r"-?\d+(?:_\d+)?"
+    bbox_match = re.match(
+        rf"^(?P<lat_max>{coord_pattern})-(?P<lon_min>{coord_pattern})-"
+        rf"(?P<lat_min>{coord_pattern})-(?P<lon_max>{coord_pattern})$",
+        match.group("bbox"),
+    )
+    if not bbox_match:
+        raise ValueError(f"Cannot infer bbox from GraphML filename: {map_graphml}")
+
+    def parse_coord(name: str) -> float:
+        return float(bbox_match.group(name).replace("_", "."))
+
+    date_value = match.group("date")
+    date_separator = "T" if "T" in date_value else " "
+    date_part, time_part = date_value.split(date_separator, 1)
+
+    return {
+        "lat_max": parse_coord("lat_max"),
+        "lon_min": parse_coord("lon_min"),
+        "lat_min": parse_coord("lat_min"),
+        "lon_max": parse_coord("lon_max"),
+    }, f"{date_part}{date_separator}{time_part.replace('-', ':')}"
 
 
 def normalize_to_list(values):
@@ -364,8 +392,7 @@ class ParquetOutputWriter:
 def build_manifest(od_matrix_path: str, output_path: Path, output_format: str, metadata: Dict,
                    bbox_values: Dict, download_date: str, frequency: int, fcd_sampling_period: int,
                    active_vehicles: int, inactive_vehicles: int, no_routing: bool,
-                   chunk_size: int, partition_seconds: int, map_graphml: str = None,
-                   download_date_source: str = "option") -> Dict:
+                   chunk_size: int, partition_seconds: int, map_graphml: str = None) -> Dict:
     return {
         "schema_version": OUTPUT_SCHEMA_VERSION,
         "generator": "ruth.tools.odmatrix2simulatorinput",
@@ -385,13 +412,12 @@ def build_manifest(od_matrix_path: str, output_path: Path, output_format: str, m
             "partition_seconds": int(partition_seconds),
         },
         "routing": {
-            "mode": "no-routing" if no_routing else "shortest-path",
+            "mode": "no-routing" if no_routing else "default route",
             "osm_route": "[origin_node, dest_node]" if no_routing else "fastest_path",
         },
         "map": {
             "source": "graphml" if map_graphml else "bbox-download",
             "graphml_file": str(map_graphml) if map_graphml else None,
-            "download_date_source": download_date_source,
         },
         "shared_columns": {
             "frequency": int(frequency),
@@ -469,19 +495,14 @@ def convert(od_matrix_path, download_date, increase_lat, increase_lon,
 
     download_date = download_date.replace(hour=0, minute=0, second=0, microsecond=0)
     download_date = download_date.strftime("%Y-%m-%dT%H:%M:%S")
-    download_date_source = "option"
 
     if map_graphml:
         logger.info("Loading routing map from GraphML '%s' ...", map_graphml)
         routing_map = create_routing_map(data_dir=data_dir, map_graphml=map_graphml)
-        bbox_values = bbox_values_from_map(routing_map)
-        graph_download_date = get_graph_download_date(routing_map)
-        if graph_download_date:
-            download_date = graph_download_date
-            download_date_source = "graphml"
+        bbox_values, download_date = parse_map_metadata_from_filename(map_graphml)
         bbox = BBox(bbox_values["lat_max"], bbox_values["lon_min"],
                     bbox_values["lat_min"], bbox_values["lon_max"])
-        logger.info("Using bbox inferred from GraphML nodes.")
+        logger.info("Using bbox and download date inferred from GraphML filename.")
     else:
         logger.info("Computing bounding box ...")
         bbox_values = expand_bbox(metadata, increase_lat, increase_lon)
@@ -551,8 +572,7 @@ def convert(od_matrix_path, download_date, increase_lat, increase_lon,
                                   bbox_values, download_date, frequency, fcd_sampling_period,
                                   active_vehicles, inactive_vehicles, no_routing,
                                   chunk_size, partition_seconds,
-                                  map_graphml=map_graphml,
-                                  download_date_source=download_date_source)
+                                  map_graphml=map_graphml)
         manifest_path = write_manifest(manifest, final_output, writer.output_format)
         logger.info("Output saved to '%s'.", final_output)
         logger.info("Manifest saved to '%s'.", manifest_path)
