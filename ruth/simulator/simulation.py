@@ -76,6 +76,8 @@ class SimSetting:
     speeds_path: str = None
     buffer_size: int = 10_000
     max_records_per_file: int = int(1e9)
+    async_fcd_writer: bool = False
+    fcd_writer_queue_size: int = 4
     stuck_detection: int = 0
     plateau_default_route: bool = False
     fcd_history_base_name: str = "fcd_history"
@@ -101,7 +103,13 @@ class Simulation:
         """
 
         self.setting = setting
-        self.history = FCDHistory(self.setting.fcd_history_base_name, self.setting.buffer_size, self.setting.max_records_per_file)
+        self.history = FCDHistory(
+            self.setting.fcd_history_base_name,
+            self.setting.buffer_size,
+            self.setting.max_records_per_file,
+            async_enabled=self.setting.async_fcd_writer,
+            queue_size=self.setting.fcd_writer_queue_size,
+        )
         self.bbox = bbox
         self.map_download_date = map_download_date
         self._routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)

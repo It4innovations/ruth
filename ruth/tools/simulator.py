@@ -39,8 +39,12 @@ class CommonArgs:
     plateau_default_route: bool
     buffer_size: int
     max_records_per_file: int
+    vehicle_frequency_override: Optional[timedelta]
+    fcd_sampling_period_override: Optional[timedelta]
 
 
+    async_fcd_writer: bool
+    fcd_writer_queue_size: int
 @dataclass
 class AlternativesRatio:
     default: float
@@ -88,14 +92,28 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     speeds_path = common_args.speeds_path
     buffer_size = common_args.buffer_size
     max_records_per_file = common_args.max_records_per_file
+    async_fcd_writer = common_args.async_fcd_writer
+    fcd_writer_queue_size = common_args.fcd_writer_queue_size
     continue_from = common_args.continue_from
     stuck_detection = common_args.stuck_detection
     plateau_default_route = common_args.plateau_default_route
+    vehicle_frequency_override = common_args.vehicle_frequency_override
+    fcd_sampling_period_override = common_args.fcd_sampling_period_override
+
+    print(
+        "SC26 SIM DEBUG: "
+        f"vehicle_frequency_override={vehicle_frequency_override}, "
+        f"fcd_sampling_period_override={fcd_sampling_period_override}, "
+        f"vehicles_path={vehicles_path}",
+        flush=True,
+    )
 
     ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
                     los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
                     buffer_size=buffer_size,
                     max_records_per_file=max_records_per_file,
+                        async_fcd_writer=async_fcd_writer,
+                        fcd_writer_queue_size=fcd_writer_queue_size,
                     stuck_detection=stuck_detection,
                     plateau_default_route=plateau_default_route)
 
@@ -110,13 +128,19 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                 alternatives_ratio.to_list(),
                 route_selection_ratio.to_list(),
                 seed,
+                vehicle_frequency_override,
+                fcd_sampling_period_override,
             )
             vehicles = vehicle_source.load_next_bucket()
             simulation = Simulation(vehicles, ss, vehicle_source.bbox,
                                     vehicle_source.download_date,
                                     vehicle_source=vehicle_source)
         else:
-            vehicles, bbox, download_date = load_vehicles(vehicles_path)
+            vehicles, bbox, download_date = load_vehicles(
+                vehicles_path,
+                vehicle_frequency_override,
+                fcd_sampling_period_override,
+            )
 
             set_vehicle_behavior_stable_for_vehicles(
                 vehicles,
@@ -245,6 +269,14 @@ def start_zeromq_cluster(
               help="Buffer size (number of FCD records) before flushing to disk.")
 @click.option("--max-records-per-file", type=int, default=int(1e9),
               help="Rotate HDF5 file after this many records. If not set, defaults to a very large number (1e9).")
+@click.option("--vehicle-frequency-override-s", type=int, default=None,
+              help="Override per-vehicle rerouting/update period from the input data, in seconds.")
+@click.option("--fcd-sampling-period-override-s", type=int, default=None,
+              help="Override per-vehicle FCD sampling period from the input data, in seconds.")
+@click.option("--async-fcd-writer/--sync-fcd-writer", default=False,
+              help="Write FCD HDF5 batches in a separate process using a bounded queue.")
+@click.option("--fcd-writer-queue-size", type=int, default=4,
+              help="Maximum number of pending FCD batches allowed in the async writer queue.")
 @click.pass_context
 def single_node_simulator(ctx,
                           debug,
@@ -260,6 +292,10 @@ def single_node_simulator(ctx,
                           seed,
                           buffer_size,
                           max_records_per_file,
+                          vehicle_frequency_override_s,
+                          fcd_sampling_period_override_s,
+                          async_fcd_writer,
+                          fcd_writer_queue_size,
                           walltime_s,
                           saving_interval_s,
                           continue_from,
@@ -272,6 +308,10 @@ def single_node_simulator(ctx,
     walltime = timedelta(seconds=walltime_s) if walltime_s is not None else None
     saving_interval = timedelta(
         seconds=saving_interval_s) if saving_interval_s is not None else None
+    vehicle_frequency_override = timedelta(
+        seconds=vehicle_frequency_override_s) if vehicle_frequency_override_s is not None else None
+    fcd_sampling_period_override = timedelta(
+        seconds=fcd_sampling_period_override_s) if fcd_sampling_period_override_s is not None else None
 
     ctx.obj['common-args'] = CommonArgs(
         task_id=task_id,
@@ -286,6 +326,10 @@ def single_node_simulator(ctx,
         seed=seed,
         buffer_size=buffer_size,
         max_records_per_file=max_records_per_file,
+        vehicle_frequency_override=vehicle_frequency_override,
+        fcd_sampling_period_override=fcd_sampling_period_override,
+        async_fcd_writer=async_fcd_writer,
+        fcd_writer_queue_size=fcd_writer_queue_size,
         walltime=walltime,
         saving_interval=saving_interval,
         continue_from=continue_from,
@@ -421,14 +465,11 @@ def setup(common_args: CommonArgs, vehicles_path: Path,
     signal.signal(signal.SIGUSR1, handle_save_only)
     signal.signal(signal.SIGUSR2, handle_save_and_exit)
 
-    try:
-        simulator.simulate(
-            alternatives_providers=alternatives_providers,
-            route_selection_providers=route_selection_providers,
-            end_step_fns=end_step_fns,
-        )
-    except Exception as error:
-        print(f"An error occurred: {error}")
+    simulator.simulate(
+        alternatives_providers=alternatives_providers,
+        route_selection_providers=route_selection_providers,
+        end_step_fns=end_step_fns,
+    )
 
     simulation = simulator.state
     simulation.store(out)

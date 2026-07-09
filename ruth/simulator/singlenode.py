@@ -76,6 +76,7 @@ class Simulator:
                 if self.sim.setting.plateau_default_route and isinstance(alternatives_provider, MPIDistributedAlternatives):
                     self.change_baseline_alternatives(self.sim.vehicles, alternatives_provider)
 
+        last_saved_hour = -1
         with self.sim.history:
             # save the initial map to hdf5
             self.sim.history.writer.save_map(self.sim.routing_map, self.sim.setting.departure_time, self.sim.setting.round_freq)
@@ -83,6 +84,13 @@ class Simulator:
             while self.current_offset is not None:
                 step_start_dt = datetime.now()
                 timer_set = TimerSet()
+
+                current_hour = int(self.current_offset.total_seconds() // 3600)
+                if current_hour > last_saved_hour:
+                    save_path = f"sim_hour_{current_hour}.pickle"
+                    logger.info(f"Saving simulation state at hour {current_hour}: {save_path}")
+                    self.sim.store(save_path)
+                    last_saved_hour = current_hour
 
                 offset, offset_seconds = self.sim.round_time_offset(self.current_offset)
 
@@ -137,9 +145,10 @@ class Simulator:
                     if has_moved or self.sim.routing_map.has_temporary_speeds_planned():
                         last_time_moved = self.current_offset
                         moved_last_step = True
-
-                with timer_set.get("update"):
+                with timer_set.get("update_global_view"):
                     self.sim.update(fcds)
+
+                with timer_set.get("fcd_history_extend"):
                     self.sim.history.extend(fcds)
 
                 with timer_set.get("compute_offset"):
@@ -168,8 +177,17 @@ class Simulator:
                         for fn in end_step_fns:
                             fn(self.state)
 
+                parts = timer_set.collect()
+                parts.update(self.sim.history.collect_step_metrics(reset=True))
+
+                logger.info(
+                    "step_timers: step=%s %s",
+                    step,
+                    " ".join(f"{key}={value:.3f}" for key, value in sorted(parts.items()))
+                )
+
                 self.sim.save_step_info(self.current_offset, step, len(vehicles_to_be_moved),
-                                        step_dur, timer_set.collect(), len(need_new_route))
+                                        step_dur, parts, len(need_new_route))
                 step += 1
             # END while self.current_offset is not None
 

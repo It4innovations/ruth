@@ -76,6 +76,40 @@ def set_vehicle_behavior_stable_for_vehicles(vehicles: List[Vehicle],
         set_vehicle_behavior_stable(vehicle, alternatives_ratio, route_selection_ratio, seed)
 
 
+def _is_missing(value) -> bool:
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def period_to_timedelta(value, name: str, default: Optional[timedelta] = None) -> timedelta:
+    if _is_missing(value):
+        if default is not None:
+            return default
+        raise ValueError(f"Missing required vehicle period: {name}")
+
+    if isinstance(value, timedelta):
+        return value
+
+    if hasattr(value, "to_pytimedelta"):
+        return value.to_pytimedelta()
+
+    if isinstance(value, (int, float)):
+        if value <= 0:
+            raise ValueError(f"{name} must be positive, got {value!r}")
+        return timedelta(seconds=float(value))
+
+    parsed = pd.to_timedelta(value)
+    if hasattr(parsed, "to_pytimedelta"):
+        return parsed.to_pytimedelta()
+    if isinstance(parsed, timedelta):
+        return parsed
+    raise TypeError(f"Cannot convert {name}={value!r} to timedelta")
+
+
 def vehicle_from_record(record, frequency_default=None, fcd_sampling_period_default=None):
     osm_route = record["osm_route"]
     origin_node = record["origin_node"]
@@ -85,19 +119,30 @@ def vehicle_from_record(record, frequency_default=None, fcd_sampling_period_defa
     if (not osm_route or len(osm_route) < 2) and origin_node is not None and dest_node is not None:
         osm_route = [origin_node, dest_node]
 
+    frequency = period_to_timedelta(
+        frequency_default if frequency_default is not None else record.get("frequency"),
+        "frequency",
+        default=timedelta(seconds=20),
+    )
+    fcd_sampling_period = period_to_timedelta(
+        fcd_sampling_period_default
+        if fcd_sampling_period_default is not None
+        else record.get("fcd_sampling_period"),
+        "fcd_sampling_period",
+        default=timedelta(seconds=5),
+    )
+
     vehicle = Vehicle(
         id=record["id"],
         time_offset=record["time_offset"],
-        frequency=frequency_default if frequency_default is not None else record["frequency"],
+        frequency=frequency,
         start_index=record["start_index"],
         start_distance_offset=record["start_distance_offset"],
         origin_node=origin_node,
         dest_node=dest_node,
         osm_route=osm_route,
         active=record["active"],
-        fcd_sampling_period=(fcd_sampling_period_default
-                             if fcd_sampling_period_default is not None
-                             else record["fcd_sampling_period"]),
+        fcd_sampling_period=fcd_sampling_period,
         status=record["status"],
     )
     vehicle.needs_default_route = needs_default_route
@@ -164,12 +209,16 @@ def bucket_start_from_path(path: Path):
 
 class VehicleDatasetSource:
     def __init__(self, input_path: str, alternatives_ratio: List[float],
-                 route_selection_ratio: List[float], seed: Optional[int]):
+                 route_selection_ratio: List[float], seed: Optional[int],
+                 frequency_override: Optional[timedelta] = None,
+                 fcd_sampling_period_override: Optional[timedelta] = None):
         self.input_path = Path(input_path)
         self.manifest = load_manifest(self.input_path)
         self.alternatives_ratio = alternatives_ratio
         self.route_selection_ratio = route_selection_ratio
         self.seed = seed
+        self.frequency_override = frequency_override
+        self.fcd_sampling_period_override = fcd_sampling_period_override
         self.bucket_paths = self.discover_bucket_paths()
         self.bucket_index = 0
 
@@ -215,8 +264,26 @@ class VehicleDatasetSource:
         if df.empty:
             return []
 
-        frequency_default = timedelta(seconds=self.shared_defaults.get("frequency"))
-        fcd_sampling_period_default = timedelta(seconds=self.shared_defaults.get("fcd_sampling_period"))
+        frequency_default = self.frequency_override or period_to_timedelta(
+            self.shared_defaults.get("frequency"),
+            "frequency",
+            default=timedelta(seconds=20),
+        )
+        fcd_sampling_period_default = self.fcd_sampling_period_override or period_to_timedelta(
+            self.shared_defaults.get("fcd_sampling_period"),
+            "fcd_sampling_period",
+            default=timedelta(seconds=5),
+        )
+        print(
+            "SC26 BUCKET DEBUG: "
+            f"bucket={bucket_path.name}, "
+            f"frequency_default={frequency_default}, "
+            f"fcd_sampling_period_default={fcd_sampling_period_default}, "
+            f"frequency_override={self.frequency_override}, "
+            f"fcd_sampling_period_override={self.fcd_sampling_period_override}",
+            flush=True,
+        )
+
         vehicles = []
         for record in df.to_dict(orient="records"):
             vehicle = vehicle_from_record(
@@ -232,14 +299,22 @@ class VehicleDatasetSource:
         return vehicles
 
 
-def load_vehicles(input_path: str) -> Tuple[List[Vehicle], Optional[BBox], Optional[str]]:
+def load_vehicles(input_path: str,
+                  frequency_override: Optional[timedelta] = None,
+                  fcd_sampling_period_override: Optional[timedelta] = None) \
+        -> Tuple[List[Vehicle], Optional[BBox], Optional[str]]:
     logger.info("Loading data... %s", input_path)
+    if frequency_override is not None:
+        logger.info("Overriding vehicle frequency with %s", frequency_override)
+    if fcd_sampling_period_override is not None:
+        logger.info("Overriding FCD sampling period with %s", fcd_sampling_period_override)
+
     df = pd.read_parquet(input_path, engine="fastparquet")
     if df.empty:
         raise ValueError(f"No vehicle data found in {input_path}")
 
     vehicles = [
-        vehicle_from_record(record)
+        vehicle_from_record(record, frequency_override, fcd_sampling_period_override)
         for record in df.to_dict(orient="records")
     ]
 

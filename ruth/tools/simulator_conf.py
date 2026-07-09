@@ -33,6 +33,14 @@ from ..tools.simulator import (run_inner, AlternativesRatio as AlternativesRatio
                                RouteSelectionRatio as RouteSelectionRatioInner)
 
 
+def serialize_optional_timedelta(value: Optional[timedelta]):
+    return None if value is None else value.total_seconds()
+
+
+def deserialize_optional_timedelta(value):
+    return None if value is None else timedelta(seconds=value)
+
+
 def make_animation_args_dataclass(options_dict: dict) -> type:
     fields = []
     for key, value in options_dict.items():
@@ -90,8 +98,18 @@ class CommonArgs(CommonArgsInner):
     plateau_default_route: bool = False
     buffer_size: int = 10_000
     max_records_per_file: int = int(1e9)
+    vehicle_frequency_override: Optional[timedelta] = field(rename="vehicle-frequency-override-s",
+                                                           serializer=serialize_optional_timedelta,
+                                                           deserializer=deserialize_optional_timedelta,
+                                                           default=None)
+    fcd_sampling_period_override: Optional[timedelta] = field(rename="fcd-sampling-period-override-s",
+                                                             serializer=serialize_optional_timedelta,
+                                                             deserializer=deserialize_optional_timedelta,
+                                                             default=None)
 
 
+    async_fcd_writer: bool = False
+    fcd_writer_queue_size: int = 4
 @serde(rename_all="kebabcase")
 @dataclass
 class RunArgs:
@@ -148,6 +166,15 @@ def fill_args(config_file: str, ctx: Optional[click.Context] = None, workdir: Op
     if not p.exists():
         raise ValueError(f"Vehicles path {p.absolute()} does not exist.")
 
+    print(
+        "SC26 CONF DEBUG: "
+        f"config_file={config_file}, "
+        f"vehicle_frequency_override={getattr(args.common, 'vehicle_frequency_override', None)}, "
+        f"fcd_sampling_period_override={getattr(args.common, 'fcd_sampling_period_override', None)}, "
+        f"path={p}",
+        flush=True,
+    )
+
     if ctx is not None:
         ctx.obj['DEBUG'] = debug
         ctx.obj['common-args'] = args.common
@@ -181,6 +208,15 @@ def run(ctx):
     alternatives_ratio = ctx.obj["alternatives-ratio"]
     route_selection_ratio = ctx.obj["route-selection-ratio"]
     p = ctx.obj["path"]
+
+    print(
+        "SC26 RUN DEBUG: "
+        f"vehicle_frequency_override={getattr(common_args, 'vehicle_frequency_override', None)}, "
+        f"fcd_sampling_period_override={getattr(common_args, 'fcd_sampling_period_override', None)}, "
+        f"path={p}",
+        flush=True,
+    )
+
     ctx.obj['simulation'] = run_inner(common_args, p, alternatives_ratio, route_selection_ratio)
 
 
