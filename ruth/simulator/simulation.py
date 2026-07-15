@@ -13,15 +13,20 @@ import pandas as pd
 from .queues import QueuesManager
 from ..data.map import BBox, Map
 from ..data.segment import LengthMeters, Segment, SpeedMps
+from ..feature_flags import heterogeneous_vehicles_enabled
 from ..fcd_history import FCDHistory
 from ..vehicle import Vehicle
 
-try:
-    from ..globalview_wrapper import GlobalView
-    logging.info("Using C++ GlobalView module.")
-except ImportError:
-    logging.warning("C++ GlobalView module not found, using Python fallback.")
-    from ..globalview import GlobalView
+if heterogeneous_vehicles_enabled():
+    from ..globalview_heterogeneous import GlobalView
+    logging.info("Using heterogeneous Python GlobalView module.")
+else:
+    try:
+        from ..globalview_wrapper import GlobalView
+        logging.info("Using C++ GlobalView module.")
+    except ImportError:
+        logging.warning("C++ GlobalView module not found, using Python fallback.")
+        from ..globalview import GlobalView
 
 
 @dataclass(frozen=True)
@@ -33,6 +38,7 @@ class FCDRecord:
     vehicle_speed_mps: SpeedMps
     status: str
     active: bool
+    vehicle_type: str = "car"
 
 
 @dataclass
@@ -295,6 +301,12 @@ class Simulation:
         with h5py.File(path, 'r') as f:
             df = pd.DataFrame(f['fcd'][:])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+            if "vehicle_type" in df.columns:
+                df["vehicle_type"] = df["vehicle_type"].apply(
+                    lambda value: value.decode("utf-8", errors="ignore")
+                    if isinstance(value, (bytes, bytearray))
+                    else value
+                )
 
             return {
                 "df": df,

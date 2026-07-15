@@ -5,7 +5,11 @@ from typing import Callable, List, Optional, Tuple
 
 from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithPlans, AlternativeRoutes, \
     VehicleWithRoute, MPIDistributedAlternatives
-from .route import advance_vehicles_with_queues
+from ..feature_flags import heterogeneous_vehicles_enabled
+if heterogeneous_vehicles_enabled():
+    from .route_heterogeneous import advance_vehicles_with_queues
+else:
+    from .route import advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
 from ..data.map import Map
 from ..utils import TimerSet

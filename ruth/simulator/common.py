@@ -11,6 +11,7 @@ from typing import List, Tuple, Optional
 import pandas as pd
 
 from ..data.map import BBox
+from ..feature_flags import heterogeneous_vehicles_enabled
 from ..vehicle import Vehicle, VehicleAlternatives, VehicleRouteSelection
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,18 @@ def set_vehicle_behavior_stable_for_vehicles(vehicles: List[Vehicle],
                                              alternatives_ratio: List[float],
                                              route_selection_ratio: List[float],
                                              seed: Optional[int]):
-    for vehicle in vehicles:
+    if heterogeneous_vehicles_enabled():
+        vehicles_to_set = []
+        for vehicle in vehicles:
+            if vehicle.vehicle_type == "truck":
+                vehicle.alternatives = VehicleAlternatives.DEFAULT
+                vehicle.route_selection = VehicleRouteSelection.NO_ALTERNATIVE
+            else:
+                vehicles_to_set.append(vehicle)
+    else:
+        vehicles_to_set = vehicles
+
+    for vehicle in vehicles_to_set:
         set_vehicle_behavior_stable(vehicle, alternatives_ratio, route_selection_ratio, seed)
 
 
@@ -156,6 +168,7 @@ def vehicle_from_record(record, frequency_default=None, fcd_sampling_period_defa
         active=record["active"],
         fcd_sampling_period=fcd_sampling_period,
         status=record["status"],
+        vehicle_type=record.get("vehicle_type", "car")
     )
     vehicle.needs_default_route = needs_default_route
     return vehicle

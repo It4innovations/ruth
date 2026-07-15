@@ -64,6 +64,8 @@ def set_vehicle_behavior(vehicles: List['Vehicle'],
                          alternatives_ratio: List[float],
                          route_selection_ratio: List[float]):
     """
+    Deprecated: use set_vehicle_behavior_stable_for_vehicles instead.
+
     Selects random vehicles according to the ratio set in parameters and sets their type of alternatives calculation
     and route selection from the calculated alternatives.
     """
@@ -135,6 +137,7 @@ class Vehicle:
     """A period in which the raw FCD data are sampled"""
     fcd_sampling_period: timedelta = set_numpy_type("object")
     status: str = set_numpy_type("string")
+    vehicle_type: str = set_numpy_type("string", field(default="car"))
     alternatives: VehicleAlternatives = VehicleAlternatives.DEFAULT
     route_selection: VehicleRouteSelection = VehicleRouteSelection.NO_ALTERNATIVE
     current_travel_time: Optional[CurrentTravelTime] = None
@@ -147,12 +150,19 @@ class Vehicle:
 
         if isinstance(self.frequency, pd.Timedelta):
             object.__setattr__(self, 'frequency', self.frequency.to_pytimedelta())
+        if isinstance(self.fcd_sampling_period, pd.Timedelta):
+            object.__setattr__(self, 'fcd_sampling_period', self.fcd_sampling_period.to_pytimedelta())
 
         if isinstance(self.fcd_sampling_period, pd.Timedelta):
             self.fcd_sampling_period = self.fcd_sampling_period.to_pytimedelta()
 
         # Initialize cached frequency in seconds
         object.__setattr__(self, '_frequency_seconds', int(self.frequency.total_seconds()))
+        if not hasattr(self, "vehicle_type"):
+            self.vehicle_type = "car"
+        if isinstance(self.vehicle_type, (bytes, bytearray)):
+            self.vehicle_type = self.vehicle_type.decode("utf-8", errors="ignore")
+        self.vehicle_type = str(self.vehicle_type or "car").lower()
 
     def __setattr__(self, name, value):
         if name == 'frequency':
@@ -202,6 +212,15 @@ class Vehicle:
         if self.start_index + 1 >= len(self.osm_route):
             return None
         return self.osm_route[self.start_index + 1]
+
+    @property
+    def vehicle_params(self):
+        from .vehicle_types import DEFAULT_VEHICLE_CLASSES
+        return DEFAULT_VEHICLE_CLASSES.get(self.vehicle_type, DEFAULT_VEHICLE_CLASSES["car"])
+
+    @property
+    def max_speed_mps(self):
+        return self.vehicle_params.max_speed_mps
 
     @property
     def map_id(self) -> int:

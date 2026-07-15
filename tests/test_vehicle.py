@@ -1,6 +1,5 @@
 import pytest
 from datetime import timedelta
-from unittest.mock import MagicMock
 
 from ruth.data.segment import LengthMeters, TravelTime
 from ruth.data.map import Map, BBox
@@ -8,9 +7,9 @@ from ruth.vehicle import (
     Vehicle,
     VehicleAlternatives,
     VehicleRouteSelection,
-    CurrentTravelTime,
     set_vehicle_behavior,
 )
+from ruth.simulator.common import set_vehicle_behavior_stable_for_vehicles
 
 
 @pytest.fixture
@@ -429,6 +428,34 @@ def test_set_vehicle_behavior_all_alternatives():
     for alt in VehicleAlternatives:
         alt_count = sum(1 for v in vehicles if v.alternatives == alt)
         assert alt_count == 1
+
+
+def test_set_vehicle_behavior_stable_heterogeneous_skips_trucks(monkeypatch):
+    monkeypatch.setenv("RUTH_ENABLE_HETEROGENEOUS_VEHICLES", "1")
+    vehicles = [
+        Vehicle(
+            id=i, time_offset=timedelta(seconds=0), frequency=timedelta(seconds=10),
+            start_index=0, start_distance_offset=LengthMeters(0.0),
+            origin_node=0, dest_node=2, osm_route=[0, 1, 2],
+            active=True, fcd_sampling_period=timedelta(seconds=5), status="",
+            vehicle_type="truck" if i in {0, 1} else "car",
+        )
+        for i in range(4)
+    ]
+
+    set_vehicle_behavior_stable_for_vehicles(
+        vehicles,
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        seed=42,
+    )
+
+    trucks = [vehicle for vehicle in vehicles if vehicle.vehicle_type == "truck"]
+    cars = [vehicle for vehicle in vehicles if vehicle.vehicle_type == "car"]
+    assert all(vehicle.alternatives == VehicleAlternatives.DEFAULT for vehicle in trucks)
+    assert all(vehicle.route_selection == VehicleRouteSelection.NO_ALTERNATIVE for vehicle in trucks)
+    assert all(vehicle.alternatives == VehicleAlternatives.DIJKSTRA_FASTEST for vehicle in cars)
+    assert all(vehicle.route_selection == VehicleRouteSelection.FIRST for vehicle in cars)
 
 
 def test_set_vehicle_behavior_default_only():
