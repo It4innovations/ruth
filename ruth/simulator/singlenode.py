@@ -7,9 +7,10 @@ from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithPl
     VehicleWithRoute, MPIDistributedAlternatives
 from ..feature_flags import heterogeneous_vehicles_enabled
 if heterogeneous_vehicles_enabled():
-    from .route_heterogeneous import advance_vehicles_with_queues
+    from .route_heterogeneous import HeterogeneousMovementModel
 else:
-    from .route import advance_vehicles_with_queues
+    HeterogeneousMovementModel = None
+from .route import advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
 from ..data.map import Map
 from ..utils import TimerSet
@@ -211,11 +212,20 @@ class Simulator:
     def advance_vehicles(self, vehicles: List[Vehicle]) -> Tuple[List[FCDRecord], bool]:
         """Move the vehicles on its route and generate FCD records"""
 
+        movement_model = None
+        if HeterogeneousMovementModel is not None:
+            movement_model = HeterogeneousMovementModel(
+                self.sim.global_view,
+                self.sim.routing_map,
+                self.sim.setting.los_vehicles_tolerance
+            )
+
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             self.sim.global_view,
                                             self.sim.routing_map,
                                             self.sim.queues_manager,
-                                            self.sim.setting.los_vehicles_tolerance)
+                                            self.sim.setting.los_vehicles_tolerance,
+                                            movement_model=movement_model)
 
     def change_baseline_alternatives(self,
                                      vehicles: List[Vehicle],

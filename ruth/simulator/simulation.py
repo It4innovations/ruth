@@ -38,7 +38,6 @@ class FCDRecord:
     vehicle_speed_mps: SpeedMps
     status: str
     active: bool
-    vehicle_type: str = "car"
 
 
 @dataclass
@@ -124,6 +123,8 @@ class Simulation:
                                 graphml_file=self.map_graphml, with_speeds=True)
         self.global_view = GlobalView(routing_map=self._routing_map)
         self.vehicles = vehicles
+        if hasattr(self.global_view, "register_vehicles"):
+            self.global_view.register_vehicles(vehicles)
         self.vehicle_source = vehicle_source
         self.steps_info = []
         self.duration = timedelta(seconds=0)
@@ -228,6 +229,8 @@ class Simulation:
             return []
         vehicles = self.vehicle_source.load_next_bucket()
         self.vehicles.extend(vehicles)
+        if hasattr(self.global_view, "register_vehicles"):
+            self.global_view.register_vehicles(vehicles)
         return vehicles
 
     def prune_inactive_vehicles(self):

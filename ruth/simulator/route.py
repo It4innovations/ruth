@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta
-from typing import List, Tuple, Generator
+from typing import Generator, List, NamedTuple, Tuple
 
 from .queues import QueuesManager
 from ..data.map import Map
@@ -12,54 +12,84 @@ from ..vehicle import Vehicle
 logger = logging.getLogger(__name__)
 
 
-def get_vehicle_speeds(vehicles: List[Vehicle], departure_time: datetime,
-                      gv_db: GlobalView, routing_map: Map,
-                      los_vehicles_tolerance: timedelta) -> Generator[Tuple[Vehicle, SpeedMps, bool, List[Segment]], None, None]:
+class MovementInput(NamedTuple):
+    vehicle: Vehicle
+    current_time: datetime
+    driving_route_part: List[Segment]
+
+
+class MovementResult(NamedTuple):
+    vehicle_end_time: datetime
+    segment_pos: SegmentPosition
+    assigned_speed_mps: SpeedMps
+
+
+class MovementModel:
+    def compute_batch(self, movement_inputs: List[MovementInput]) -> List[MovementResult]:
+        raise NotImplementedError
+
+
+class DefaultMovementModel(MovementModel):
+    def __init__(self, gv_db: GlobalView, routing_map: Map, los_vehicles_tolerance: timedelta):
+        self.gv_db = gv_db
+        self.routing_map = routing_map
+        self.los_vehicles_tolerance = los_vehicles_tolerance
+
+    def compute_batch(self, movement_inputs: List[MovementInput]) -> List[MovementResult]:
+        results = []
+        for movement_input in movement_inputs:
+            speed_mps, changed_segment = get_vehicle_speed(
+                movement_input.vehicle,
+                movement_input.driving_route_part,
+                movement_input.current_time,
+                self.gv_db,
+                self.routing_map,
+                self.los_vehicles_tolerance
+            )
+            results.append(MovementResult(*move_on_segment(
+                movement_input.vehicle,
+                movement_input.driving_route_part,
+                movement_input.current_time,
+                speed_mps,
+                changed_segment
+            )))
+        return results
+
+
+def get_vehicle_inputs(vehicles: List[Vehicle], departure_time: datetime,
+                       routing_map: Map) -> Generator[MovementInput, None, None]:
     """
-    Generator that yields vehicles with their speeds and route information.
+    Generator that yields vehicles with their current time and route information.
     Performance optimized: processes vehicles efficiently without storing intermediate lists.
 
     Args:
         vehicles: List of vehicles to process
         departure_time: Simulation departure time
-        gv_db: Global view database
         routing_map: Map with routing info
-        los_vehicles_tolerance: Tolerance for LoS calculations
 
     Yields:
-        (vehicle, speed_mps, changed_segment, driving_route_part)
+        MovementInput(vehicle, current_time, driving_route_part)
     """
     for vehicle in vehicles:
         current_vehicle_index = vehicle.start_index
         osm_route_part = vehicle.osm_route[current_vehicle_index:current_vehicle_index + 3]
         driving_route_part = routing_map.osm_route_to_py_segments(osm_route_part)
 
-        speed_mps, changed_segment = get_vehicle_speed(
-            vehicle, driving_route_part, departure_time + vehicle.time_offset,
-            gv_db, routing_map, los_vehicles_tolerance
-        )
-
-        yield vehicle, speed_mps, changed_segment, driving_route_part
+        yield MovementInput(vehicle, departure_time + vehicle.time_offset, driving_route_part)
 
 
-def get_input(departure_time: datetime, vehicle: Vehicle, gv_db: GlobalView,
-              routing_map: Map, los_vehicles_tolerance: timedelta) -> Tuple[SpeedMps, bool, List[Segment]]:
+def get_input(departure_time: datetime, vehicle: Vehicle, routing_map: Map) -> MovementInput:
     """
-    Get speed, segment change flag, and driving route for a vehicle.
+    Get movement input for a vehicle.
 
     Returns:
-        (speed_mps, changed_segment, driving_route_part)
+        MovementInput(vehicle, current_time, driving_route_part)
     """
     current_vehicle_index = vehicle.start_index
     osm_route_part = vehicle.osm_route[current_vehicle_index:current_vehicle_index + 3]
     driving_route_part = routing_map.osm_route_to_py_segments(osm_route_part)
 
-    speed_mps, changed_segment = get_vehicle_speed(
-        vehicle, driving_route_part, departure_time + vehicle.time_offset,
-        gv_db, routing_map, los_vehicles_tolerance
-    )
-
-    return speed_mps, changed_segment, driving_route_part
+    return MovementInput(vehicle, departure_time + vehicle.time_offset, driving_route_part)
 
 
 def get_vehicle_speed(
@@ -154,15 +184,18 @@ def move_on_segment(
         )
 
 
-def advance_vehicle(vehicle: Vehicle, departure_time: datetime,
-                    speed_mps: SpeedMps, driving_route_part, changed_segment, queues_manager: QueuesManager) -> List[FCDRecord]:
+def advance_vehicle(movement_input: MovementInput, movement_result: MovementResult,
+                    queues_manager: QueuesManager) -> List[FCDRecord]:
     """Advance a vehicle on a route."""
 
-    current_time = departure_time + vehicle.time_offset
+    vehicle = movement_input.vehicle
+    current_time = movement_input.current_time
+    driving_route_part = movement_input.driving_route_part
     fcds = []
 
-    vehicle_end_time, segment_pos, assigned_speed_mps = move_on_segment(
-        vehicle, driving_route_part, current_time, speed_mps, changed_segment)
+    vehicle_end_time = movement_result.vehicle_end_time
+    segment_pos = movement_result.segment_pos
+    assigned_speed_mps = movement_result.assigned_speed_mps
 
     segment_pos_old = vehicle.segment_position
 
@@ -272,8 +305,12 @@ def generate_fcds(start_time: datetime, end_time: datetime, start_segment_positi
 
 def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_time: datetime,
                                  gv_db: GlobalView, routing_map: Map, queues_manager: QueuesManager,
-                                 los_vehicles_tolerance) -> Tuple[List[FCDRecord], bool]:
+                                 los_vehicles_tolerance,
+                                 movement_model=None) -> Tuple[List[FCDRecord], bool]:
     fcds = []
+
+    if movement_model is None:
+        movement_model = DefaultMovementModel(gv_db, routing_map, los_vehicles_tolerance)
 
     vehicles_moved = False
     vehicles_in_queues = dict()
@@ -288,13 +325,14 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
             vehicles_in_queues[vehicle.id] = vehicle
 
     # Process vehicles not in queues
-    for vehicle, speed_mps, changed_segment, driving_route_part in get_vehicle_speeds(
-            vehicles_not_in_queues, departure_time, gv_db, routing_map, los_vehicles_tolerance):
-        prev_pos = vehicle.segment_position
-        new_fcds = advance_vehicle(vehicle, departure_time, speed_mps, driving_route_part, changed_segment, queues_manager)
+    movement_inputs = list(get_vehicle_inputs(vehicles_not_in_queues, departure_time, routing_map))
+    movement_results = movement_model.compute_batch(movement_inputs)
+    for movement_input, movement_result in zip(movement_inputs, movement_results):
+        prev_pos = movement_input.vehicle.segment_position
+        new_fcds = advance_vehicle(movement_input, movement_result, queues_manager)
         if new_fcds:
             fcds.extend(new_fcds)
-        vehicles_moved = vehicles_moved or prev_pos != vehicle.segment_position
+        vehicles_moved = vehicles_moved or prev_pos != movement_input.vehicle.segment_position
 
     # --------------------------------------------------------------------------------------------------------------
     # MOVE VEHICLES IN QUEUES
@@ -307,11 +345,10 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
             vehicle = vehicles_in_queues[vehicle_id]
             processed_ids.add(vehicle_id)
 
-            speed_mps, changed_segment, driving_route_part = get_input(departure_time, vehicle, gv_db,
-                                                                       routing_map, los_vehicles_tolerance)
-
             prev_pos = vehicle.segment_position
-            new_fcds = advance_vehicle(vehicle, departure_time, speed_mps, driving_route_part, changed_segment, queues_manager)
+            movement_input = get_input(departure_time, vehicle, routing_map)
+            movement_result = movement_model.compute_batch([movement_input])[0]
+            new_fcds = advance_vehicle(movement_input, movement_result, queues_manager)
             if new_fcds:
                 fcds.extend(new_fcds)
 

@@ -30,9 +30,14 @@ class GlobalView:
 
         # vehicle_id -> latest known segment_id
         self.car_to_segment: Dict[int, SegmentId] = {}
+        self.vehicle_types: Dict[int, str] = {}
 
         # segments updated since last take_segment_speeds()
         self.modified_segments: Set[SegmentId] = set()
+
+    def register_vehicles(self, vehicles):
+        for vehicle in vehicles:
+            self.vehicle_types[vehicle.id] = _norm_vtype(vehicle.vehicle_type)
 
     def add(self, fcd: "FCDRecord"):
         seg_id = fcd.segment.id
@@ -86,7 +91,7 @@ class GlobalView:
             if off <= my_off:
                 continue
 
-            vt = _norm_vtype(fcd.vehicle_type)
+            vt = self.vehicle_types.get(vid, "car")
             params = DEFAULT_VEHICLE_CLASSES.get(vt, DEFAULT_VEHICLE_CLASSES["car"])
             vehicles_ahead[vid] = params
 

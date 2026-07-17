@@ -4,11 +4,10 @@ import math
 from datetime import datetime, timedelta
 from typing import List, Tuple
 
-from .queues import QueuesManager
 from ..data.map import Map
-from ..data.segment import Segment, SegmentPosition, SpeedMps, SpeedKph, LengthMeters
-from .simulation import FCDRecord
+from ..data.segment import Segment, SegmentPosition, SpeedMps, LengthMeters
 from ..globalview_heterogeneous import GlobalView
+from .route import MovementInput, MovementModel, MovementResult
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +150,26 @@ def _compute_turn_type(routing_map: Map, prev_seg: Segment, next_seg: Segment) -
         return "turn", abs_deg
     except Exception:
         return "straight", 0.0
+
+
+class HeterogeneousMovementModel(MovementModel):
+    def __init__(self, gv_db: GlobalView, routing_map: Map, los_vehicles_tolerance: timedelta):
+        self.gv_db = gv_db
+        self.routing_map = routing_map
+        self.los_vehicles_tolerance = los_vehicles_tolerance
+
+    def compute_batch(self, movement_inputs: List[MovementInput]) -> List[MovementResult]:
+        return [
+            MovementResult(*move_on_segment(
+                movement_input.vehicle,
+                movement_input.driving_route_part,
+                movement_input.current_time,
+                self.gv_db,
+                self.routing_map,
+                self.los_vehicles_tolerance
+            ))
+            for movement_input in movement_inputs
+        ]
 
 
 def move_on_segment(
@@ -308,203 +327,3 @@ def move_on_segment(
         effective_speed_mps = speed_mps
 
     return end_time, SegmentPosition(seg_index, LengthMeters(new_pos_m)), SpeedMps(effective_speed_mps)
-
-
-def advance_vehicle(
-    vehicle,
-    departure_time: datetime,
-    gv_db: GlobalView,
-    routing_map: Map,
-    queues_manager: QueuesManager,
-    los_vehicles_tolerance: timedelta = timedelta(seconds=0),
-) -> List[FCDRecord]:
-    """Advance a vehicle on a route."""
-    current_time = departure_time + vehicle.time_offset
-
-    old_pos = vehicle.segment_position
-
-    # Build a short lookahead route (old index .. old index+2)
-    idx = int(vehicle.segment_position.index)
-    osm_route_part = vehicle.osm_route[idx: idx + 3]
-    driving_route_part = routing_map.osm_route_to_py_segments(osm_route_part)
-
-    vehicle_end_time, new_pos, assigned_speed_mps = move_on_segment(
-        vehicle, driving_route_part, current_time, gv_db, routing_map, los_vehicles_tolerance
-    )
-
-    # If vehicle couldn't move at all on its first segment at time start, just advance time
-    if new_pos.index == 0 and math.isclose(_as_float(new_pos.position), 0.0, abs_tol=1e-9):
-        vehicle.time_offset += vehicle.frequency
-        return []
-
-    # Update vehicle state
-    vehicle.time_offset += vehicle_end_time - current_time
-    vehicle.set_position(new_pos)
-
-    # Determine segments for queue operations
-    # Segment at old position:
-    seg_old = driving_route_part[0]
-
-    # Segment at new position (may be next in driving_route_part)
-    if new_pos.index != old_pos.index and len(driving_route_part) > 1:
-        seg_new = driving_route_part[1]
-    else:
-        seg_new = driving_route_part[0]
-
-    # Remove from outdated queue if it changed segment
-    if (_as_float(old_pos.position) == _as_float(seg_old.length)
-            and old_pos.index != vehicle.segment_position.index):
-        node_from, node_to = vehicle.osm_route[old_pos.index], vehicle.osm_route[old_pos.index + 1]
-        queues_manager.remove_vehicle(vehicle, node_from, node_to)
-
-    # If at end of current segment, handle queue/destination
-    if math.isclose(_as_float(vehicle.segment_position.position), _as_float(seg_new.length), abs_tol=1e-6):
-        if vehicle.next_node == vehicle.dest_node:
-            vehicle.active = False
-            queues_manager.remove_inactive_vehicle(vehicle)
-        elif old_pos != vehicle.segment_position:
-            queues_manager.add_to_queue(vehicle)
-
-    # Generate FCD if still within route bounds
-    if vehicle.segment_position.index < (len(vehicle.osm_route) - 1):
-        return generate_fcds(
-            current_time,
-            vehicle_end_time,
-            old_pos,
-            vehicle.segment_position,
-            assigned_speed_mps,
-            vehicle,
-            [seg_new],  # generate on the current segment only
-            remains_active=vehicle.active,
-        )
-
-    return []
-
-
-def advance_waiting_vehicle(vehicle, routing_map: Map, departure_time: datetime) -> List[FCDRecord]:
-    current_time = departure_time + vehicle.time_offset
-
-    idx = int(vehicle.start_index)
-    osm_route_part = vehicle.osm_route[idx: idx + 2]
-    driving_route_part = routing_map.osm_route_to_py_segments(osm_route_part)
-
-    vehicle_end_time = current_time + vehicle.frequency
-    assigned_speed_mps = SpeedMps(0.0)
-
-    vehicle.time_offset += vehicle_end_time - current_time
-
-    return generate_fcds(
-        current_time,
-        vehicle_end_time,
-        vehicle.segment_position,
-        vehicle.segment_position,
-        assigned_speed_mps,
-        vehicle,
-        [driving_route_part[0]],
-        remains_active=True,
-    )
-
-
-def generate_fcds(
-    start_time: datetime,
-    end_time: datetime,
-    start_segment_position: SegmentPosition,
-    end_segment_position: SegmentPosition,
-    speed: SpeedMps,
-    vehicle,
-    driving_route_part: List[Segment],
-    remains_active: bool,
-) -> List[FCDRecord]:
-    """
-    Generates FCD points on ONE segment for this tick.
-    (We clamp movement to segment end in move_on_segment(), so this is consistent.)
-    """
-    fcds: List[FCDRecord] = []
-
-    seg = driving_route_part[0]
-    speed_val = _as_float(speed)
-    step_m = speed_val * _as_float(vehicle.fcd_sampling_period / timedelta(seconds=1))
-
-    cur_pos = _as_float(start_segment_position.position)
-    cur_time = start_time
-
-    # sample within tick
-    while (cur_time + vehicle.fcd_sampling_period < end_time) and (cur_pos + step_m < _as_float(seg.length)):
-        cur_pos += step_m
-        cur_time += vehicle.fcd_sampling_period
-        fcds.append(
-            FCDRecord(
-                datetime=cur_time,
-                vehicle_id=vehicle.id,
-                segment=seg,
-                offset_from_start=LengthMeters(cur_pos),
-                vehicle_speed_mps=SpeedMps(speed_val),
-                status=vehicle.status,
-                active=True,
-                vehicle_type=_norm_vtype(getattr(vehicle, "vehicle_type", "car")),
-            )
-        )
-
-    # final point at end_time
-    fcds.append(
-        FCDRecord(
-            datetime=end_time,
-            vehicle_id=vehicle.id,
-            segment=seg,
-            offset_from_start=end_segment_position.position,
-            vehicle_speed_mps=SpeedMps(speed_val),
-            status=vehicle.status,
-            active=remains_active,
-            vehicle_type=_norm_vtype(getattr(vehicle, "vehicle_type", "car")),
-        )
-    )
-    return fcds
-
-
-def advance_vehicles_with_queues(
-    vehicles_to_be_moved: List,
-    departure_time: datetime,
-    gv_db: GlobalView,
-    routing_map: Map,
-    queues_manager: QueuesManager,
-    los_vehicles_tolerance,
-) -> Tuple[List[FCDRecord], bool]:
-    fcds: List[FCDRecord] = []
-    vehicles_moved = False
-
-    vehicles_in_queues = {}
-    for vehicle in vehicles_to_be_moved:
-        queue = queues_manager.queues[(vehicle.current_node, vehicle.next_node)]
-        if vehicle.id not in queue:
-            prev_pos = vehicle.segment_position
-            new_fcds = advance_vehicle(
-                vehicle, departure_time, gv_db, routing_map, queues_manager, los_vehicles_tolerance
-            )
-            fcds.extend(new_fcds)
-            vehicles_moved = vehicles_moved or (prev_pos != vehicle.segment_position)
-        else:
-            vehicles_in_queues[vehicle.id] = vehicle
-
-    for _, queue in queues_manager.queues.copy().items():
-        queue_copy = list(queue)
-        for vehicle_id in queue_copy:
-            if vehicle_id not in vehicles_in_queues:
-                break
-
-            vehicle = vehicles_in_queues[vehicle_id]
-            del vehicles_in_queues[vehicle_id]
-
-            new_fcds = advance_vehicle(
-                vehicle, departure_time, gv_db, routing_map, queues_manager, los_vehicles_tolerance
-            )
-            fcds.extend(new_fcds)
-
-            was_moved = len(queue) == 0 or (vehicle_id != queue[0])
-            vehicles_moved = vehicles_moved or was_moved
-            if not was_moved:
-                break
-
-    for _, vehicle in vehicles_in_queues.items():
-        fcds.extend(advance_waiting_vehicle(vehicle, routing_map, departure_time))
-
-    return fcds, vehicles_moved
