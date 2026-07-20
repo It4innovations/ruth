@@ -24,7 +24,7 @@ Then install `ruth` using one of the following options.
 #### Option 1: Install from a local copy of this branch
 
 ```bash
-git clone --recurse-submodules --branch v2.4-globalview-optimization https://github.com/It4innovations/ruth.git
+git clone --recurse-submodules --branch dev https://github.com/It4innovations/ruth.git
 cd ruth
 pip install -e .
 ```
@@ -32,7 +32,7 @@ pip install -e .
 #### Option 2: Install this branch directly from GitHub
 
 ```bash
-pip install git+https://github.com/It4innovations/ruth.git@v2.4-globalview-optimization
+pip install git+https://github.com/It4innovations/ruth.git@dev
 ```
 
 #### Option 3: Offline installation, e.g. HPC without Internet

@@ -274,15 +274,6 @@ class VehicleDatasetSource:
             "fcd_sampling_period",
             default=timedelta(seconds=5),
         )
-        print(
-            "SC26 BUCKET DEBUG: "
-            f"bucket={bucket_path.name}, "
-            f"frequency_default={frequency_default}, "
-            f"fcd_sampling_period_default={fcd_sampling_period_default}, "
-            f"frequency_override={self.frequency_override}, "
-            f"fcd_sampling_period_override={self.fcd_sampling_period_override}",
-            flush=True,
-        )
 
         vehicles = []
         for record in df.to_dict(orient="records"):

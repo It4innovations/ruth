@@ -455,7 +455,7 @@ def write_manifest(manifest: Dict, output_path: Path, output_format: str) -> Pat
 @click.option("--lon-max", type=float, default=-180, help="Set to increase map size.")
 @click.option("--csv-separator", type=str, default=";", help="Default: [';'].")
 @click.option("--frequency", type=int, default=5,
-              help="Default: 20s. A period in which a vehicle asks for rerouting in seconds.")
+              help="Default: 5s. A period in which a vehicle asks for rerouting in seconds.")
 @click.option("--fcd-sampling-period", type=int, default=5,
               help="Default: 5s. A period in which FCD is stored. It sub samples the frequency.")
 @click.option("--nproc", type=int, default=1, help="Default 1. Number of used processes.")

@@ -100,14 +100,6 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     vehicle_frequency_override = common_args.vehicle_frequency_override
     fcd_sampling_period_override = common_args.fcd_sampling_period_override
 
-    print(
-        "SC26 SIM DEBUG: "
-        f"vehicle_frequency_override={vehicle_frequency_override}, "
-        f"fcd_sampling_period_override={fcd_sampling_period_override}, "
-        f"vehicles_path={vehicles_path}",
-        flush=True,
-    )
-
     ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
                     los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
                     buffer_size=buffer_size,

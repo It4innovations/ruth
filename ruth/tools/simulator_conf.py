@@ -166,15 +166,6 @@ def fill_args(config_file: str, ctx: Optional[click.Context] = None, workdir: Op
     if not p.exists():
         raise ValueError(f"Vehicles path {p.absolute()} does not exist.")
 
-    print(
-        "SC26 CONF DEBUG: "
-        f"config_file={config_file}, "
-        f"vehicle_frequency_override={getattr(args.common, 'vehicle_frequency_override', None)}, "
-        f"fcd_sampling_period_override={getattr(args.common, 'fcd_sampling_period_override', None)}, "
-        f"path={p}",
-        flush=True,
-    )
-
     if ctx is not None:
         ctx.obj['DEBUG'] = debug
         ctx.obj['common-args'] = args.common
@@ -208,14 +199,6 @@ def run(ctx):
     alternatives_ratio = ctx.obj["alternatives-ratio"]
     route_selection_ratio = ctx.obj["route-selection-ratio"]
     p = ctx.obj["path"]
-
-    print(
-        "SC26 RUN DEBUG: "
-        f"vehicle_frequency_override={getattr(common_args, 'vehicle_frequency_override', None)}, "
-        f"fcd_sampling_period_override={getattr(common_args, 'fcd_sampling_period_override', None)}, "
-        f"path={p}",
-        flush=True,
-    )
 
     ctx.obj['simulation'] = run_inner(common_args, p, alternatives_ratio, route_selection_ratio)
 
