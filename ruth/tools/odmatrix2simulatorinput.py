@@ -2,6 +2,7 @@
 import json
 import logging
 import os.path
+from importlib.metadata import PackageNotFoundError, version
 import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
@@ -9,6 +10,7 @@ from typing import Dict, Iterable, List, Tuple
 import click
 import fastparquet
 import networkx
+import numpy as np
 import osmnx as ox
 import pandas as pd
 from datetime import datetime
@@ -24,7 +26,14 @@ logger = logging.getLogger(__name__)
 routing_map = None
 
 INPUT_COLUMNS = ["id", "lon_from", "lat_from", "lon_to", "lat_to", "start_offset_s"]
-OUTPUT_SCHEMA_VERSION = 2
+OUTPUT_SCHEMA_VERSION = 3
+
+
+def generator_version() -> str:
+    try:
+        return version("ruth")
+    except PackageNotFoundError:
+        return "unknown"
 
 
 def configure_logging():
@@ -44,6 +53,23 @@ def create_routing_map(bbox=None, download_date=None, data_dir="./data", map_gra
     return Map(bbox, download_date=download_date, data_dir=data_dir, save_hdf=False)
 
 
+def nearest_node(routing_map: Map, lon: float, lat: float) -> int:
+    try:
+        return int(ox.nearest_nodes(routing_map.network, lon, lat))
+    except ImportError:
+        if not hasattr(routing_map, "_nearest_node_arrays"):
+            nodes = list(routing_map.network.nodes(data=True))
+            routing_map._nearest_node_arrays = (
+                np.asarray([node_id for node_id, _ in nodes]),
+                np.asarray([float(data["x"]) for _, data in nodes]),
+                np.asarray([float(data["y"]) for _, data in nodes]),
+            )
+        node_ids, xs, ys = routing_map._nearest_node_arrays
+        lon_scale = np.cos(np.deg2rad(lat))
+        distances = ((xs - lon) * lon_scale) ** 2 + (ys - lat) ** 2
+        return int(node_ids[int(np.argmin(distances))])
+
+
 def gps_to_nodes_with_shortest_path(od_for_id, bbox, download_date, data_dir,
                                     no_routing=False, map_graphml=None):
     global routing_map
@@ -52,9 +78,17 @@ def gps_to_nodes_with_shortest_path(od_for_id, bbox, download_date, data_dir,
                                          data_dir=data_dir, map_graphml=map_graphml)
 
     id, origin_lon, origin_lat, destination_lon, destination_lat, time_offset = od_for_id
+    route_key = (origin_lon, origin_lat, destination_lon, destination_lat, no_routing)
+    route_cache = getattr(routing_map, "_od_route_cache", None)
+    if route_cache is None:
+        route_cache = routing_map._od_route_cache = {}
+    cached = route_cache.get(route_key)
+    if cached is not None:
+        origin_node_id, dest_node_id, osm_route = cached
+        return id, origin_node_id, dest_node_id, time_offset, osm_route
 
-    origin_node_id = ox.nearest_nodes(routing_map.network, origin_lon, origin_lat)
-    dest_node_id = ox.nearest_nodes(routing_map.network, destination_lon, destination_lat)
+    origin_node_id = nearest_node(routing_map, origin_lon, origin_lat)
+    dest_node_id = nearest_node(routing_map, destination_lon, destination_lat)
 
     if no_routing:
         osm_route = [origin_node_id, dest_node_id]
@@ -64,6 +98,7 @@ def gps_to_nodes_with_shortest_path(od_for_id, bbox, download_date, data_dir,
         except networkx.NetworkXNoPath:
             osm_route = None
 
+    route_cache[route_key] = origin_node_id, dest_node_id, osm_route
     return id, origin_node_id, dest_node_id, time_offset, osm_route
 
 
@@ -174,7 +209,8 @@ def bbox_values_from_map(routing_map: Map) -> Dict:
 def parse_map_metadata_from_filename(map_graphml: str) -> Tuple[Dict, str]:
     stem = Path(map_graphml).stem
     match = re.match(
-        r"^(?P<bbox>.+)_(?P<date>\d{4}-\d{2}-\d{2}[T ]\d{2}-\d{2}-\d{2})$",
+        r"^(?P<bbox>.+)_(?P<date>\d{4}-\d{2}-\d{2}[T ]\d{2}-\d{2}-\d{2})"
+        r"(?:_[a-zA-Z0-9-]+)?$",
         stem,
     )
     if not match:
@@ -276,6 +312,11 @@ def build_output_dataframe(od_nodes: Iterable, frequency: int, fcd_sampling_peri
         for origin_node, dest_node, osm_route in zip(df["origin_node"], df["dest_node"], df["osm_route"])
     ]
     df["active"], df["status"] = zip(*states)
+
+    # fastparquet does not support pandas' ArrowStringArray in all supported
+    # pandas/numpy combinations.
+    df["download_date"] = df["download_date"].astype(object)
+    df["status"] = df["status"].astype(object)
 
     return df[[
         "id", "origin_node", "dest_node", "time_offset", "osm_route",
@@ -392,10 +433,13 @@ class ParquetOutputWriter:
 def build_manifest(od_matrix_path: str, output_path: Path, output_format: str, metadata: Dict,
                    bbox_values: Dict, download_date: str, frequency: int, fcd_sampling_period: int,
                    active_vehicles: int, inactive_vehicles: int, no_routing: bool,
-                   chunk_size: int, partition_seconds: int, map_graphml: str = None) -> Dict:
+                   chunk_size: int, partition_seconds: int, map_graphml: str = None,
+                   routing_map: Map = None) -> Dict:
+    map_provenance = routing_map.provenance() if routing_map is not None else {}
     return {
         "schema_version": OUTPUT_SCHEMA_VERSION,
         "generator": "ruth.tools.odmatrix2simulatorinput",
+        "generator_version": generator_version(),
         "input": {
             "path": str(od_matrix_path),
             "rows": int(metadata["total_rows"]),
@@ -417,7 +461,8 @@ def build_manifest(od_matrix_path: str, output_path: Path, output_format: str, m
         },
         "map": {
             "source": "graphml" if map_graphml else "bbox-download",
-            "graphml_file": str(map_graphml) if map_graphml else None,
+            "graphml_file": Path(map_graphml).name if map_graphml else None,
+            **map_provenance,
         },
         "shared_columns": {
             "frequency": int(frequency),
@@ -572,7 +617,7 @@ def convert(od_matrix_path, download_date, increase_lat, increase_lon,
                                   bbox_values, download_date, frequency, fcd_sampling_period,
                                   active_vehicles, inactive_vehicles, no_routing,
                                   chunk_size, partition_seconds,
-                                  map_graphml=map_graphml)
+                                  map_graphml=map_graphml, routing_map=routing_map)
         manifest_path = write_manifest(manifest, final_output, writer.output_format)
         logger.info("Output saved to '%s'.", final_output)
         logger.info("Manifest saved to '%s'.", manifest_path)

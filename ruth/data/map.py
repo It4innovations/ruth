@@ -24,6 +24,19 @@ from ..data.segment import Route, Segment, SegmentId, SpeedKph
 cl = logging.getLogger(__name__)
 cl.propagate = True
 
+MAP_POLICY_VERSION = "drive-v2"
+CUSTOM_DRIVE_FILTER = (
+    '["highway"]'
+    '["area"!~"yes"]'
+    '["access"!~"private"]'
+    '["highway"!~"abandoned|bridleway|bus_guideway|corridor|cycleway|elevator|escalator'
+    '|footway|no|path|pedestrian|planned|platform|proposed|raceway|razed|steps|track|closed"]'
+    '["motor_vehicle"!~"no"]'
+    '["motorcar"!~"no"]'
+    '["service"!~"alley|driveway|emergency_access|parking|parking_aisle|private"]'
+)
+
+
 @dataclass
 class TemporarySpeed:
     node_from: int
@@ -278,7 +291,14 @@ class Map:
             return self.graphml_file
 
         """Path to locally stored map."""
-        return os.path.join(self.data_dir, f"{self.name}.graphml")
+        return os.path.join(self.data_dir, f"{self.name}_{MAP_POLICY_VERSION}.graphml")
+
+    def provenance(self) -> Dict[str, Optional[str]]:
+        return {
+            "policy_version": self.network.graph.get("ruth_map_policy_version"),
+            "custom_filter": self.network.graph.get("ruth_custom_filter"),
+            "osmnx_version": self.network.graph.get("ruth_osmnx_version"),
+        }
 
     @property
     def name(self):
@@ -472,20 +492,15 @@ class Map:
             osmnx.settings.overpass_settings = f"[out:json][timeout:{{timeout}}][date:'{self.download_date}']"
 
             north, west, south, east = self.bbox.get_coords()
-            custom_drive_filter = (
-                '["highway"]'
-                '["area"!~"yes"]'
-                '["access"!~"private"]'
-                '["highway"!~"abandoned|bridleway|bus_guideway|corridor|cycleway|elevator|escalator'
-                '|footway|no|path|pedestrian|planned|platform|proposed|raceway|razed|steps|track|closed"]'
-                '["motor_vehicle"!~"no"]'
-                '["motorcar"!~"no"]'
-                '["service"!~"alley|driveway|emergency_access|parking|parking_aisle|private"]'
-            )
-            network = graph_from_bbox(bbox=(north, south, east, west),
+            network = graph_from_bbox(bbox=(west, south, east, north),
                                       network_type="drive",
                                       retain_all=False,
-                                      custom_filter=custom_drive_filter)
+                                      custom_filter=CUSTOM_DRIVE_FILTER)
+            network.graph.update({
+                "ruth_map_policy_version": MAP_POLICY_VERSION,
+                "ruth_custom_filter": CUSTOM_DRIVE_FILTER,
+                "ruth_osmnx_version": ox.__version__,
+            })
 
             cl.info(f"{self.name}'s map loaded.")
             return network, True

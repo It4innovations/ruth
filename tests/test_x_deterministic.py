@@ -58,7 +58,12 @@ def setup_route_selection_ratio():
 
 
 vehicles_path_10 = os.path.join(os.path.dirname(__file__), "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet")
-test_graphml_path = Path(__file__).resolve().parent / "data/50_16568920000002-14_321441000000016-50_020240399999985-14_592499399999983_2024-01-10T00-00-00.graphml"
+test_graphml_path = (
+    Path(__file__).resolve().parent.parent
+    / "data"
+    / "50_16568920000002-14_321441000000016-50_020240399999985-"
+      "14_592499399999983_2024-01-10T00-00-00_drive-v2.graphml"
+)
 
 
 def write_bucket_dataset_copy(single_path, dataset_path, partition_seconds=10):

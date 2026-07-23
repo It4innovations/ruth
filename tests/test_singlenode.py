@@ -8,31 +8,20 @@ import pytest
 from datetime import datetime, timedelta
 
 from ruth.data.segment import LengthMeters
+from ruth.simulator.common import load_vehicles
 from ruth.simulator.kernels import ShortestPathsAlternatives
 from ruth.tools.simulator import CommonArgs, prepare_simulator, AlternativesRatio, RouteSelectionRatio
 
-from ruth.vehicle import Vehicle
+vehicles_path = os.path.join(
+    os.path.dirname(__file__),
+    "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet",
+)
 
 
 @pytest.fixture
 def setup_vehicle():
-    vehicle = Vehicle(
-        id=1,
-        time_offset=timedelta(seconds=120),
-        frequency=timedelta(seconds=10),
-        start_index=0,
-        start_distance_offset=LengthMeters(0.0),
-        origin_node=25664661,
-        dest_node=305832258,
-        osm_route=[25664661, 27349583, 27350859, 1421692706, 302546398, 292456769, 1839597743, 1467045348, 21713539,
-                   2158126162, 386387776, 25665323, 236788246, 32438879, 4823824959, 21673412, 29527230, 344481246,
-                   29527229, 29527228, 11267251949, 1483392086, 21311889, 25972978, 170348063, 25972980, 25972985,
-                   306614568, 9254639009, 29403188, 305832258],
-        active=True,
-        fcd_sampling_period=timedelta(seconds=5),
-        status=""
-    )
-    return vehicle
+    vehicles, _, _ = load_vehicles(vehicles_path)
+    return vehicles[0]
 
 
 @pytest.fixture
@@ -71,7 +60,6 @@ def setup_simulator():
         ptdr=0.0
     )
 
-    vehicles_path = os.path.join(os.path.dirname(__file__), "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet")
     simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
     yield simulator
 
@@ -132,7 +120,7 @@ def test_stuck_detection(mock, setup_vehicle, setup_simulator):
 
     # TEST stuck detection
     setup_simulator.simulate([], [])
-    mock.assert_called_with("The simulation is stuck at 0:02:20.")
+    mock.assert_called_with(f"The simulation is stuck at {stop_offset}.")
 
     assert setup_vehicle.start_index == 0
     assert setup_vehicle.start_distance_offset == segment_length

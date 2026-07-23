@@ -97,7 +97,8 @@ class SimSetting:
 class Simulation:
     """A simulation state."""
 
-    def __init__(self, vehicles: List[Vehicle], setting: SimSetting, bbox: BBox, map_download_date: str, vehicle_source=None):
+    def __init__(self, vehicles: List[Vehicle], setting: SimSetting, bbox: BBox, map_download_date: str,
+                 vehicle_source=None, map_graphml: Optional[str] = None):
         """
         Construct a new simulation.
         """
@@ -112,7 +113,9 @@ class Simulation:
         )
         self.bbox = bbox
         self.map_download_date = map_download_date
-        self._routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
+        self.map_graphml = map_graphml
+        self._routing_map = Map(self.bbox, download_date=self.map_download_date,
+                                graphml_file=self.map_graphml, with_speeds=True)
         self.global_view = GlobalView(routing_map=self._routing_map)
         self.vehicles = vehicles
         self.vehicle_source = vehicle_source
@@ -139,6 +142,8 @@ class Simulation:
             self.last_saved_speeds = None
         if "vehicle_source" not in d:
             self.vehicle_source = None
+        if "map_graphml" not in d:
+            self.map_graphml = None
         if "_freq_seconds" not in d:
             self._freq_seconds = int(self.setting.round_freq.total_seconds())
         self._routing_map = None  # lazy init
@@ -154,7 +159,8 @@ class Simulation:
     @property
     def routing_map(self):
         if self._routing_map is None:
-            self._routing_map = Map(self.bbox, download_date=self.map_download_date, with_speeds=True)
+            self._routing_map = Map(self.bbox, download_date=self.map_download_date,
+                                    graphml_file=self.map_graphml, with_speeds=True)
         return self._routing_map
 
     @property

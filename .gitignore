@@ -8,5 +8,7 @@ venv/
 **/*.pyc
 **/*.pickle
 **/*.csv
+!benchmarks/README.md
+!benchmarks/**/*.manifest.json
 simulation_output.h5
 .DS_Store

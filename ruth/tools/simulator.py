@@ -39,12 +39,13 @@ class CommonArgs:
     plateau_default_route: bool
     buffer_size: int
     max_records_per_file: int
-    vehicle_frequency_override: Optional[timedelta]
-    fcd_sampling_period_override: Optional[timedelta]
+    vehicle_frequency_override: Optional[timedelta] = None
+    fcd_sampling_period_override: Optional[timedelta] = None
+    async_fcd_writer: bool = False
+    fcd_writer_queue_size: int = 4
+    map_graphml: Optional[str] = None
 
 
-    async_fcd_writer: bool
-    fcd_writer_queue_size: int
 @dataclass
 class AlternativesRatio:
     default: float
@@ -99,6 +100,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     plateau_default_route = common_args.plateau_default_route
     vehicle_frequency_override = common_args.vehicle_frequency_override
     fcd_sampling_period_override = common_args.fcd_sampling_period_override
+    map_graphml = getattr(common_args, "map_graphml", None)
 
     ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
                     los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
@@ -126,7 +128,8 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
             vehicles = vehicle_source.load_next_bucket()
             simulation = Simulation(vehicles, ss, vehicle_source.bbox,
                                     vehicle_source.download_date,
-                                    vehicle_source=vehicle_source)
+                                    vehicle_source=vehicle_source,
+                                    map_graphml=map_graphml)
         else:
             vehicles, bbox, download_date = load_vehicles(
                 vehicles_path,
@@ -141,7 +144,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                 seed,
             )
 
-            simulation = Simulation(vehicles, ss, bbox, download_date)
+            simulation = Simulation(vehicles, ss, bbox, download_date, map_graphml=map_graphml)
 
             routed_vehicles = [
                 vehicle for vehicle in vehicles

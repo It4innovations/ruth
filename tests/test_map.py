@@ -17,19 +17,37 @@ def routing_map():
 
 
 @pytest.fixture
-def setup_segment():
+def setup_segment(routing_map):
+    node_from = node_middle = node_to = None
+    for candidate_from, candidate_middle in routing_map.original_network.edges():
+        successors = list(routing_map.original_network.successors(candidate_middle))
+        if successors:
+            node_from, node_middle, node_to = candidate_from, candidate_middle, successors[0]
+            break
+    assert node_from is not None, "The routing fixture must contain a two-edge path."
+
+    first_data = routing_map.original_network[node_from][node_middle]
+    second_data = routing_map.original_network[node_middle][node_to]
+    for u, v, data in (
+        (node_from, node_middle, first_data),
+        (node_middle, node_to, second_data),
+    ):
+        routing_map.current_network[u][v]["speed_kph"] = data["maxspeed"]
+    routing_map.init_current_speeds()
+    routing_map.temporary_speeds = []
+
     segment1 = MagicMock()
-    segment1.node_from = 25664661
-    segment1.node_to = 27349583
-    segment1.speed_kph = 50.0
-    segment1.length = 753
+    segment1.node_from = node_from
+    segment1.node_to = node_middle
+    segment1.speed_kph = first_data["maxspeed"]
+    segment1.length = first_data["length"]
     segment1.current_travel_time = segment1.length / (segment1.speed_kph / 3.6)
 
     segment2 = MagicMock()
-    segment2.node_from = 27349583
-    segment2.node_to = 27350859
-    segment2.speed_kph = 50.0
-    segment2.length = 133
+    segment2.node_from = node_middle
+    segment2.node_to = node_to
+    segment2.speed_kph = second_data["maxspeed"]
+    segment2.length = second_data["length"]
     segment2.current_travel_time = segment2.length / (segment2.speed_kph / 3.6)
 
     return [segment1, segment2]
