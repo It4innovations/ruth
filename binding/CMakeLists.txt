@@ -38,7 +38,25 @@ find_package(OpenMP REQUIRED)
 add_subdirectory(RoutingAlg)
 add_subdirectory(ace)
 
-add_library(ruth src/lib.cpp)
+set(ADVANCE_SOURCES
+    src/advance_state.cpp
+    src/advance_kernel.cpp
+    src/advance_workloads.cpp
+    src/advance_orchestration.cpp)
+
+# In Debug / RelWithDebInfo builds, sort the gathered FCDs into a canonical
+# (vehicle, time) order so the FCD history is byte-reproducible while debugging.
+# Release skips this time-consuming per-step sort (results are identical either
+# way — only row order in the output file changes).
+set(ADVANCE_SORT_FCDS OFF)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+  set(ADVANCE_SORT_FCDS ON)
+endif()
+
+add_library(ruth src/lib.cpp ${ADVANCE_SOURCES})
+if(ADVANCE_SORT_FCDS)
+  target_compile_definitions(ruth PRIVATE RUTH_ADVANCE_SORT_FCDS)
+endif()
 
 # Link libraries to your main program
 target_link_libraries(ruth PUBLIC routing inih ace MPI::MPI_CXX pthread)
@@ -47,11 +65,15 @@ target_include_directories(ruth PUBLIC RoutingAlg/include)
 target_include_directories(ruth PUBLIC ${HDF5_INCLUDE_DIRS})
 target_include_directories(ruth PUBLIC src)
 
-pybind11_add_module(ruthlib src/bindings.cpp)
+pybind11_add_module(ruthlib src/bindings.cpp ${ADVANCE_SOURCES})
+if(ADVANCE_SORT_FCDS)
+  target_compile_definitions(ruthlib PRIVATE RUTH_ADVANCE_SORT_FCDS)
+endif()
 target_link_libraries(ruthlib PRIVATE routing inih ace MPI::MPI_CXX pthread)
 target_include_directories(ruthlib PRIVATE RoutingAlg)
 target_include_directories(ruthlib PRIVATE RoutingAlg/include)
 target_include_directories(ruthlib PRIVATE ${HDF5_INCLUDE_DIRS})
+target_include_directories(ruthlib PRIVATE src)
 
 # GlobalView C++ module with spatial indexing
 pybind11_add_module(globalview_cpp src/globalview_bindings.cpp)

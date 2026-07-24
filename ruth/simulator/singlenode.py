@@ -13,6 +13,8 @@ from ..vehicle import Vehicle, VehicleAlternatives
 
 logger = logging.getLogger(__name__)
 PLATEAU_DEFAULT_ROUTE_SPEEDS_ENV = "RUTH_PLATEAU_DEFAULT_ROUTE_SPEEDS"
+# Opt-in: offload the advance step to the distributed ruthlib/ACE backend.
+MPI_ADVANCE_ENV = "RUTH_MPI_ADVANCE"
 
 
 class Simulator:
@@ -206,8 +208,24 @@ class Simulator:
                 logger.info("Simulation stopped after reaching the configured limit of %s steps.", max_steps)
             logger.info(f"Simulation done in {self.sim.duration}.")
 
+    @staticmethod
+    def _use_mpi_advance() -> bool:
+        return os.environ.get(MPI_ADVANCE_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
     def advance_vehicles(self, vehicles: List[Vehicle]) -> Tuple[List[FCDRecord], bool]:
         """Move the vehicles on its route and generate FCD records"""
+
+        if self._use_mpi_advance():
+            # LoS is evaluated against the C++ GlobalView replicas (kept in sync
+            # by the all-gather), so the Python global_view is not passed here.
+            from .mpi_advance import advance_vehicles_mpi
+            drop_before = (self.sim.setting.departure_time + self.current_offset
+                           if self.current_offset is not None else None)
+            return advance_vehicles_mpi(vehicles, self.sim.setting.departure_time,
+                                        self.sim.routing_map,
+                                        self.sim.queues_manager,
+                                        self.sim.setting.los_vehicles_tolerance,
+                                        drop_before_time=drop_before)
 
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             self.sim.global_view,

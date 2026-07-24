@@ -18,6 +18,7 @@
 #include "workload/workload.hpp"
 #include "workload/parallelfor.hpp"
 #include "lib.hpp"
+#include "advance_orchestration.hpp"
 
 #define MULTIPLIER 16
 
@@ -765,6 +766,9 @@ namespace ruthlib{
     comm->register_workload<CollectTravelTimesWorkload>();
     comm->register_workload<UpdateSpeedsWorkload>();
     comm->register_workload<FinishSimulationWorkload>();
+
+    // Distributed vehicle-advance workloads (FreeVehicle/Queue/SyncFCDs).
+    register_advance_workloads();
   }
 
   void do_travel_times(std::vector<std::vector<int>> routes) {
