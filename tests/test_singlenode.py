@@ -126,6 +126,17 @@ def test_stuck_detection(mock, setup_vehicle, setup_simulator):
     assert setup_vehicle.start_distance_offset == segment_length
 
 
+def test_max_steps(setup_simulator):
+    setup_simulator.simulate([], [], max_steps=2)
+
+    assert setup_simulator.state.number_of_steps == 2
+    assert setup_simulator.current_offset is not None
+
+    setup_simulator.simulate([], [], max_steps=2)
+
+    assert setup_simulator.state.number_of_steps == 2
+
+
 def test_update_map_speeds_no_overlap(setup_simulator):
     sim = setup_simulator.state
     last_map_update = setup_simulator.current_offset - timedelta(seconds=1)

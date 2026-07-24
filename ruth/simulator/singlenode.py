@@ -36,7 +36,8 @@ class Simulator:
             self,
             alternatives_providers: List[AlternativesProvider],
             route_selection_providers: List[RouteSelectionProvider],
-            end_step_fns: Optional[List[Callable[[Simulation], None]]] = None
+            end_step_fns: Optional[List[Callable[[Simulation], None]]] = None,
+            max_steps: Optional[int] = None,
     ):
         """Perform the simulation.
 
@@ -46,7 +47,12 @@ class Simulator:
             :param route_selection_providers: Implementation of route selection.
             :param end_step_fns: An arbitrary functions that are called at the end of each step with
             the current state of simulation. It can be used for storing the state, for example.
+            :param max_steps: Stop after this many total steps. Steps from a resumed simulation
+            count toward the limit. None runs the simulation to completion.
         """
+        if max_steps is not None and max_steps < 1:
+            raise ValueError("max_steps must be at least 1.")
+
         for alternatives_provider in alternatives_providers:
             alternatives_provider.load_map(self.sim.routing_map)
 
@@ -60,9 +66,13 @@ class Simulator:
             logger.warning("No active vehicles found. Simulation cannot proceed.")
             return
 
+        step = self.sim.number_of_steps
+        if max_steps is not None and step >= max_steps:
+            logger.info("Simulation already reached the configured limit of %s steps.", max_steps)
+            return
+
         self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
 
-        step = self.sim.number_of_steps
         moved_last_step = True
         last_map_update = self.current_offset
         last_time_moved = self.current_offset
@@ -81,7 +91,7 @@ class Simulator:
             # save the initial map to hdf5
             self.sim.history.writer.save_map(self.sim.routing_map, self.sim.setting.departure_time, self.sim.setting.round_freq)
 
-            while self.current_offset is not None:
+            while self.current_offset is not None and (max_steps is None or step < max_steps):
                 step_start_dt = datetime.now()
                 timer_set = TimerSet()
 
@@ -192,6 +202,8 @@ class Simulator:
             # END while self.current_offset is not None
 
             self.sim.history.writer.save_computational_time(self.sim.duration.total_seconds())
+            if max_steps is not None and step >= max_steps and self.current_offset is not None:
+                logger.info("Simulation stopped after reaching the configured limit of %s steps.", max_steps)
             logger.info(f"Simulation done in {self.sim.duration}.")
 
     def advance_vehicles(self, vehicles: List[Vehicle]) -> Tuple[List[FCDRecord], bool]:

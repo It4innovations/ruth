@@ -39,6 +39,7 @@ class CommonArgs:
     plateau_default_route: bool
     buffer_size: int
     max_records_per_file: int
+    max_steps: Optional[int] = None
     vehicle_frequency_override: Optional[timedelta] = None
     fcd_sampling_period_override: Optional[timedelta] = None
     async_fcd_writer: bool = False
@@ -464,6 +465,7 @@ def setup(common_args: CommonArgs, vehicles_path: Path,
         alternatives_providers=alternatives_providers,
         route_selection_providers=route_selection_providers,
         end_step_fns=end_step_fns,
+        max_steps=common_args.max_steps,
     )
 
     simulation = simulator.state

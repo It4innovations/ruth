@@ -98,6 +98,7 @@ class CommonArgs(CommonArgsInner):
     plateau_default_route: bool = False
     buffer_size: int = 10_000
     max_records_per_file: int = int(1e9)
+    max_steps: Optional[int] = field(rename="max-steps", default=None)
     vehicle_frequency_override: Optional[timedelta] = field(rename="vehicle-frequency-override-s",
                                                            serializer=serialize_optional_timedelta,
                                                            deserializer=deserialize_optional_timedelta,
