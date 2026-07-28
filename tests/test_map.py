@@ -5,8 +5,44 @@ import pytest
 from datetime import datetime
 import csv
 
-from ruth.data.map import BBox, Map, TemporarySpeed
+from ruth.data.map import BBox, Map, TemporarySpeed, map_provenance_from_filename
 from ruth.data.segment import SpeedKph, SegmentId
+
+
+def test_map_provenance_is_parsed_from_versioned_graphml_filename():
+    graph_path = (
+        "/maps/50_16568920000002-14_321441000000016-"
+        "50_020240399999985-14_592499399999983_"
+        "2024-01-10T00-00-00_drive-v2.graphml"
+    )
+
+    bbox, download_date = map_provenance_from_filename(graph_path)
+
+    assert bbox.get_coords() == (
+        50.16568920000002,
+        14.321441000000016,
+        50.020240399999985,
+        14.592499399999983,
+    )
+    assert download_date == "2024-01-10T00:00:00"
+
+
+def test_map_provenance_supports_negative_coordinates():
+    graph_path = (
+        "/maps/42_84357356810164--89_40122346620633-"
+        "40_99480844658554--86_48623027701692_"
+        "2026-06-05T00-00-00.graphml"
+    )
+
+    bbox, download_date = map_provenance_from_filename(graph_path)
+
+    assert bbox.get_coords() == (
+        42.84357356810164,
+        -89.40122346620633,
+        40.99480844658554,
+        -86.48623027701692,
+    )
+    assert download_date == "2026-06-05T00:00:00"
 
 
 @pytest.fixture(scope='module')
