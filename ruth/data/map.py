@@ -4,6 +4,7 @@ import itertools
 import logging
 import os
 import pickle
+import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
@@ -99,6 +100,48 @@ class BBox:
         return f"{self.north}-{self.west}-{self.south}-{self.east}".replace('.', "_")
 
 
+def map_provenance_from_filename(graphml_file):
+    """Return bbox and download date encoded in a RUTH GraphML filename.
+
+    RUTH map files are named
+    ``<north>-<west>-<south>-<east>_<download-date>[_<policy>].graphml``.
+    Coordinates use underscores as decimal separators and the date uses
+    hyphens in its time component.
+    """
+    stem = Path(graphml_file).stem
+    match = re.match(
+        r"^(?P<bbox>.+)_(?P<date>\d{4}-\d{2}-\d{2}[T ]\d{2}-\d{2}-\d{2})"
+        r"(?:_[a-zA-Z0-9-]+)?$",
+        stem,
+    )
+    if not match:
+        return None, None
+
+    coord_pattern = r"-?\d+(?:_\d+)?"
+    bbox_match = re.match(
+        rf"^(?P<north>{coord_pattern})-(?P<west>{coord_pattern})-"
+        rf"(?P<south>{coord_pattern})-(?P<east>{coord_pattern})$",
+        match.group("bbox"),
+    )
+    if not bbox_match:
+        return None, None
+
+    def parse_coord(name):
+        return float(bbox_match.group(name).replace("_", "."))
+
+    date_value = match.group("date")
+    date_separator = "T" if "T" in date_value else " "
+    date_part, time_part = date_value.split(date_separator, 1)
+    download_date = f"{date_part}{date_separator}{time_part.replace('-', ':')}"
+
+    return BBox(
+        parse_coord("north"),
+        parse_coord("west"),
+        parse_coord("south"),
+        parse_coord("east"),
+    ), download_date
+
+
 def concat_nodes(main_node, next_nodes, roundabout_nodes, concated, network):
     for next_node in next_nodes:
         if main_node == next_node:
@@ -177,10 +220,12 @@ class Map:
         self.graphml_file = None
 
         if graphml_file is not None:
-            cl.info(f"Loading map from {graphml_file}, ignoring bbox and download_date.")
+            cl.info(f"Loading map from {graphml_file}.")
             self.graphml_file = graphml_file
             self.network = load_graphml(graphml_file)
-            self.bbox, self.download_date = None, None
+            filename_bbox, filename_download_date = map_provenance_from_filename(graphml_file)
+            self.bbox = filename_bbox
+            self.download_date = filename_download_date
             fresh_data = False
         elif bbox is None or download_date is None:
             raise ValueError("Either graphml_file or both bbox and download_date must be provided.")
