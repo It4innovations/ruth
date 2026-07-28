@@ -112,7 +112,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                     stuck_detection=stuck_detection,
                     plateau_default_route=plateau_default_route)
 
-    simulation = Simulation.load(continue_from) if continue_from != '' else None
+    simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 
     if simulation is None:
         if vehicles_path is None:

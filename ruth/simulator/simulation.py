@@ -148,20 +148,27 @@ class Simulation:
             self._freq_seconds = int(self.setting.round_freq.total_seconds())
         self._routing_map = None  # lazy init
 
-        # TODO: check when necessary to recreate global_view and when not
         if "global_view" not in d:
-            self.global_view = GlobalView(routing_map=self.routing_map)
-
-        # if it is cpp globalview, set the routing map there as well
-        if hasattr(self.global_view, 'set_routing_map'):
-            self.global_view.set_routing_map(self.routing_map)
+            self.global_view = None
 
     @property
     def routing_map(self):
         if self._routing_map is None:
             self._routing_map = Map(self.bbox, download_date=self.map_download_date,
                                     graphml_file=self.map_graphml, with_speeds=True)
+
+            if self.global_view is None:
+                self.global_view = GlobalView(routing_map=self._routing_map)
+            elif hasattr(self.global_view, 'set_routing_map'):
+                self.global_view.set_routing_map(self._routing_map)
         return self._routing_map
+
+    def use_map_graphml(self, map_graphml: str):
+        if self.map_graphml == map_graphml:
+            return
+
+        self.map_graphml = map_graphml
+        self._routing_map = None
 
     @property
     def random(self):
@@ -274,9 +281,14 @@ class Simulation:
             pickle.dump(self, f)
 
     @staticmethod
-    def load(path):
+    def load(path, map_graphml: Optional[str] = None):
         with open(path, 'rb') as f:
-            return pickle.load(f)
+            simulation = pickle.load(f)
+
+        if map_graphml is not None:
+            simulation.use_map_graphml(map_graphml)
+
+        return simulation
 
     @staticmethod
     def load_h5_df(path):
