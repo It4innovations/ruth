@@ -35,5 +35,6 @@ void update_speeds(const int* edge_ids, const float* speeds, size_t n);
 void update_speeds(std::vector<std::pair<int, float>> edge_speeds);
 bool is_simulation_running();
 void finish_simulation();
+void run_worker_loop();
 
 } // namespace ruthlib

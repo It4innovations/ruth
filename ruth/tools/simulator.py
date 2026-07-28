@@ -415,7 +415,26 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
     if MPIDistributor.allow_mpi():
         with MPIDistributor() as distributor:
             if distributor.is_master():
+                # The master drives the whole simulation; setup() runs the step
+                # loop, which issues the per-step barriers (do_alternatives,
+                # do_advance) that the workers pair with below.
                 simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+                # BSP shutdown handshake. finish_simulation() flips the running
+                # flag on every rank (broadcast); the single trailing barrier()
+                # then pairs each worker's pending run_worker_loop() barrier so
+                # their next flag check returns. Exactly ONE release barrier — it
+                # must match the count the workers still owe. Both ranks then reach
+                # finalize() via __exit__.
+                distributor.ru.finish_simulation()
+                distributor.ru.barrier()
+            else:
+                # Workers spend the entire run in the barrier loop, pairing every
+                # barrier the master issues (this is what lets ACE's work-stealer
+                # migrate load onto them); their scheduler threads execute the
+                # dispatched/stolen workloads and broadcast collectives. They do
+                # NOT fall through to finalize() here — __exit__ calls it once the
+                # loop returns at shutdown.
+                distributor.ru.run_worker_loop()
     else:
         # no MPI available, run as a single process
         logging.warning("MPI not available, running in single-process mode.")

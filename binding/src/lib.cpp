@@ -772,8 +772,6 @@ namespace ruthlib{
   }
 
   void do_travel_times(std::vector<std::vector<int>> routes) {
-    std::vector<std::shared_ptr<ace::workload>> distributed_tasks;
-
     auto comm = ace::CommInterface::instance();
     int num_ranks = comm->get_size();
 
@@ -791,17 +789,23 @@ namespace ruthlib{
       auto task = std::make_shared<CalculateTravelTimesWorkload>(start_index, work_list);
       size_offset++;
       comm->async_send(task, size_offset % num_ranks);
-      distributed_tasks.push_back(task);
+      // No local handle kept: async_send() marshals the workload into its own send
+      // buffer and registers the shared_ptr in the scheduler's waiting map, which
+      // owns it until the completion ack. `task` may die at the end of the iteration.
     } while (size_offset * work_size < routes.size());
 
-    for (auto &task : distributed_tasks) {
-      task->wait();
-    }
+    // Fire-and-forget instead of waiting per task. This collective barrier drains
+    // every dispatched CalculateTravelTimesWorkload's ack across all ranks AND runs
+    // ACE's work-stealer, so chunks rebalance off overloaded ranks (load balancing).
+    // Requires every rank at the barrier (workers are in run_worker_loop()). Issued
+    // unconditionally (even with zero tasks) so the per-step barrier count stays
+    // deterministic. The barrier is here in the master-side dispatcher, NOT inside
+    // CalculateTravelTimesWorkload::execute() (a scheduler thread must not call a
+    // collective). Travel times are read from State via get_travel_times() after.
+    comm->barrier();
   }
 
   void do_alternatives(const int* od_data, size_t n_pairs, int max_routes, bool use_origin_speeds) {
-    std::vector<std::shared_ptr<ace::workload>> distributed_tasks;
-
     auto comm = ace::CommInterface::instance();
     int num_ranks = comm->get_size();
 
@@ -820,14 +824,22 @@ namespace ruthlib{
       auto task = std::make_shared<AlternativesWorkload>(work_list, max_routes, use_origin_speeds);
       size_offset++;
       comm->async_send(task, size_offset % num_ranks);
-      distributed_tasks.push_back(task);
+      // No local handle kept: async_send() has already marshalled the workload
+      // into its own send buffer and handed the shared_ptr to the scheduler's
+      // waiting map, which owns it until the completion ack. `task` may die here.
 
     } while (size_offset * work_size < n_pairs);
 
-    for (auto &task : distributed_tasks) {
-      task->wait();
-    }
-
+    // Fire-and-forget instead of waiting per task. This collective barrier drains
+    // every dispatched AlternativesWorkload's ack across all ranks AND runs ACE's
+    // work-stealer, so chunks migrate off overloaded ranks onto idle ones
+    // (load balancing). It requires every rank to reach the barrier: the workers
+    // are parked in run_worker_loop() pairing this call. Executed unconditionally
+    // (even with zero tasks) so the per-step barrier count stays deterministic.
+    // NOTE: the barrier lives here in the master-side dispatcher, NOT inside
+    // AlternativesWorkload::execute() (that runs on a scheduler thread and must
+    // never call a collective). Routes are read from State via get_routes() after.
+    comm->barrier();
   }
 
   void do_alternatives(std::vector<std::pair<int, int>> OD_matrix, int max_routes, bool use_origin_speeds) {
@@ -991,5 +1003,34 @@ namespace ruthlib{
     auto finish_workload = std::make_shared<FinishSimulationWorkload>();
     comm->async_broadcast(finish_workload);
     finish_workload->wait();
+  }
+
+  // Worker driver for the barrier-based BSP. Non-master ranks call this for the
+  // whole run instead of dropping into finalize(). The main thread pairs 1:1 with
+  // every barrier() the master issues (setup-phase alternatives, and each step's
+  // do_alternatives / do_advance barrier), while THIS rank's scheduler threads run
+  // the workloads that land here — the movement/route chunks the master's barrier
+  // work-steals onto this rank, plus the broadcast collectives (update_speeds,
+  // advance_drop_old, sync_advance) which complete on the scheduler while the main
+  // thread sits in a barrier. Being at the barrier is exactly what lets ACE's
+  // work-stealer migrate load onto this rank.
+  //
+  // Count-agnostic on purpose: it assumes nothing about how many barriers occur
+  // per step, only that every master barrier is matched by one here. That makes it
+  // robust to conditional/skipped phases and to setup-phase barriers.
+  //
+  // Shutdown: the master calls finish_simulation() (flips the flag on every rank
+  // via a broadcast) then one release barrier() that unblocks the barrier below;
+  // the next loop check sees the flag cleared and returns. Ordering caveat: the
+  // flag is polled between barriers, so there is a narrow window right after the
+  // master's final step barrier where finish could, in principle, land before this
+  // rank re-enters the barrier. In practice the local flag read beats the
+  // broadcast+scheduler round-trip, so the worker is already blocked in the release
+  // barrier when the flag flips. Validate at shutdown on the first MPI smoke run.
+  void run_worker_loop() {
+    auto comm = ace::CommInterface::instance();
+    while (State::instance().is_simulation_running()) {
+      comm->barrier();
+    }
   }
 } // namespace ruthlib

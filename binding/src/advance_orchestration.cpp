@@ -56,7 +56,6 @@ void do_advance(const std::vector<AdvanceTask>& free_tasks,
   auto comm = ace::CommInterface::instance();
   const int num_ranks = comm->get_size();
 
-  std::vector<std::shared_ptr<ace::workload>> handles;
   size_t dispatch_index = 0;
 
   // Free vehicles: split into chunks and scatter round-robin. dispatch_index is
@@ -71,7 +70,6 @@ void do_advance(const std::vector<AdvanceTask>& free_tasks,
                                                     departure_epoch_us, los_tolerance_s);
     ++dispatch_index;
     comm->async_send(wl, dispatch_index % num_ranks);
-    handles.push_back(wl);
   }
 
   // Queues: one whole queue per workload (never split across ranks).
@@ -80,11 +78,20 @@ void do_advance(const std::vector<AdvanceTask>& free_tasks,
     auto wl = std::make_shared<QueueWorkload>(queue, departure_epoch_us, los_tolerance_s);
     ++dispatch_index;
     comm->async_send(wl, dispatch_index % num_ranks);
-    handles.push_back(wl);
   }
 
-  // Barrier via completion tracking: block until every phase-1 unit is done.
-  for (auto& h : handles) h->wait();
+  // No local handles kept: async_send() marshals each workload into its own send
+  // buffer and registers the shared_ptr in the scheduler's waiting map, which owns
+  // it until the completion ack — so `wl` may die at the end of each iteration.
+  // Fire-and-forget instead of waiting per handle. This collective barrier drains
+  // every dispatched movement workload's ack across all ranks AND runs ACE's
+  // work-stealer so per-vehicle chunks rebalance off busy ranks (load balancing).
+  // Requires every rank at the barrier (workers are in run_worker_loop()). Issued
+  // unconditionally (even with zero tasks) to keep the per-step barrier count
+  // deterministic. The barrier is here in the dispatcher, NOT inside FreeVehicle/
+  // QueueWorkload::execute() (those run on scheduler threads and must not call a
+  // collective).
+  comm->barrier();
 }
 
 void sync_advance() {

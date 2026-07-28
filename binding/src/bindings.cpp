@@ -89,7 +89,12 @@ PYBIND11_MODULE(ruthlib, m) {
         return vec_to_numpy(ruthlib::get_travel_times());
     }, "returns travel times as a zero-copy numpy float32 array");
 
-    m.def("do_travel_times", &ruthlib::do_travel_times, "calculate travel times for the routes");
+    m.def("do_travel_times",
+        [](std::vector<std::vector<int>> routes) {
+            py::gil_scoped_release release;  // blocks on the dispatch barrier
+            ruthlib::do_travel_times(std::move(routes));
+        },
+        "calculate travel times for the routes");
     m.def("update_speeds",
         [](py::array_t<int,   py::array::c_style | py::array::forcecast> ids,
            py::array_t<float, py::array::c_style | py::array::forcecast> spds) {
@@ -102,6 +107,13 @@ PYBIND11_MODULE(ruthlib, m) {
         }, "update speeds of edges in the graph");
     m.def("is_simulation_running", &ruthlib::is_simulation_running, "check if the simulation is running");
     m.def("finish_simulation", &ruthlib::finish_simulation, "finish the simulation and clean up resources");
+    m.def("run_worker_loop",
+        []() {
+            py::gil_scoped_release release;  // blocks for the whole run in the barrier loop
+            ruthlib::run_worker_loop();
+        },
+        "worker rank driver: pair every master barrier until the simulation ends "
+        "(barrier-based BSP; enables ACE work-stealing)");
 
     // ----------------------------------------------------------------------
     // Distributed vehicle-advance
