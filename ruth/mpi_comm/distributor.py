@@ -2,10 +2,15 @@ import multiprocessing
 
 class MPIDistributor:
 
+    def __init__(self, threads=None):
+        # Number of ACE scheduler worker threads per rank, from the config.json
+        # "ace" section (ace.threads). None / <= 0 falls back to all cores.
+        self.threads = threads
+
     def __enter__(self):
         import ruthlib as ru
         self.ru = ru
-        num_threads = multiprocessing.cpu_count()  # Use all available CPU cores
+        num_threads = self.threads if self.threads and self.threads > 0 else multiprocessing.cpu_count()
         ru.setup_ace(num_threads)
         ru.init_routes()
         return self

@@ -13,8 +13,6 @@ from ..vehicle import Vehicle, VehicleAlternatives
 
 logger = logging.getLogger(__name__)
 PLATEAU_DEFAULT_ROUTE_SPEEDS_ENV = "RUTH_PLATEAU_DEFAULT_ROUTE_SPEEDS"
-# Opt-in: offload the advance step to the distributed ruthlib/ACE backend.
-MPI_ADVANCE_ENV = "RUTH_MPI_ADVANCE"
 
 
 class Simulator:
@@ -208,9 +206,10 @@ class Simulator:
                 logger.info("Simulation stopped after reaching the configured limit of %s steps.", max_steps)
             logger.info(f"Simulation done in {self.sim.duration}.")
 
-    @staticmethod
-    def _use_mpi_advance() -> bool:
-        return os.environ.get(MPI_ADVANCE_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+    def _use_mpi_advance(self) -> bool:
+        # Driven by the config.json "ace" section (ace.mpi-advance), carried on the
+        # SimSetting. Previously toggled via the RUTH_MPI_ADVANCE env var.
+        return self.sim.setting.mpi_advance
 
     def advance_vehicles(self, vehicles: List[Vehicle]) -> Tuple[List[FCDRecord], bool]:
         """Move the vehicles on its route and generate FCD records"""
