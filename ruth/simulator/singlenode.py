@@ -95,13 +95,6 @@ class Simulator:
                 step_start_dt = datetime.now()
                 timer_set = TimerSet()
 
-                current_hour = int(self.current_offset.total_seconds() // 3600)
-                if current_hour > last_saved_hour:
-                    save_path = f"sim_hour_{current_hour}.pickle"
-                    logger.info(f"Saving simulation state at hour {current_hour}: {save_path}")
-                    self.sim.store(save_path)
-                    last_saved_hour = current_hour
-
                 offset, offset_seconds = self.sim.round_time_offset(self.current_offset)
 
                 if self.sim.setting.stuck_detection:
