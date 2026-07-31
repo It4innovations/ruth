@@ -12,7 +12,8 @@ import signal
 
 from ..simulator import SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
-from ..simulator.common import VehicleDatasetSource, set_vehicle_behavior_stable_for_vehicles
+from ..simulator.common import VehicleDatasetSource, remove_existing_fcd_history_files, \
+    set_vehicle_behavior_stable_for_vehicles
 from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, FirstRouteSelection, \
     RandomRouteSelection, RouteSelectionProvider, ShortestPathsAlternatives, \
     MPIDistributedAlternatives, ZeroMQDistributedPTDRRouteSelection
@@ -45,6 +46,7 @@ class CommonArgs:
     async_fcd_writer: bool = False
     fcd_writer_queue_size: int = 4
     map_graphml: Optional[str] = None
+    overwrite_h5: bool = False
 
 
 @dataclass
@@ -102,6 +104,10 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     vehicle_frequency_override = common_args.vehicle_frequency_override
     fcd_sampling_period_override = common_args.fcd_sampling_period_override
     map_graphml = getattr(common_args, "map_graphml", None)
+    overwrite_h5 = getattr(common_args, "overwrite_h5", False)
+
+    if overwrite_h5:
+        remove_existing_fcd_history_files("fcd_history")
 
     ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
                     los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
@@ -273,6 +279,8 @@ def start_zeromq_cluster(
               help="Write FCD HDF5 batches in a separate process using a bounded queue.")
 @click.option("--fcd-writer-queue-size", type=int, default=4,
               help="Maximum number of pending FCD batches allowed in the async writer queue.")
+@click.option("--overwrite-h5/--no-overwrite-h5", default=False,
+              help="Remove existing FCD HDF5 part files before starting the simulation.")
 @click.pass_context
 def single_node_simulator(ctx,
                           debug,
@@ -292,6 +300,7 @@ def single_node_simulator(ctx,
                           fcd_sampling_period_override_s,
                           async_fcd_writer,
                           fcd_writer_queue_size,
+                          overwrite_h5,
                           walltime_s,
                           saving_interval_s,
                           continue_from,
@@ -326,6 +335,7 @@ def single_node_simulator(ctx,
         fcd_sampling_period_override=fcd_sampling_period_override,
         async_fcd_writer=async_fcd_writer,
         fcd_writer_queue_size=fcd_writer_queue_size,
+        overwrite_h5=overwrite_h5,
         walltime=walltime,
         saving_interval=saving_interval,
         continue_from=continue_from,

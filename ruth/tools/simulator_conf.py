@@ -112,6 +112,9 @@ class CommonArgs(CommonArgsInner):
     async_fcd_writer: bool = False
     fcd_writer_queue_size: int = 4
     map_graphml: Optional[str] = field(rename="map-graphml", default=None)
+    overwrite_h5: bool = field(rename="overwrite-h5", default=False)
+
+
 @serde(rename_all="kebabcase")
 @dataclass
 class RunArgs:
