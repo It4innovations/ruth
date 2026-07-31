@@ -1,6 +1,8 @@
-import logging
+import glob
 import hashlib
 import json
+import logging
+import os
 from pathlib import Path
 from dataclasses import asdict
 from datetime import timedelta
@@ -27,6 +29,16 @@ ROUTE_SELECTION_BY_INDEX = [
     VehicleRouteSelection.RANDOM,
     VehicleRouteSelection.PTDR,
 ]
+
+
+def remove_existing_fcd_history_files(base_path: str) -> List[str]:
+    """Remove HDF5 part files that conflict with a new FCD history output."""
+    base_no_ext = os.path.splitext(base_path)[0]
+    existing_parts = sorted(glob.glob(f"{base_no_ext}-part*.h5"))
+    for path in existing_parts:
+        os.remove(path)
+        logger.info("Removed existing FCD history file: %s", path)
+    return existing_parts
 
 
 def choose_by_stable_ratio(ratios: List[float], choices: List, seed: Optional[int], vehicle_id: int, salt: str):
