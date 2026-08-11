@@ -47,6 +47,7 @@ class CommonArgs:
     fcd_writer_queue_size: int = 4
     map_graphml: Optional[str] = None
     overwrite_h5: bool = False
+    max_vehicles: Optional[int] = None
 
 
 @dataclass
@@ -105,6 +106,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     fcd_sampling_period_override = common_args.fcd_sampling_period_override
     map_graphml = getattr(common_args, "map_graphml", None)
     overwrite_h5 = getattr(common_args, "overwrite_h5", False)
+    max_vehicles = getattr(common_args, "max_vehicles", None)
 
     if overwrite_h5:
         remove_existing_fcd_history_files("fcd_history")
@@ -131,6 +133,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                 seed,
                 vehicle_frequency_override,
                 fcd_sampling_period_override,
+                max_vehicles,
             )
             vehicles = vehicle_source.load_next_bucket()
             simulation = Simulation(vehicles, ss, vehicle_source.bbox,
@@ -142,6 +145,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                 vehicles_path,
                 vehicle_frequency_override,
                 fcd_sampling_period_override,
+                max_vehicles,
             )
 
             set_vehicle_behavior_stable_for_vehicles(
@@ -281,6 +285,8 @@ def start_zeromq_cluster(
               help="Maximum number of pending FCD batches allowed in the async writer queue.")
 @click.option("--overwrite-h5/--no-overwrite-h5", default=False,
               help="Remove existing FCD HDF5 part files before starting the simulation.")
+@click.option("--max-vehicles", type=click.IntRange(min=1), default=None,
+              help="Maximum number of vehicles loaded from the input.")
 @click.pass_context
 def single_node_simulator(ctx,
                           debug,
@@ -301,6 +307,7 @@ def single_node_simulator(ctx,
                           async_fcd_writer,
                           fcd_writer_queue_size,
                           overwrite_h5,
+                          max_vehicles,
                           walltime_s,
                           saving_interval_s,
                           continue_from,
@@ -336,6 +343,7 @@ def single_node_simulator(ctx,
         async_fcd_writer=async_fcd_writer,
         fcd_writer_queue_size=fcd_writer_queue_size,
         overwrite_h5=overwrite_h5,
+        max_vehicles=max_vehicles,
         walltime=walltime,
         saving_interval=saving_interval,
         continue_from=continue_from,

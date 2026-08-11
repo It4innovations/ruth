@@ -113,6 +113,7 @@ class CommonArgs(CommonArgsInner):
     fcd_writer_queue_size: int = 4
     map_graphml: Optional[str] = field(rename="map-graphml", default=None)
     overwrite_h5: bool = field(rename="overwrite-h5", default=False)
+    max_vehicles: Optional[int] = field(rename="max-vehicles", default=None)
 
 
 @serde(rename_all="kebabcase")

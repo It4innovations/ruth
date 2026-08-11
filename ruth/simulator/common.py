@@ -223,7 +223,8 @@ class VehicleDatasetSource:
     def __init__(self, input_path: str, alternatives_ratio: List[float],
                  route_selection_ratio: List[float], seed: Optional[int],
                  frequency_override: Optional[timedelta] = None,
-                 fcd_sampling_period_override: Optional[timedelta] = None):
+                 fcd_sampling_period_override: Optional[timedelta] = None,
+                 max_vehicles: Optional[int] = None):
         self.input_path = Path(input_path)
         self.manifest = load_manifest(self.input_path)
         self.alternatives_ratio = alternatives_ratio
@@ -231,6 +232,8 @@ class VehicleDatasetSource:
         self.seed = seed
         self.frequency_override = frequency_override
         self.fcd_sampling_period_override = fcd_sampling_period_override
+        self.max_vehicles = max_vehicles
+        self.loaded_vehicle_count = 0
         self.bucket_paths = self.discover_bucket_paths()
         self.bucket_index = 0
 
@@ -258,7 +261,10 @@ class VehicleDatasetSource:
         return sorted(bucket_paths, key=bucket_start_from_path)
 
     def has_next_bucket(self):
-        return self.bucket_index < len(self.bucket_paths)
+        return (
+            self.bucket_index < len(self.bucket_paths)
+            and (self.max_vehicles is None or self.loaded_vehicle_count < self.max_vehicles)
+        )
 
     def next_bucket_start_s(self):
         if not self.has_next_bucket():
@@ -298,13 +304,18 @@ class VehicleDatasetSource:
                 vehicles.append(vehicle)
         set_vehicle_behavior_stable_for_vehicles(vehicles, self.alternatives_ratio,
                                                  self.route_selection_ratio, self.seed)
+        if self.max_vehicles is not None:
+            remaining = self.max_vehicles - self.loaded_vehicle_count
+            vehicles = vehicles[:remaining]
+        self.loaded_vehicle_count += len(vehicles)
         logger.info("Loaded %d active vehicles from %s", len(vehicles), bucket_path.name)
         return vehicles
 
 
 def load_vehicles(input_path: str,
                   frequency_override: Optional[timedelta] = None,
-                  fcd_sampling_period_override: Optional[timedelta] = None) \
+                  fcd_sampling_period_override: Optional[timedelta] = None,
+                  max_vehicles: Optional[int] = None) \
         -> Tuple[List[Vehicle], Optional[BBox], Optional[str]]:
     logger.info("Loading data... %s", input_path)
     if frequency_override is not None:
@@ -324,6 +335,8 @@ def load_vehicles(input_path: str,
     # Filter vehicles with missing or too-short routes or inactive flag
     pre_count = len(vehicles)
     vehicles = [v for v in vehicles if v.active and v.osm_route and len(v.osm_route) >= 2]
+    if max_vehicles is not None:
+        vehicles = vehicles[:max_vehicles]
     filtered_count = pre_count - len(vehicles)
     if filtered_count > 0:
         logger.info(f"Filtered {filtered_count} vehicles with too short or missing routes.")
