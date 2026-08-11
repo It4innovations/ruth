@@ -173,12 +173,14 @@ def store_simulation_at_walltime(walltime: Optional[timedelta], name: str):
     saved = False
     start_time = datetime.now()
 
-    def store(simulation: Simulation):
+    def store(simulation: Simulation) -> bool:
         nonlocal saved
-        """Store the state of the simulation at walltime."""
+        """Store the state at walltime and request a graceful simulation stop."""
         if walltime is not None and (datetime.now() - start_time) >= walltime and not saved:
             simulation.store(f"{name}-at-walltime.pickle")
             saved = True
+            return True
+        return False
 
     return store
 

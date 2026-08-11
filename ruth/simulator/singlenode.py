@@ -36,7 +36,7 @@ class Simulator:
             self,
             alternatives_providers: List[AlternativesProvider],
             route_selection_providers: List[RouteSelectionProvider],
-            end_step_fns: Optional[List[Callable[[Simulation], None]]] = None,
+            end_step_fns: Optional[List[Callable[[Simulation], bool]]] = None,
             max_steps: Optional[int] = None,
     ):
         """Perform the simulation.
@@ -45,8 +45,8 @@ class Simulator:
         -----------
             :param alternatives_providers: Implementation of alternatives.
             :param route_selection_providers: Implementation of route selection.
-            :param end_step_fns: An arbitrary functions that are called at the end of each step with
-            the current state of simulation. It can be used for storing the state, for example.
+            :param end_step_fns: Functions called at the end of each step with the current state.
+            Returning True requests a graceful stop after the current step.
             :param max_steps: Stop after this many total steps. Steps from a resumed simulation
             count toward the limit. None runs the simulation to completion.
         """
@@ -175,11 +175,6 @@ class Simulator:
                     f"{step}. active: {len(vehicles_to_be_moved)}, need_new_route: {len(need_new_route)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
                 self.sim.duration += step_dur
 
-                if end_step_fns is not None:
-                    with timer_set.get("end_step"):
-                        for fn in end_step_fns:
-                            fn(self.state)
-
                 parts = timer_set.collect()
                 parts.update(self.sim.history.collect_step_metrics(reset=True))
 
@@ -192,6 +187,16 @@ class Simulator:
                 self.sim.save_step_info(self.current_offset, step, len(vehicles_to_be_moved),
                                         step_dur, parts, len(need_new_route))
                 step += 1
+
+                if end_step_fns is not None:
+                    with timer_set.get("end_step"):
+                        stop_requested = False
+                        for fn in end_step_fns:
+                            stop_requested = fn(self.state) or stop_requested
+
+                if end_step_fns is not None and stop_requested:
+                    logger.info("Simulation stopped by an end-of-step callback.")
+                    break
             # END while self.current_offset is not None
 
             self.sim.history.writer.save_computational_time(self.sim.duration.total_seconds())
