@@ -537,7 +537,9 @@ class Map:
             osmnx.settings.overpass_settings = f"[out:json][timeout:{{timeout}}][date:'{self.download_date}']"
 
             north, west, south, east = self.bbox.get_coords()
-            network = graph_from_bbox(bbox=(west, south, east, north),
+            # osmnx 1.9.x (pinned in requirements.txt) expects bbox=(north, south, east, west);
+            # the (west, south, east, north) order is the osmnx 2.x convention
+            network = graph_from_bbox(bbox=(north, south, east, west),
                                       network_type="drive",
                                       retain_all=False,
                                       custom_filter=CUSTOM_DRIVE_FILTER)
