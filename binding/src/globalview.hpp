@@ -137,6 +137,10 @@ public:
         }
         return total;
     }
+
+    const std::deque<FCDBatch>& batches() const {
+        return fcd_batches_;
+    }
 };
 
 class GlobalView {
@@ -163,18 +167,25 @@ public:
         segments_[fcd.segment_id].add(fcd);
     }
 
-    void add_batch(const std::vector<FCDRecord>& fcds) {
-        if (fcds.empty()) return;
+    // Single-copy batch add from a raw contiguous buffer: records are copied
+    // once from `data` into per-segment vectors, which are then moved into
+    // storage. Safe to call with the GIL released (data must stay alive).
+    void add_batch_raw(const FCDRecord* data, size_t n) {
+        if (n == 0) return;
         std::unordered_map<int64_t, std::vector<FCDRecord>> by_segment;
         by_segment.reserve(32);  // Pre-allocate for common case
 
-        for (const auto& fcd : fcds) {
-            by_segment[fcd.segment_id].push_back(fcd);
+        for (size_t i = 0; i < n; ++i) {
+            by_segment[data[i].segment_id].push_back(data[i]);
         }
 
         for (auto& [segment_id, segment_fcds] : by_segment) {
-            segments_[segment_id].add_batch(segment_fcds);
+            segments_[segment_id].add_batch(std::move(segment_fcds));
         }
+    }
+
+    void add_batch(const std::vector<FCDRecord>& fcds) {
+        add_batch_raw(fcds.data(), fcds.size());
     }
 
     int number_of_vehicles_ahead(
@@ -298,22 +309,39 @@ public:
         segments_.clear();
     }
 
-    std::vector<FCDRecord> export_all_fcds() const {
-        std::vector<FCDRecord> all_fcds;
+    size_t total_fcds() const {
+        size_t total = 0;
         for (const auto& [segment_id, seg_view] : segments_) {
-            auto fcds = seg_view.get_fcds();
-            all_fcds.insert(all_fcds.end(), fcds.begin(), fcds.end());
+            total += seg_view.size();
         }
+        return total;
+    }
 
+    // Copy every stored record into `out`, which must hold total_fcds()
+    // entries. Writes straight from the internal batches — no intermediate
+    // per-segment vectors.
+    void export_all_fcds_into(FCDRecord* out) const {
+        for (const auto& [segment_id, seg_view] : segments_) {
+            for (const auto& batch : seg_view.batches()) {
+                std::memcpy(out, batch.fcds.data(), batch.fcds.size() * sizeof(FCDRecord));
+                out += batch.fcds.size();
+            }
+        }
+    }
+
+    std::vector<FCDRecord> export_all_fcds() const {
+        std::vector<FCDRecord> all_fcds(total_fcds());
+        export_all_fcds_into(all_fcds.data());
         return all_fcds;
     }
 
-    void import_all_fcds(const std::vector<FCDRecord>& fcds) {
+    void import_all_fcds_raw(const FCDRecord* data, size_t n) {
         segments_.clear();
+        add_batch_raw(data, n);
+    }
 
-        for (const auto& fcd : fcds) {
-            segments_[fcd.segment_id].add(fcd);
-        }
+    void import_all_fcds(const std::vector<FCDRecord>& fcds) {
+        import_all_fcds_raw(fcds.data(), fcds.size());
     }
 };
 
