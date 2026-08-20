@@ -156,6 +156,21 @@ public:
     travel_times_per_vehicle_->emplace_back(std::move(ttpv));
   }
 
+  // Batch variant: one lock for the whole result set, contents moved in.
+  // The per-vehicle push_route deep-copied each route set (pass-by-value)
+  // and took the global mutex once per vehicle.
+  void push_routes_batch(std::vector<int>&& vids,
+                         std::vector<std::vector<std::vector<int>>>&& rpvs,
+                         std::vector<std::vector<float>>&& ttpvs) {
+    std::lock_guard<std::mutex> guard(state_mutex);
+    vehicle_ids_->insert(vehicle_ids_->end(),
+                         std::make_move_iterator(vids.begin()), std::make_move_iterator(vids.end()));
+    routes_per_vehicle_->insert(routes_per_vehicle_->end(),
+                                std::make_move_iterator(rpvs.begin()), std::make_move_iterator(rpvs.end()));
+    travel_times_per_vehicle_->insert(travel_times_per_vehicle_->end(),
+                                      std::make_move_iterator(ttpvs.begin()), std::make_move_iterator(ttpvs.end()));
+  }
+
   void push_travel_time(int id, float travel_time) {
     std::lock_guard<std::mutex> guard(state_mutex);
     route_travel_times_->emplace_back(id, travel_time);
@@ -361,7 +376,10 @@ public:
 
   void execute() override {
 
-    const size_t worker_count = std::max<size_t>(1, std::thread::hardware_concurrency());
+    // Size chunks by the scheduler's actual worker count, not raw hardware
+    // concurrency — with N local ranks the scheduler runs far fewer workers
+    // than PUs, and oversized chunk counts multiply per-task overhead.
+    const size_t worker_count = std::max<size_t>(1, ace::Scheduler::instance()->num_workers());
     const size_t chunk_size = std::max<size_t>(1, routes.size() / (worker_count * MULTIPLIER));
     auto routes_ptr = std::make_shared<std::vector<std::vector<int>>>(routes);
     const int first_request_index = start_index;
@@ -518,9 +536,10 @@ public:
   }
 
   void execute() override {
-    for (size_t i = 0; i < vehicle_ids.size(); ++i) {
-      State::instance().push_route(vehicle_ids[i], routes_per_vehicle[i], travel_times_per_vehicle[i]);
-    }
+    // Members are dead after this call: move the whole batch under one lock.
+    State::instance().push_routes_batch(std::move(vehicle_ids),
+                                        std::move(routes_per_vehicle),
+                                        std::move(travel_times_per_vehicle));
   }
 
   size_t size() const override {
@@ -648,7 +667,10 @@ public:
     // std::vector<VehicleTask> ptr_to_data = std::vector<VehicleTask>(vehicle_tasks);
     auto alg = State::instance().get_alg();
     const size_t num_vehicles = vehicle_tasks.size();
-    const size_t worker_count = std::max<size_t>(1, std::thread::hardware_concurrency());
+    // Size chunks by the scheduler's actual worker count, not raw hardware
+    // concurrency — with N local ranks the scheduler runs far fewer workers
+    // than PUs, and oversized chunk counts multiply per-task overhead.
+    const size_t worker_count = std::max<size_t>(1, ace::Scheduler::instance()->num_workers());
     const size_t chunk_size = std::max<size_t>(1, num_vehicles / (worker_count * MULTIPLIER));
     const bool use_origin_speed_for_routes = use_origin_speeds;
     const int requested_max_routes = max_routes;
@@ -803,6 +825,12 @@ namespace ruthlib{
 
     size_t size_offset = 0;
     size_t work_size = std::max(1ul, n_pairs / (num_ranks * MULTIPLIER));
+    const int my_rank = comm->get_rank();
+
+    // Build all chunks first, then dispatch remote-targeted ones before local
+    // ones: remote ranks start working while we enqueue our own share, and
+    // the local queue does not delay the sender thread.
+    std::vector<std::pair<std::shared_ptr<ace::workload>, int>> local_tasks;
 
     do {
       std::vector<VehicleTask> work_list;
@@ -815,10 +843,19 @@ namespace ruthlib{
 
       auto task = std::make_shared<AlternativesWorkload>(work_list, max_routes, use_origin_speeds);
       size_offset++;
-      comm->async_send(task, size_offset % num_ranks);
+      const int target = static_cast<int>(size_offset % num_ranks);
+      if (target == my_rank) {
+        local_tasks.emplace_back(task, target);
+      } else {
+        comm->async_send(task, target);
+      }
       distributed_tasks.push_back(task);
 
     } while (size_offset * work_size < n_pairs);
+
+    for (auto& [task, target] : local_tasks) {
+      comm->async_send(task, target);
+    }
 
     for (auto &task : distributed_tasks) {
       task->wait();
