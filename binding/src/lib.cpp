@@ -166,6 +166,21 @@ public:
     travel_times_per_vehicle_->emplace_back(std::move(ttpv));
   }
 
+  // Batch variant: one lock for the whole result set, contents moved in.
+  // The per-vehicle push_route deep-copied each route set (pass-by-value)
+  // and took the global mutex once per vehicle.
+  void push_routes_batch(std::vector<int>&& vids,
+                         std::vector<std::vector<std::vector<int>>>&& rpvs,
+                         std::vector<std::vector<float>>&& ttpvs) {
+    std::lock_guard<std::mutex> guard(state_mutex);
+    vehicle_ids_->insert(vehicle_ids_->end(),
+                         std::make_move_iterator(vids.begin()), std::make_move_iterator(vids.end()));
+    routes_per_vehicle_->insert(routes_per_vehicle_->end(),
+                                std::make_move_iterator(rpvs.begin()), std::make_move_iterator(rpvs.end()));
+    travel_times_per_vehicle_->insert(travel_times_per_vehicle_->end(),
+                                      std::make_move_iterator(ttpvs.begin()), std::make_move_iterator(ttpvs.end()));
+  }
+
   void push_travel_time(int id, float travel_time) {
     std::lock_guard<std::mutex> guard(state_mutex);
     route_travel_times_->emplace_back(id, travel_time);
@@ -371,7 +386,10 @@ public:
 
   void execute() override {
 
-    const size_t worker_count = std::max<size_t>(1, std::thread::hardware_concurrency());
+    // Size chunks by the scheduler's actual worker count, not raw hardware
+    // concurrency — with N local ranks the scheduler runs far fewer workers
+    // than PUs, and oversized chunk counts multiply per-task overhead.
+    const size_t worker_count = std::max<size_t>(1, ace::Scheduler::instance()->num_workers());
     const size_t chunk_size = std::max<size_t>(1, routes.size() / (worker_count * MULTIPLIER));
     auto routes_ptr = std::make_shared<std::vector<std::vector<int>>>(routes);
     const int first_request_index = start_index;
@@ -528,9 +546,10 @@ public:
   }
 
   void execute() override {
-    for (size_t i = 0; i < vehicle_ids.size(); ++i) {
-      State::instance().push_route(vehicle_ids[i], routes_per_vehicle[i], travel_times_per_vehicle[i]);
-    }
+    // Members are dead after this call: move the whole batch under one lock.
+    State::instance().push_routes_batch(std::move(vehicle_ids),
+                                        std::move(routes_per_vehicle),
+                                        std::move(travel_times_per_vehicle));
   }
 
   size_t size() const override {
@@ -665,7 +684,10 @@ public:
     // std::vector<VehicleTask> ptr_to_data = std::vector<VehicleTask>(vehicle_tasks);
     auto alg = State::instance().get_alg();
     const size_t num_vehicles = vehicle_tasks.size();
-    const size_t worker_count = std::max<size_t>(1, std::thread::hardware_concurrency());
+    // Size chunks by the scheduler's actual worker count, not raw hardware
+    // concurrency — with N local ranks the scheduler runs far fewer workers
+    // than PUs, and oversized chunk counts multiply per-task overhead.
+    const size_t worker_count = std::max<size_t>(1, ace::Scheduler::instance()->num_workers());
     const size_t chunk_size = std::max<size_t>(1, num_vehicles / (worker_count * MULTIPLIER));
     const bool use_origin_speed_for_routes = use_origin_speeds;
     const int requested_max_routes = max_routes;
@@ -842,6 +864,14 @@ namespace ruthlib{
     // on the master's scheduler; ranks are homogeneous). The dispatch loop below
     // then emits ceil(n_pairs / work_size) migratable AlternativesWorkload jobs.
     size_t work_size = std::max<size_t>(1, ace::Scheduler::instance()->num_workers() * ALT_PAIRS_PER_WORKER);
+    const int my_rank = comm->get_rank();
+
+    // Dispatch remote-targeted chunks before local ones: remote ranks start
+    // routing while the master enqueues its own share. Local (self) chunks are
+    // deferred and submitted afterwards — with ACE's local-send short-circuit they
+    // go straight to this rank's scheduler, so they must not delay the remote
+    // sends. Still fire-and-forget: the barrier below drains every ack.
+    std::vector<std::shared_ptr<ace::workload>> local_tasks;
 
     do {
       std::vector<VehicleTask> work_list;
@@ -854,12 +884,23 @@ namespace ruthlib{
 
       auto task = std::make_shared<AlternativesWorkload>(work_list, max_routes, use_origin_speeds);
       size_offset++;
-      comm->async_send(task, size_offset % num_ranks);
-      // No local handle kept: async_send() has already marshalled the workload
-      // into its own send buffer and handed the shared_ptr to the scheduler's
-      // waiting map, which owns it until the completion ack. `task` may die here.
+      const int target = static_cast<int>(size_offset % num_ranks);
+      if (target == my_rank) {
+        local_tasks.push_back(task);  // defer local submit until the remotes are out
+      } else {
+        comm->async_send(task, target);
+        // No local handle kept: async_send() has already marshalled the workload
+        // into its own send buffer and handed the shared_ptr to the scheduler's
+        // waiting map, which owns it until the completion ack. `task` may die here.
+      }
 
     } while (size_offset * work_size < n_pairs);
+
+    // Now submit our own deferred share. async_send() with a self target
+    // short-circuits straight to this rank's scheduler (no marshal/MPI).
+    for (auto& task : local_tasks) {
+      comm->async_send(task, my_rank);
+    }
 
     // Fire-and-forget instead of waiting per task. This collective barrier drains
     // every dispatched AlternativesWorkload's ack across all ranks AND runs ACE's

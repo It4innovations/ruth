@@ -88,6 +88,8 @@ class MPIDistributedAlternatives(AlternativesProvider):
         self.vehicle_behaviour = VehicleAlternatives.PLATEAU_FASTEST
         self.routing_map = None
         self.map_id = None
+        self._edge_id_cache = {}
+        self._osm_lut = None
 
         try:
             import ruthlib as ru
@@ -103,23 +105,37 @@ class MPIDistributedAlternatives(AlternativesProvider):
         self.ru.setup_map(map_path)
         self.routing_map = routing_map
         self.map_id = 0
+        # Per-map caches: segment -> HDF5 edge id, and the HDF5 -> OSM node
+        # lookup table for vectorized route remapping.
+        self._edge_id_cache = {}
+        self._osm_lut = None
+
+    def _osm_id_lut(self):
+        if self._osm_lut is None:
+            mapping = self.routing_map.hdf_to_osm_map_ids
+            lut = np.empty(max(mapping.keys()) + 1, dtype=np.int64)
+            for hdf_id, osm_id in mapping.items():
+                lut[hdf_id] = osm_id
+            self._osm_lut = lut
+        return self._osm_lut
 
     def update_map(self, segments: Dict[SegmentId, Optional[SpeedMps]]):
         """
         Update speeds of the passed segments in a previously passed map.
         """
-        ids = []
-        speeds = []
-        for segment_id, speed in segments.items():
-            edge_id = self.routing_map.get_hdf5_edge_id(segment_id)
-            actual_speed = speed if speed is not None else self.routing_map.get_current_max_speed(segment_id[0],
-                                                                                                  segment_id[1])
+        n = len(segments)
+        ids_array = np.empty(n, dtype=np.int32)
+        speeds_array = np.empty(n, dtype=np.float32)
+        edge_id_cache = self._edge_id_cache
+        get_edge_id = self.routing_map.get_hdf5_edge_id
+        get_speed = self.routing_map.get_current_max_speed
 
-            ids.append(edge_id)
-            speeds.append(actual_speed)
-
-        ids_array = np.array(ids, dtype=np.int32)
-        speeds_array = np.array(speeds, dtype=np.float32)
+        for i, (segment_id, speed) in enumerate(segments.items()):
+            edge_id = edge_id_cache.get(segment_id)
+            if edge_id is None:
+                edge_id = edge_id_cache[segment_id] = get_edge_id(segment_id)
+            ids_array[i] = edge_id
+            speeds_array[i] = speed if speed is not None else get_speed(segment_id[0], segment_id[1])
 
         self.ru.update_speeds(ids_array, speeds_array)
         return
@@ -169,6 +185,10 @@ class MPIDistributedAlternatives(AlternativesProvider):
         nodes = flat_routes['nodes']
         t_times = flat_routes['travel_times']
 
+        # Remap every node HDF5 -> OSM in one vectorized gather instead of a
+        # Python dict lookup per node.
+        osm_nodes_all = self._osm_id_lut()[nodes]
+
         for v_idx in range(len(vehicles)):
             flat_v_idx = id_to_idx.get(v_idx)
 
@@ -180,10 +200,7 @@ class MPIDistributedAlternatives(AlternativesProvider):
                     n_start, n_end = n_offsets[r], n_offsets[r + 1]
 
                     travel_time = t_times[r]
-                    osm_nodes = [
-                        self.routing_map.hdf5_to_osm_id(node_id)
-                        for node_id in nodes[n_start:n_end]
-                    ]
+                    osm_nodes = osm_nodes_all[n_start:n_end].tolist()
 
                     vehicle_results.append((osm_nodes, travel_time))
 
