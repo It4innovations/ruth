@@ -141,9 +141,10 @@ class RouteSelectionRatio(RouteSelectionRatioInner):
 @serde(rename_all="kebabcase")
 @dataclass
 class AceArgs(AceArgsInner):
-    # kebab-case JSON keys: "threads", "mpi-advance". threads=None -> all cores.
+    # kebab-case JSON keys: "threads", "mpi-advance", "queue". threads=None -> all cores.
     threads: Optional[int] = None
     mpi_advance: bool = False
+    queue: str = "prioritized"
 
 
 @serde(rename_all="kebabcase")

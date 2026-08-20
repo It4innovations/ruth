@@ -7,7 +7,7 @@
 namespace ruthlib {
 
 void setup_map(std::string path);
-void setup_ace(int n_threads);
+void setup_ace(int n_threads, const std::string& queue = "prioritized");
 
 void do_alternatives(const int* od_data, size_t n_pairs, int max_routes, bool use_origin_speeds = false);
 void do_alternatives(std::vector<std::pair<int, int>> OD_matrix, int max_routes, bool use_origin_speeds = false);

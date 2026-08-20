@@ -45,7 +45,10 @@ PYBIND11_MODULE(ruthlib, m) {
 
 
     m.def("setup_map", &ruthlib::setup_map, "setup the map of the simulation");
-    m.def("setup_ace", &ruthlib::setup_ace, "setup the ace library (MPI is included in ace)");
+    m.def("setup_ace", &ruthlib::setup_ace,
+        py::arg("n_threads"), py::arg("queue") = "prioritized",
+        "setup the ace library (MPI is included in ace). queue selects the scheduler "
+        "workload queue: \"prioritized\" (default) or \"fifo\".");
     m.def("do_alternatives",
         [](py::array_t<int, py::array::c_style | py::array::forcecast> od, int max_routes,
            bool use_origin_speeds) {

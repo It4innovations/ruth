@@ -22,6 +22,15 @@
 
 #define MULTIPLIER 16
 
+// OD pairs per AlternativesWorkload job, as a multiple of the rank's worker-thread
+// count: work_size = num_workers() * ALT_PAIRS_PER_WORKER. The number of jobs then
+// falls out as ceil(n_pairs / work_size) — a fixed job SIZE, not a fixed job
+// count. 1 => one pair per worker per job (finest migration granularity). A job's
+// internal ace::parallelfor spawns non-migratable lambda jobs, so the job is the
+// only unit the work-stealer can move; smaller jobs balance better. Raise this to
+// coarsen jobs and cut the number of CollectAlternativesWorkload result messages.
+constexpr size_t ALT_PAIRS_PER_WORKER = 1;
+
 void log(const std::string &message) {
   // Variable commented out to avoid unused variable warning
   // int rank = ace::CommInterface::instance()->get_rank();
@@ -597,6 +606,13 @@ public:
     if (travel_times.size() > 0) {
       auto travel_times_workload = std::make_shared<CollectTravelTimesWorkload>(travel_times);
       ace::CommInterface::instance()->async_send(travel_times_workload, this->header.rank);
+      // MUST wait here. This is a no_redist collection reached via the reactive
+      // async_broadcast in get_travel_times(), NOT a collective — so there is no
+      // barrier()/drain_until_quiescent() downstream to fence this send. The
+      // caller's bc_wl->wait() only fences the broadcast itself; it does NOT drain
+      // the second-hop CollectTravelTimesWorkload this execute() spawns back to the
+      // master. Without this wait(), get_travel_times() reads State before the
+      // collection lands, and the aggregated map is partial.
       travel_times_workload->wait();
     }
   }
@@ -695,7 +711,6 @@ public:
 
       auto send_result = std::make_shared<CollectAlternativesWorkload>(vehicle_ids, routes_per_vehicle, travel_times_per_vehicle);
       ace::CommInterface::instance()->async_send(send_result, this->header.rank);
-      send_result->wait();
   }
 
   size_t size() const override {
@@ -753,10 +768,12 @@ namespace ruthlib{
     std::cout << "Graph loaded on all nodes" << std::endl;
   }
 
-  void setup_ace(int n_threads) {
+  void setup_ace(int n_threads, const std::string& queue) {
 
     auto comm = ace::CommInterface::init<ace::MPIComm>(nullptr, nullptr);
-    auto scheduler = ace::Scheduler::init<ace::Scheduler>(n_threads);
+    const ace::QueueKind queue_kind =
+        (queue == "fifo") ? ace::QueueKind::Fifo : ace::QueueKind::Prioritized;
+    auto scheduler = ace::Scheduler::init<ace::Scheduler>(n_threads, queue_kind);
 
     comm->register_workload<LoadMapWorkload>();
     comm->register_workload<AlternativesWorkload>();
@@ -769,6 +786,17 @@ namespace ruthlib{
 
     // Distributed vehicle-advance workloads (FreeVehicle/Queue/SyncFCDs).
     register_advance_workloads();
+
+    // Fence every rank here, after all register_workload<T>() calls, before any
+    // rank can send/broadcast. setup_ace() runs on ALL ranks in
+    // MPIDistributor.__enter__, so this barrier completes ruth-ace initialization
+    // in lockstep: workers finish registering before they enter run_worker_loop()
+    // and before the master (which may broadcast immediately — e.g. finish_simulation
+    // on an early setup() failure) sends anything. Without it a fast master could
+    // broadcast a workload whose type a slower worker hasn't registered yet
+    // ("received a workload with unregistered type id ..."). MPI_Bcast-free: this
+    // is the one-time registration barrier, not a per-step sync.
+    comm->commit_registration();
   }
 
   void do_travel_times(std::vector<std::vector<int>> routes) {
@@ -810,7 +838,10 @@ namespace ruthlib{
     int num_ranks = comm->get_size();
 
     size_t size_offset = 0;
-    size_t work_size = std::max(1ul, n_pairs / (num_ranks * MULTIPLIER));
+    // Fixed job SIZE: num_workers() * ALT_PAIRS_PER_WORKER OD pairs per job (sized
+    // on the master's scheduler; ranks are homogeneous). The dispatch loop below
+    // then emits ceil(n_pairs / work_size) migratable AlternativesWorkload jobs.
+    size_t work_size = std::max<size_t>(1, ace::Scheduler::instance()->num_workers() * ALT_PAIRS_PER_WORKER);
 
     do {
       std::vector<VehicleTask> work_list;

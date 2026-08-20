@@ -56,6 +56,8 @@ class AceArgs:
     threads: Optional[int] = None
     # Distribute the vehicle-advance phase over ACE instead of running it serially.
     mpi_advance: bool = False
+    # ACE scheduler queue policy: "prioritized" (no_redist/notify/lambda first) or "fifo".
+    queue: str = "prioritized"
 
 
 @dataclass
@@ -439,20 +441,27 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
         ace_args = AceArgs()
 
     if MPIDistributor.allow_mpi():
-        with MPIDistributor(threads=ace_args.threads) as distributor:
+        with MPIDistributor(threads=ace_args.threads, queue=ace_args.queue) as distributor:
             if distributor.is_master():
                 # The master drives the whole simulation; setup() runs the step
                 # loop, which issues the per-step barriers (do_alternatives,
                 # do_advance) that the workers pair with below.
-                simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio, ace_args)
-                # BSP shutdown handshake. finish_simulation() flips the running
-                # flag on every rank (broadcast); the single trailing barrier()
-                # then pairs each worker's pending run_worker_loop() barrier so
-                # their next flag check returns. Exactly ONE release barrier — it
-                # must match the count the workers still owe. Both ranks then reach
-                # finalize() via __exit__.
-                distributor.ru.finish_simulation()
-                distributor.ru.barrier()
+                try:
+                    simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio, ace_args)
+                finally:
+                    # BSP shutdown handshake — MUST run even if setup()/simulate()
+                    # raised (e.g. FileExistsError on leftover FCD parts, an
+                    # assertion mid-loop, or SIGUSR2's sys.exit). Otherwise the
+                    # master unwinds straight to __exit__/finalize() without ever
+                    # releasing the workers, which hang forever in
+                    # run_worker_loop() barriers the master will never pair.
+                    # finish_simulation() flips the running flag on every rank
+                    # (broadcast); the single trailing barrier() pairs each
+                    # worker's pending barrier so their next flag check returns and
+                    # all ranks reach finalize() collectively. The original
+                    # exception (if any) still propagates after this.
+                    distributor.ru.finish_simulation()
+                    distributor.ru.barrier()
             else:
                 # Workers spend the entire run in the barrier loop, pairing every
                 # barrier the master issues (this is what lets ACE's work-stealer
