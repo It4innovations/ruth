@@ -162,7 +162,8 @@ Configuration file with all available options:
     "plateau-default-route": false,
     "buffer-size": 10000,
     "max-records-per-file": 1000000000,
-    "overwrite-h5": false
+    "overwrite-h5": false,
+    "max-vehicles": null
   },
   "run": {
     "vehicles-path": "benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet"
@@ -202,6 +203,7 @@ Configuration file with all available options:
 | `buffer-size`              | Number of FCD records to buffer before flushing to disk       | 10000                    |
 | `max-records-per-file`     | Rotate HDF5 file after this many records                     | 1000000000               |
 | `overwrite-h5`             | Remove existing FCD HDF5 parts before starting               | false                    |
+| `max-vehicles`             | Maximum number of vehicles loaded from the input             | unlimited                |
 
 ### Command-line Arguments
 

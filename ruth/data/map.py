@@ -529,15 +529,17 @@ class Map:
             cl.info("Map loaded from memory object.")
             return self.network, False
         elif os.path.exists(self.file_path):
-            cl.info(f"Loading network for '{self.name}' from local map.")
+            cl.info(f"Loading network for '{self.file_path}' from local map.")
             return load_graphml(self.file_path), False
         else:
-            cl.info(f"Loading map for {self.name} via OSM API...")
+            cl.info(f"Loading map for {self.file_path} via OSM API...")
 
             osmnx.settings.overpass_settings = f"[out:json][timeout:{{timeout}}][date:'{self.download_date}']"
 
             north, west, south, east = self.bbox.get_coords()
-            network = graph_from_bbox(bbox=(west, south, east, north),
+            # osmnx 1.9.x (pinned in requirements.txt) expects bbox=(north, south, east, west);
+            # the (west, south, east, north) order is the osmnx 2.x convention
+            network = graph_from_bbox(bbox=(north, south, east, west),
                                       network_type="drive",
                                       retain_all=False,
                                       custom_filter=CUSTOM_DRIVE_FILTER)
