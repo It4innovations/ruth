@@ -1,39 +1,45 @@
 {
-  "ruth-simulator":
-  {
-    "departure-time" :"2024-10-3 00:00:00",
-    "round-frequency-s" : 5,
+  "ruth-simulator": {
+    "departure-time": "2024-10-3 00:00:00",
+    "round-frequency-s": 5,
     "k-alternatives": 1,
-    "map-update-freq-s" : 1,
-    "los-vehicles-tolerance-s" : 5,
-    "travel-time-limit-perc" : 0.1,
-    "out" : "simulation_record.pickle",
+    "map-update-freq-s": 1,
+    "los-vehicles-tolerance-s": 5,
+    "travel-time-limit-perc": 0.1,
+    "out": "simulation_record.pickle",
     "seed": 7,
-    "walltime-s" : 2000,
-    "saving-interval-s" : 100,
-    "speeds-path" : "",
+    "walltime-s": 2000,
+    "saving-interval-s": 100,
+    "speeds-path": "",
     "continue-from": "",
     "stuck-detection": 0,
     "plateau-default-route": true,
     "max_records_per_file": 10000000
   },
-  "run" :
-  {
+  "run": {
     "vehicles-path": "benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet"
   },
-  "alternatives" : {
+  "alternatives": {
     "dijkstra-fastest": 0.0,
     "dijkstra-shortest": 0.0,
     "plateau-fastest": 1.0
   },
-  "route-selection" : {
+  "route-selection": {
     "first": 1.0,
     "random": 0.0,
     "ptdr": 0.0
   },
-  "animation" : {
+  "animation": {
     "length": 10,
     "title": "",
     "gif": false
+  },
+  "console": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 8787,
+    "snapshot-every-steps": 1,
+    "top-segments": 20,
+    "max-vehicles-in-snapshot": 2000
   }
 }

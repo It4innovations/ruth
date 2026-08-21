@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RUTH Console</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/vendor/leaflet.css">
+<style>
+  :root { --bg:#1e2126; --panel:#282c34; --fg:#d7dae0; --dim:#9aa0aa; --accent:#4aa3ff; --warn:#ff9d4a; --err:#ff5c5c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:13px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); display:flex; height:100vh; }
+  #map { flex:1; background:#3a3f47; }
+  #panel { width:340px; overflow-y:auto; background:var(--panel); padding:12px 14px; border-left:1px solid #000; }
+  h1 { font-size:15px; margin:0 0 8px; } h2 { font-size:12px; text-transform:uppercase; color:var(--dim); margin:16px 0 6px; }
+  .stat { display:inline-block; margin:0 10px 4px 0; } .stat b { color:var(--accent); }
+  #paused { display:none; color:var(--warn); font-weight:bold; }
+  #offline { display:none; color:var(--warn); font-size:11px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  td,th { padding:2px 4px; text-align:left; border-bottom:1px solid #333; }
+  tr.seg { cursor:pointer; } tr.seg:hover { background:#333842; }
+  label { display:block; margin:6px 0 2px; color:var(--dim); font-size:11px; }
+  input,select { width:100%; padding:4px 6px; background:#1a1d21; color:var(--fg); border:1px solid #444; border-radius:3px; }
+  .row { display:flex; gap:6px; } .row > * { flex:1; }
+  button { margin:6px 4px 0 0; padding:5px 10px; background:#3a4150; color:var(--fg); border:1px solid #555; border-radius:3px; cursor:pointer; }
+  button:hover { background:#485064; } button.warn { background:#5a3535; }
+  #log { font-size:11px; max-height:140px; overflow-y:auto; }
+  #log .ok { color:#7ecb6f; } #log .error { color:var(--err); } #log .pending { color:var(--dim); }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <h1>RUTH Console <span id="paused">&#10074;&#10074; PAUSED</span></h1>
+  <div id="offline">tiles unreachable &mdash; offline mode</div>
+  <div>
+    <span class="stat">step <b id="s-step">&ndash;</b></span>
+    <span class="stat">active <b id="s-active">&ndash;</b></span>
+    <span class="stat">finished <b id="s-finished">&ndash;</b></span>
+    <span class="stat">step ms <b id="s-ms">&ndash;</b></span>
+  </div>
+
+  <h2>Top traffic segments</h2>
+  <table><thead><tr><th>#</th><th>segment</th><th>veh</th><th>km/h</th></tr></thead>
+  <tbody id="segments"></tbody></table>
+
+  <h2>Parameters</h2>
+  <div id="params"></div>
+  <button onclick="applyParams()">Apply</button>
+
+  <h2>Speed restriction</h2>
+  <div class="row"><div><label>node from</label><input id="r-from"></div>
+  <div><label>node to</label><input id="r-to"></div></div>
+  <div class="row"><div><label>speed km/h</label><input id="r-speed" value="0"></div>
+  <div><label>duration s</label><input id="r-dur" value="600"></div></div>
+  <label><input type="checkbox" id="r-close" checked style="width:auto"> close road (speed 0)</label>
+  <button onclick="addRestriction()">Add restriction</button>
+  <div id="restrictions"></div>
+
+  <h2>Control</h2>
+  <button onclick="post('/api/pause')">Pause</button>
+  <button onclick="post('/api/resume')">Resume</button>
+  <button onclick="post('/api/checkpoint')">Checkpoint</button>
+  <button class="warn" onclick="if(confirm('Stop the simulation?')) post('/api/stop')">Stop</button>
+
+  <h2>Command log</h2>
+  <div id="log"></div>
+</div>
+
+<script src="/static/vendor/leaflet.js"></script>
+<script>
+const PARAM_DEFS = ["k-alternatives","map-update-freq-s","los-vehicles-tolerance-s","travel-time-limit-perc","stuck-detection"];
+const map = L.map('map', { preferCanvas: true });
+map.setView([50.06, 14.44], 11);
+let tilesOk = false;
+const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
+tiles.on('load', () => { tilesOk = true; });
+tiles.on('tileerror', () => { if (!tilesOk) { map.removeLayer(tiles); document.getElementById('offline').style.display = 'block'; } });
+tiles.addTo(map);
+
+const canvas = L.canvas({ padding: 0.3 });
+let vehicleLayer = L.layerGroup().addTo(map);
+let segmentLayer = L.layerGroup().addTo(map);
+let fitted = false;
+
+const params = document.getElementById('params');
+PARAM_DEFS.forEach(p => {
+  params.insertAdjacentHTML('beforeend', `<label>${p}</label><input id="p-${p}">`);
+});
+let paramsTouched = false;
+params.addEventListener('input', () => paramsTouched = true);
+
+function segColor(t) { // 0..1 -> yellow..red
+  const g = Math.round(200 * (1 - t) + 30 * t);
+  return `rgb(255,${g},40)`;
+}
+
+async function post(path, body) {
+  try {
+    const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {}) });
+    if (!r.ok) alert((await r.json()).error || r.status);
+  } catch (e) { alert(e); }
+  refreshLog();
+}
+
+function applyParams() {
+  PARAM_DEFS.forEach(p => {
+    const el = document.getElementById('p-' + p);
+    if (el.value !== '' && el.dataset.current !== el.value) post('/api/param', { name: p, value: parseFloat(el.value) });
+  });
+  paramsTouched = false;
+}
+
+function addRestriction() {
+  const speed = document.getElementById('r-close').checked ? 0 : parseFloat(document.getElementById('r-speed').value);
+  post('/api/restriction', {
+    node_from: parseInt(document.getElementById('r-from').value),
+    node_to: parseInt(document.getElementById('r-to').value),
+    speed_kph: speed,
+    duration_s: parseFloat(document.getElementById('r-dur').value),
+  });
+}
+
+async function refreshLog() {
+  try {
+    const rows = await (await fetch('/api/commands')).json();
+    document.getElementById('log').innerHTML = rows.slice().reverse().map(r =>
+      `<div class="${r.status}">#${r.id} ${r.type} &mdash; ${r.status}${r.detail ? ': ' + r.detail : ''}</div>`).join('');
+  } catch (e) {}
+}
+
+async function tick() {
+  let s;
+  try { s = await (await fetch('/api/state')).json(); } catch (e) { return; }
+  if (s.waiting) return;
+
+  document.getElementById('s-step').textContent = s.step;
+  document.getElementById('s-active').textContent = s.n_active;
+  document.getElementById('s-finished').textContent = s.n_finished;
+  document.getElementById('s-ms').textContent = s.last_step_ms ?? '–';
+  document.getElementById('paused').style.display = s.paused ? 'inline' : 'none';
+
+  // top segments: table + map polylines scaled by load
+  const maxCount = s.top_segments.length ? s.top_segments[0].count : 1;
+  document.getElementById('segments').innerHTML = s.top_segments.map((seg, i) =>
+    `<tr class="seg" onclick="pickSegment('${seg.id}')"><td>${i+1}</td><td>${seg.id}</td><td>${seg.count}</td><td>${seg.current_speed_kph ?? ''}</td></tr>`).join('');
+  segmentLayer.clearLayers();
+  s.top_segments.forEach(seg => {
+    if (!seg.geometry) return;
+    const t = seg.count / maxCount;
+    L.polyline(seg.geometry, { color: segColor(t), weight: 2 + 8 * t, opacity: 0.85, renderer: canvas })
+      .bindTooltip(`${seg.id}: ${seg.count} vehicles, ${seg.current_speed_kph ?? '?'} km/h`)
+      .on('click', () => pickSegment(seg.id))
+      .addTo(segmentLayer);
+  });
+
+  // restrictions list
+  document.getElementById('restrictions').innerHTML = (s.restrictions || []).map(r =>
+    `<div>${r.node_from}&rarr;${r.node_to} @ ${r.speed_kph} km/h ${r.active ? '<b style="color:var(--warn)">active</b>' : 'scheduled'}</div>`).join('');
+
+  // vehicles as canvas dots
+  vehicleLayer.clearLayers();
+  (s.vehicles || []).forEach(v => {
+    L.circleMarker([v[0], v[1]], { radius: 2.5, color: '#4aa3ff', fillOpacity: 0.8, stroke: false, renderer: canvas })
+      .addTo(vehicleLayer);
+  });
+  if (!fitted && s.vehicles && s.vehicles.length) {
+    map.fitBounds(L.latLngBounds(s.vehicles.map(v => [v[0], v[1]])).pad(0.1));
+    fitted = true;
+  }
+
+  // parameter fields (don't clobber while the user is typing)
+  if (!paramsTouched) PARAM_DEFS.forEach(p => {
+    const el = document.getElementById('p-' + p);
+    el.value = s.settings[p]; el.dataset.current = String(s.settings[p]);
+  });
+}
+
+function pickSegment(id) {
+  const [u, v] = id.split('-');
+  document.getElementById('r-from').value = u;
+  document.getElementById('r-to').value = v;
+}
+
+setInterval(tick, 1000);
+setInterval(refreshLog, 2000);
+tick(); refreshLog();
+</script>
+</body>
+</html>

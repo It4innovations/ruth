@@ -30,7 +30,8 @@ def configure_logging():
 configure_logging()
 
 from ..tools.simulator import (run_inner, AlternativesRatio as AlternativesRatioInner, CommonArgs as CommonArgsInner,
-                               RouteSelectionRatio as RouteSelectionRatioInner, AceArgs as AceArgsInner)
+                               RouteSelectionRatio as RouteSelectionRatioInner, AceArgs as AceArgsInner,
+                               ConsoleArgs as ConsoleArgsInner)
 
 
 def serialize_optional_timedelta(value: Optional[timedelta]):
@@ -150,6 +151,19 @@ class AceArgs(AceArgsInner):
 
 @serde(rename_all="kebabcase")
 @dataclass
+class ConsoleArgs(ConsoleArgsInner):
+    # kebab-case JSON keys: "enabled", "host", "port", "snapshot-every-steps",
+    # "top-segments", "max-vehicles-in-snapshot".
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8787
+    snapshot_every_steps: int = 1
+    top_segments: int = 20
+    max_vehicles_in_snapshot: int = 2000
+
+
+@serde(rename_all="kebabcase")
+@dataclass
 class Args:
     common: CommonArgs = field(rename="ruth-simulator")
     run: RunArgs = field(rename="run")
@@ -157,6 +171,8 @@ class Args:
     route_selection_ratio: RouteSelectionRatio = field(rename="route-selection")
     # Optional section; None when "ace" is absent (run_inner falls back to defaults).
     ace: Optional[AceArgs] = field(rename="ace", default=None)
+    # Optional section; None when "console" is absent (console stays disabled).
+    console: Optional[ConsoleArgs] = field(rename="console", default=None)
 
 
 def fill_args(config_file: str, ctx: Optional[click.Context] = None, workdir: Optional[str] = None, debug: bool = False) -> tuple[Args, Path]:
@@ -190,6 +206,7 @@ def fill_args(config_file: str, ctx: Optional[click.Context] = None, workdir: Op
         ctx.obj['alternatives-ratio'] = args.alternatives_ratio
         ctx.obj['route-selection-ratio'] = args.route_selection_ratio
         ctx.obj['ace-args'] = args.ace
+        ctx.obj['console-args'] = args.console
         ctx.obj['path'] = p
 
     return args, p
@@ -217,9 +234,11 @@ def run(ctx):
     alternatives_ratio = ctx.obj["alternatives-ratio"]
     route_selection_ratio = ctx.obj["route-selection-ratio"]
     ace_args = ctx.obj["ace-args"]
+    console_args = ctx.obj["console-args"]
     p = ctx.obj["path"]
 
-    ctx.obj['simulation'] = run_inner(common_args, p, alternatives_ratio, route_selection_ratio, ace_args)
+    ctx.obj['simulation'] = run_inner(common_args, p, alternatives_ratio, route_selection_ratio, ace_args,
+                                      console_args)
 
 
 def main():

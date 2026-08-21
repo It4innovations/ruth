@@ -94,3 +94,14 @@ Output is a pandas dataframe saved in parquet file. This dataframe consists of:
 The generator also writes a manifest sidecar with shared metadata. For single-file output it is written next to the
 parquet file as `*.manifest.json`; for directory dataset output it is written as `manifest.json` inside the dataset
 directory. These duplicated per-row metadata columns are kept for compatibility with the current simulator loader.
+
+## ruth-console
+
+CLI attach tool for the live steering console (see the main README's Live console section). Talks to a running simulation's console HTTP server:
+
+```bash
+ruth-console --url http://127.0.0.1:8787 status --watch 2
+ruth-console set k-alternatives 3
+ruth-console restrict <node_from> <node_to> <speed_kph> --duration-s 600
+ruth-console pause | resume | checkpoint | stop | commands
+```

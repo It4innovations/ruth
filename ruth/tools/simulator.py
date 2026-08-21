@@ -62,6 +62,20 @@ class AceArgs:
 
 
 @dataclass
+class ConsoleArgs:
+    """Live monitoring/steering console settings (config.json "console" section)."""
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8787
+    # Publish a snapshot every N steps (1 = every step).
+    snapshot_every_steps: int = 1
+    # Number of most-loaded segments highlighted on the map.
+    top_segments: int = 20
+    # Vehicle dots are stride-sampled above this payload cap.
+    max_vehicles_in_snapshot: int = 2000
+
+
+@dataclass
 class AlternativesRatio:
     default: float
     dijkstra_fastest: float
@@ -446,9 +460,12 @@ def run(ctx,
 
 def run_inner(common_args: CommonArgs, vehicles_path: Path,
               alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio,
-              ace_args: Optional[AceArgs] = None) -> Optional[Simulation]:
+              ace_args: Optional[AceArgs] = None,
+              console_args: Optional[ConsoleArgs] = None) -> Optional[Simulation]:
     if ace_args is None:
         ace_args = AceArgs()
+    if console_args is None:
+        console_args = ConsoleArgs()
 
     if MPIDistributor.allow_mpi():
         with MPIDistributor(threads=ace_args.threads, queue=ace_args.queue) as distributor:
@@ -457,7 +474,8 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
                 # loop, which issues the per-step barriers (do_alternatives,
                 # do_advance) that the workers pair with below.
                 try:
-                    simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio, ace_args)
+                    simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio,
+                                      ace_args, console_args)
                 finally:
                     # BSP shutdown handshake — MUST run even if setup()/simulate()
                     # raised (e.g. FileExistsError on leftover FCD parts, an
@@ -483,15 +501,19 @@ def run_inner(common_args: CommonArgs, vehicles_path: Path,
     else:
         # no MPI available, run as a single process
         logging.warning("MPI not available, running in single-process mode.")
-        simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio, ace_args)
+        simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio,
+                          ace_args, console_args)
 
     return simulator.state if MPIDistributor.is_master() else None
 
 def setup(common_args: CommonArgs, vehicles_path: Path,
             alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio,
-            ace_args: Optional[AceArgs] = None) -> SingleNodeSimulator:
+            ace_args: Optional[AceArgs] = None,
+            console_args: Optional[ConsoleArgs] = None) -> SingleNodeSimulator:
     if ace_args is None:
         ace_args = AceArgs()
+    if console_args is None:
+        console_args = ConsoleArgs()
     out = common_args.out
     walltime = common_args.walltime
     saving_interval = common_args.saving_interval
@@ -506,6 +528,12 @@ def setup(common_args: CommonArgs, vehicles_path: Path,
 
     if saving_interval is not None:
         end_step_fns.append(store_simulation_at_interval(saving_interval, f"run{task_id}"))
+
+    if console_args.enabled and MPIDistributor.is_master():
+        # Lazy import: the console costs nothing when disabled.
+        from ruth.console import create_console
+        console = create_console(console_args)
+        end_step_fns.append(console.end_step)
 
     zmq_ctx = ZeroMqContext()
     route_selection_providers = create_route_selection_providers(route_selection_ratio, zeromq_ctx=zmq_ctx,
