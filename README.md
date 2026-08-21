@@ -205,6 +205,16 @@ Configuration file with all available options:
 | `overwrite-h5`             | Remove existing FCD HDF5 parts before starting               | false                    |
 | `max-vehicles`             | Maximum number of vehicles loaded from the input             | unlimited                |
 
+The optional `"console"` section enables the live monitoring/steering console (see [Live console](#live-console-monitoring--steering)):
+
+| Parameter                  | Description                                                  | Default                  |
+|----------------------------|--------------------------------------------------------------|--------------------------|
+| `enabled`                  | Start the console HTTP server                                | false                    |
+| `host` / `port`            | Bind address                                                 | 127.0.0.1:8787           |
+| `snapshot-every-steps`     | Publish a state snapshot every N steps                       | 1                        |
+| `top-segments`             | Number of most-loaded segments highlighted on the map        | 20                       |
+| `max-vehicles-in-snapshot` | Vehicle dots are stride-sampled above this payload cap       | 2000                     |
+
 ### Command-line Arguments
 
 Alternatively, you can use command-line arguments instead of a configuration file. 
@@ -272,6 +282,31 @@ You can specify temporary speed restrictions via CSV file using the `speeds-path
 node_from;node_to;speed;timestamp_from;timestamp_to
 8400868548;10703818;0;2026-08-03 00:10:00;2026-08-03 00:25:00
 ```
+
+## Live console (monitoring + steering)
+
+With `"console": {"enabled": true}` in the config, the master rank serves a live
+console at `http://127.0.0.1:8787`: a map (OpenStreetMap tiles when reachable,
+plain background offline) showing vehicle positions and the segments with the
+most traffic at the current step, plus computational steering — change
+`k-alternatives`, `map-update-freq-s`, `los-vehicles-tolerance-s`,
+`travel-time-limit-perc` and `stuck-detection` mid-run, inject temporary speed
+restrictions (speed 0 closes a road; clicking a highlighted segment pre-fills
+the form), pause/resume, save a checkpoint, or stop gracefully.
+
+On a cluster, forward the port: `ssh -L 8787:localhost:8787 <login-node>`.
+
+The same control channel is scriptable via the CLI attach tool:
+
+```bash
+ruth-console status --watch 2          # live text dashboard
+ruth-console set k-alternatives 3
+ruth-console restrict <node_from> <node_to> 0 --duration-s 600   # close a road
+ruth-console pause | resume | checkpoint | stop
+```
+
+The console is off by default and adds nothing to the simulation loop when
+disabled; when enabled, its cost appears in the logged `end_step` step timer.
 
 ## Animation
 To create animation of the simulation, `FFmpeg` needs to be installed. Using option `--gif` to generate 
