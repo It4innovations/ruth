@@ -51,6 +51,17 @@ class CommonArgs:
 
 
 @dataclass
+class AceArgs:
+    """ACE runtime settings (config.json "ace" section)."""
+    # Scheduler worker threads per rank. None / <= 0 -> use all cores.
+    threads: Optional[int] = None
+    # Distribute the vehicle-advance phase over ACE instead of running it serially.
+    mpi_advance: bool = False
+    # ACE scheduler queue policy: "prioritized" (no_redist/notify/lambda first) or "fifo".
+    queue: str = "prioritized"
+
+
+@dataclass
 class AlternativesRatio:
     default: float
     dijkstra_fastest: float
@@ -85,8 +96,11 @@ class RouteSelectionRatio:
 
 
 def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio: AlternativesRatio,
-                      route_selection_ratio: RouteSelectionRatio) \
+                      route_selection_ratio: RouteSelectionRatio,
+                      ace_args: Optional[AceArgs] = None) \
         -> SingleNodeSimulator:
+    if ace_args is None:
+        ace_args = AceArgs()
     departure_time = common_args.departure_time
     round_frequency = common_args.round_frequency
     k_alternatives = common_args.k_alternatives
@@ -118,7 +132,8 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                         async_fcd_writer=async_fcd_writer,
                         fcd_writer_queue_size=fcd_writer_queue_size,
                     stuck_detection=stuck_detection,
-                    plateau_default_route=plateau_default_route)
+                    plateau_default_route=plateau_default_route,
+                    mpi_advance=ace_args.mpi_advance)
 
     simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 
@@ -430,27 +445,59 @@ def run(ctx,
 
 
 def run_inner(common_args: CommonArgs, vehicles_path: Path,
-              alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio) -> Optional[Simulation]:
+              alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio,
+              ace_args: Optional[AceArgs] = None) -> Optional[Simulation]:
+    if ace_args is None:
+        ace_args = AceArgs()
 
     if MPIDistributor.allow_mpi():
-        with MPIDistributor() as distributor:
+        with MPIDistributor(threads=ace_args.threads, queue=ace_args.queue) as distributor:
             if distributor.is_master():
-                simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+                # The master drives the whole simulation; setup() runs the step
+                # loop, which issues the per-step barriers (do_alternatives,
+                # do_advance) that the workers pair with below.
+                try:
+                    simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio, ace_args)
+                finally:
+                    # BSP shutdown handshake — MUST run even if setup()/simulate()
+                    # raised (e.g. FileExistsError on leftover FCD parts, an
+                    # assertion mid-loop, or SIGUSR2's sys.exit). Otherwise the
+                    # master unwinds straight to __exit__/finalize() without ever
+                    # releasing the workers, which hang forever in
+                    # run_worker_loop() barriers the master will never pair.
+                    # finish_simulation() flips the running flag on every rank
+                    # (broadcast); the single trailing barrier() pairs each
+                    # worker's pending barrier so their next flag check returns and
+                    # all ranks reach finalize() collectively. The original
+                    # exception (if any) still propagates after this.
+                    distributor.ru.finish_simulation()
+                    distributor.ru.barrier()
+            else:
+                # Workers spend the entire run in the barrier loop, pairing every
+                # barrier the master issues (this is what lets ACE's work-stealer
+                # migrate load onto them); their scheduler threads execute the
+                # dispatched/stolen workloads and broadcast collectives. They do
+                # NOT fall through to finalize() here — __exit__ calls it once the
+                # loop returns at shutdown.
+                distributor.ru.run_worker_loop()
     else:
         # no MPI available, run as a single process
         logging.warning("MPI not available, running in single-process mode.")
-        simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+        simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio, ace_args)
 
     return simulator.state if MPIDistributor.is_master() else None
 
 def setup(common_args: CommonArgs, vehicles_path: Path,
-            alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio) -> SingleNodeSimulator:
+            alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio,
+            ace_args: Optional[AceArgs] = None) -> SingleNodeSimulator:
+    if ace_args is None:
+        ace_args = AceArgs()
     out = common_args.out
     walltime = common_args.walltime
     saving_interval = common_args.saving_interval
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
-    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio, ace_args)
     end_step_fns = []
     alternatives_providers = create_alternatives_providers(alternatives_ratio,
                                                            plateu_default_route=common_args.plateau_default_route)

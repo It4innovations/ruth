@@ -80,6 +80,9 @@ class SimSetting:
     fcd_writer_queue_size: int = 4
     stuck_detection: int = 0
     plateau_default_route: bool = False
+    # Distribute the vehicle-advance phase over ACE (barrier-based BSP) instead of
+    # running it serially on the master. Sourced from the config.json "ace" section.
+    mpi_advance: bool = False
     fcd_history_base_name: str = "fcd_history"
 
     def __post_init__(self, seed: Optional[int]):

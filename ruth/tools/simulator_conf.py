@@ -30,7 +30,7 @@ def configure_logging():
 configure_logging()
 
 from ..tools.simulator import (run_inner, AlternativesRatio as AlternativesRatioInner, CommonArgs as CommonArgsInner,
-                               RouteSelectionRatio as RouteSelectionRatioInner)
+                               RouteSelectionRatio as RouteSelectionRatioInner, AceArgs as AceArgsInner)
 
 
 def serialize_optional_timedelta(value: Optional[timedelta]):
@@ -141,11 +141,22 @@ class RouteSelectionRatio(RouteSelectionRatioInner):
 
 @serde(rename_all="kebabcase")
 @dataclass
+class AceArgs(AceArgsInner):
+    # kebab-case JSON keys: "threads", "mpi-advance", "queue". threads=None -> all cores.
+    threads: Optional[int] = None
+    mpi_advance: bool = False
+    queue: str = "prioritized"
+
+
+@serde(rename_all="kebabcase")
+@dataclass
 class Args:
     common: CommonArgs = field(rename="ruth-simulator")
     run: RunArgs = field(rename="run")
     alternatives_ratio: AlternativesRatio = field(rename="alternatives")
     route_selection_ratio: RouteSelectionRatio = field(rename="route-selection")
+    # Optional section; None when "ace" is absent (run_inner falls back to defaults).
+    ace: Optional[AceArgs] = field(rename="ace", default=None)
 
 
 def fill_args(config_file: str, ctx: Optional[click.Context] = None, workdir: Optional[str] = None, debug: bool = False) -> tuple[Args, Path]:
@@ -178,6 +189,7 @@ def fill_args(config_file: str, ctx: Optional[click.Context] = None, workdir: Op
         ctx.obj['run-args'] = args.run
         ctx.obj['alternatives-ratio'] = args.alternatives_ratio
         ctx.obj['route-selection-ratio'] = args.route_selection_ratio
+        ctx.obj['ace-args'] = args.ace
         ctx.obj['path'] = p
 
     return args, p
@@ -204,9 +216,10 @@ def run(ctx):
     run_args = ctx.obj["run-args"]
     alternatives_ratio = ctx.obj["alternatives-ratio"]
     route_selection_ratio = ctx.obj["route-selection-ratio"]
+    ace_args = ctx.obj["ace-args"]
     p = ctx.obj["path"]
 
-    ctx.obj['simulation'] = run_inner(common_args, p, alternatives_ratio, route_selection_ratio)
+    ctx.obj['simulation'] = run_inner(common_args, p, alternatives_ratio, route_selection_ratio, ace_args)
 
 
 def main():
