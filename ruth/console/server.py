@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from urllib.parse import urlparse, parse_qs
 
-from .commands import validate_param, validate_restriction
+from .commands import validate_param, validate_restriction, validate_restriction_delete
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +76,19 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self._send(200, self.console.snapshot_bytes)
         elif path == "/api/commands":
             self._send_json(200, self.console.command_results())
+        elif path == "/api/nearest-segment":
+            q = parse_qs(parsed.query)
+            try:
+                lat = float(q["lat"][0])
+                lon = float(q["lon"][0])
+            except (KeyError, ValueError):
+                self._send_json(400, {"error": "lat and lon query params required"})
+                return
+            seg = self.console.nearest_segment(lat, lon)
+            if seg is None:
+                self._send_json(503, {"error": "edge index not ready yet"})
+            else:
+                self._send_json(200, seg)
         elif path == "/api/geometry":
             ids = parse_qs(parsed.query).get("ids", [""])[0].split(",")
             self._send_json(200, self.console.geometry_for_ids([i for i in ids if i]))
@@ -98,6 +111,9 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             elif self.path == "/api/restriction":
                 payload = validate_restriction(body)
                 cmd_id = self.console.submit("restriction", payload)
+            elif self.path == "/api/restriction-delete":
+                payload = validate_restriction_delete(body)
+                cmd_id = self.console.submit("remove-restriction", payload)
             elif self.path in ("/api/pause", "/api/resume", "/api/checkpoint", "/api/stop"):
                 cmd_id = self.console.submit(self.path.rsplit("/", 1)[1])
             else:
