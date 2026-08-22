@@ -286,22 +286,35 @@ node_from;node_to;speed;timestamp_from;timestamp_to
 ## Live console (monitoring + steering)
 
 With `"console": {"enabled": true}` in the config, the master rank serves a live
-console at `http://127.0.0.1:8787`: a map (OpenStreetMap tiles when reachable,
-plain background offline) showing vehicle positions and the segments with the
-most traffic at the current step, plus computational steering — change
-`k-alternatives`, `map-update-freq-s`, `los-vehicles-tolerance-s`,
-`travel-time-limit-perc` and `stuck-detection` mid-run, inject temporary speed
-restrictions (speed 0 closes a road; clicking a highlighted segment pre-fills
-the form), pause/resume, save a checkpoint, or stop gracefully.
+console at `http://127.0.0.1:8787`:
+
+- **Map** (OpenStreetMap tiles when reachable, plain background offline) with
+  vehicle positions colored by destination and the segments carrying the most
+  traffic at the current step highlighted by load. Click any road on the map to
+  select it for a restriction.
+- **Simulation metrics** as live line graphs (active/finished vehicles,
+  rerouting per step, mean speed, congestion index, occupied segments,
+  simulation speed-up, FCD records per step) — every metric has a `?` opening
+  a plain-language explanation.
+- **Performance**: step wall-time chart plus per-phase timing graphs
+  (`alternatives`, `advance_vehicle`, `selected_routes`, ...), smoothed with a
+  rolling mean over the raw series.
+- **Steering**: change `k-alternatives`, `map-update-freq-s`,
+  `los-vehicles-tolerance-s`, `travel-time-limit-perc` and `stuck-detection`
+  mid-run; add temporary speed restrictions (speed 0 closes a road; selecting a
+  road pre-fills the form) and remove them again with the ✕ button (active
+  restrictions restore the original speed on the next step); pause/resume,
+  save a checkpoint, or stop gracefully.
 
 On a cluster, forward the port: `ssh -L 8787:localhost:8787 <login-node>`.
 
 The same control channel is scriptable via the CLI attach tool:
 
 ```bash
-ruth-console status --watch 2          # live text dashboard
+ruth-console status --watch 2          # live text dashboard incl. metrics + top segments
 ruth-console set k-alternatives 3
 ruth-console restrict <node_from> <node_to> 0 --duration-s 600   # close a road
+ruth-console unrestrict <node_from> <node_to>                    # lift it again
 ruth-console pause | resume | checkpoint | stop
 ```
 

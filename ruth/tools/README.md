@@ -103,5 +103,6 @@ CLI attach tool for the live steering console (see the main README's Live consol
 ruth-console --url http://127.0.0.1:8787 status --watch 2
 ruth-console set k-alternatives 3
 ruth-console restrict <node_from> <node_to> <speed_kph> --duration-s 600
+ruth-console unrestrict <node_from> <node_to>
 ruth-console pause | resume | checkpoint | stop | commands
 ```
