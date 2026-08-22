@@ -58,8 +58,13 @@ def make_fake_sim(n_vehicles=6, per_segment=None):
         departure_time=datetime(2024, 10, 3),
     )
     stored = []
+    steps_info = [SimpleNamespace(step=1, duration=timedelta(milliseconds=84),
+                                  parts={"alternatives": 50.0, "advance_vehicle": 20.0,
+                                         "fcd_records_seen": 10.0, "collect": 0.001},
+                                  need_new_route=5)]
     return SimpleNamespace(
         vehicles=vehicles,
+        steps_info=steps_info,
         setting=setting,
         routing_map=routing_map,
         compute_current_offset=lambda: timedelta(seconds=60),
@@ -101,6 +106,71 @@ def test_snapshot_counts():
     assert snap["step"] == 7 and snap["paused"] is True
     assert snap["n_active"] == 7 and snap["n_finished"] == 1
     assert snap["last_step_ms"] == 12.5
+
+
+def test_perf_metrics():
+    sim = make_fake_sim()
+    builder = SnapshotBuilder(top_n=5, max_vehicles=100)
+    snap = json.loads(builder.build(sim, 1, False, [], None))
+    perf = snap["perf"]
+    assert perf["duration_ms"] == 84.0 and perf["need_new_route"] == 5
+    assert list(perf["parts_ms"])[0] == "alternatives"  # sorted desc
+    assert "fcd_records_seen" not in perf["parts_ms"]   # counters filtered out
+    assert "collect" not in perf["parts_ms"]            # sub-threshold filtered
+    row = perf["history"][0]
+    # [step, ms, rerouting, active, mean_speed, congestion, occupied, records]
+    assert row[:4] == [1, 84.0, 5, 7] and row[4] == 30.0 and row[6] == 3 and row[7] == 10
+    ph = perf["phases_history"]
+    assert ph["alternatives"] == [50.0] and ph["advance_vehicle"] == [20.0]
+    # same step re-published (e.g. while paused) must not duplicate history
+    snap2 = json.loads(builder.build(sim, 1, True, [], None))
+    assert len(snap2["perf"]["history"]) == 1
+    assert len(snap2["perf"]["phases_history"]["alternatives"]) == 1
+    # sim-domain metrics present and sane
+    m = snap["metrics"]
+    assert m["occupied_segments"] == 3 and m["rerouting"] == 5
+    assert m["mean_speed_kph"] == 30.0 and 0 <= m["congestion_index"] <= 1
+    assert m["records_seen"] == 10
+
+
+def test_nearest_segment_lookup():
+    sim = make_fake_sim()
+    builder = SnapshotBuilder(top_n=5, max_vehicles=100)
+    builder.build(sim, 1, False, [], None)  # builds the edge index
+    seg = builder.nearest_segment(50.0651, 14.4149)
+    assert seg["node_from"] == 2 and seg["node_to"] == 3
+    assert seg["geometry"] and len(seg["geometry"]) >= 2
+
+
+def test_remove_restriction_scheduled_and_active():
+    sim = make_fake_sim()
+    console = SimulationConsole(make_args())
+    console.submit("restriction", {"node_from": 1, "node_to": 2, "speed_kph": 0,
+                                   "duration_s": 600, "start_offset_s": 0})
+    console.submit("restriction", {"node_from": 2, "node_to": 3, "speed_kph": 0,
+                                   "duration_s": 600, "start_offset_s": 0})
+    console.end_step(sim)
+    assert len(sim.routing_map.temporary_speeds) == 2
+
+    # scheduled (not yet active): removed from the list outright
+    console.submit("remove-restriction", {"node_from": 1, "node_to": 2})
+    console.end_step(sim)
+    remaining = sim.routing_map.temporary_speeds
+    assert len(remaining) == 1 and remaining[0].node_from == 2
+
+    # active: window end backdated so the per-step expiry restores the speed
+    remaining[0].active = True
+    console.submit("remove-restriction", {"node_from": 2, "node_to": 3})
+    console.end_step(sim)
+    now = sim.setting.departure_time + sim.compute_current_offset()
+    assert len(sim.routing_map.temporary_speeds) == 1
+    assert sim.routing_map.temporary_speeds[0].timestamp_to < now
+
+    # deleting a non-existent restriction reports an error, sim survives
+    console.submit("remove-restriction", {"node_from": 9, "node_to": 9})
+    console.end_step(sim)
+    last = console.command_results()[-1]
+    assert last["status"] == "error"
 
 
 # -- command validation ---------------------------------------------------

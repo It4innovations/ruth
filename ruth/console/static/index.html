@@ -10,7 +10,7 @@
   * { box-sizing:border-box; }
   body { margin:0; font:13px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); display:flex; height:100vh; }
   #map { flex:1; background:#3a3f47; }
-  #panel { width:340px; overflow-y:auto; background:var(--panel); padding:12px 14px; border-left:1px solid #000; }
+  #panel { width:clamp(640px, 46vw, 1000px); overflow-y:auto; background:var(--panel); padding:12px 14px; border-left:1px solid #000; }
   h1 { font-size:15px; margin:0 0 8px; } h2 { font-size:12px; text-transform:uppercase; color:var(--dim); margin:16px 0 6px; }
   .stat { display:inline-block; margin:0 10px 4px 0; } .stat b { color:var(--accent); }
   #paused { display:none; color:var(--warn); font-weight:bold; }
@@ -25,6 +25,23 @@
   button:hover { background:#485064; } button.warn { background:#5a3535; }
   #log { font-size:11px; max-height:140px; overflow-y:auto; }
   #log .ok { color:#7ecb6f; } #log .error { color:var(--err); } #log .pending { color:var(--dim); }
+  #tabs { display:flex; gap:2px; margin:10px 0 8px; border-bottom:1px solid #444; }
+  #tabs button { margin:0; border:none; border-radius:4px 4px 0 0; padding:6px 12px; background:transparent; color:var(--dim); }
+  #tabs button.active { background:#3a4150; color:var(--fg); }
+  .tab { display:none; } .tab.active { display:block; }
+  #metrics { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:8px; margin:8px 0; }
+  .metric { background:#1a1d21; border:1px solid #333; border-radius:5px; padding:8px 10px; }
+  .metric .mv { font-size:18px; color:var(--accent); font-weight:600; }
+  .metric .ml { font-size:11px; color:var(--dim); display:flex; justify-content:space-between; }
+  .metric canvas { width:100%; height:36px; display:block; margin-top:4px; }
+  .info { cursor:pointer; color:var(--dim); border:1px solid #444; border-radius:50%;
+          width:14px; height:14px; display:inline-flex; align-items:center; justify-content:center; font-size:10px; }
+  .info:hover { color:var(--accent); border-color:var(--accent); }
+  #modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:2000; }
+  #modal { position:fixed; top:20%; left:50%; transform:translateX(-50%); width:min(480px, 90vw);
+           background:var(--panel); border:1px solid #555; border-radius:8px; padding:16px 20px; z-index:2001; }
+  #modal h3 { margin:0 0 8px; font-size:14px; color:var(--accent); }
+  #modal p { margin:0; font-size:12px; line-height:1.5; }
 </style>
 </head>
 <body>
@@ -39,31 +56,57 @@
     <span class="stat">step ms <b id="s-ms">&ndash;</b></span>
   </div>
 
-  <h2>Top traffic segments</h2>
-  <table><thead><tr><th>#</th><th>segment</th><th>veh</th><th>km/h</th></tr></thead>
-  <tbody id="segments"></tbody></table>
+  <div>
+    <button onclick="post('/api/pause')">Pause</button>
+    <button onclick="post('/api/resume')">Resume</button>
+    <button onclick="post('/api/checkpoint')">Checkpoint</button>
+    <button class="warn" onclick="if(confirm('Stop the simulation?')) post('/api/stop')">Stop</button>
+  </div>
 
-  <h2>Parameters</h2>
-  <div id="params"></div>
-  <button onclick="applyParams()">Apply</button>
+  <div id="tabs">
+    <button data-tab="traffic" class="active" onclick="showTab('traffic')">Traffic</button>
+    <button data-tab="steer" onclick="showTab('steer')">Steering</button>
+    <button data-tab="logt" onclick="showTab('logt')">Log</button>
+  </div>
 
-  <h2>Speed restriction</h2>
-  <div class="row"><div><label>node from</label><input id="r-from"></div>
-  <div><label>node to</label><input id="r-to"></div></div>
-  <div class="row"><div><label>speed km/h</label><input id="r-speed" value="0"></div>
-  <div><label>duration s</label><input id="r-dur" value="600"></div></div>
-  <label><input type="checkbox" id="r-close" checked style="width:auto"> close road (speed 0)</label>
-  <button onclick="addRestriction()">Add restriction</button>
-  <div id="restrictions"></div>
+  <div id="tab-traffic" class="tab active">
+    <h2>Simulation metrics</h2>
+    <div id="metrics"></div>
+    <h2>Step wall time <span class="info" onclick="showInfo('step_time')">?</span></h2>
+    <div style="font-size:11px;color:var(--dim)">ms per simulation step, last 120 steps &rarr;</div>
+    <canvas id="perf-chart" width="412" height="80" style="width:100%;background:#1a1d21;border:1px solid #333;border-radius:3px"></canvas>
+    <div id="perf-summary" style="font-size:11px;color:var(--dim);margin:2px 0 4px"></div>
+    <div id="perf-parts" style="font-size:11px;display:grid;grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));gap:8px"></div>
 
-  <h2>Control</h2>
-  <button onclick="post('/api/pause')">Pause</button>
-  <button onclick="post('/api/resume')">Resume</button>
-  <button onclick="post('/api/checkpoint')">Checkpoint</button>
-  <button class="warn" onclick="if(confirm('Stop the simulation?')) post('/api/stop')">Stop</button>
+    <h2>Top traffic segments <span class="info" onclick="showInfo('top_segments')">?</span></h2>
+    <table><thead><tr><th>#</th><th>segment</th><th>veh</th><th>km/h</th></tr></thead>
+    <tbody id="segments"></tbody></table>
+  </div>
 
-  <h2>Command log</h2>
-  <div id="log"></div>
+  <div id="tab-steer" class="tab">
+    <h2>Parameters</h2>
+    <div id="params"></div>
+    <button onclick="applyParams()">Apply</button>
+
+    <h2>Speed restriction</h2>
+    <div style="font-size:11px;color:var(--dim)">click any road on the map to select it</div>
+    <div class="row"><div><label>node from</label><input id="r-from"></div>
+    <div><label>node to</label><input id="r-to"></div></div>
+    <div class="row"><div><label>speed km/h</label><input id="r-speed" value="0"></div>
+    <div><label>duration s</label><input id="r-dur" value="600"></div></div>
+    <label><input type="checkbox" id="r-close" checked style="width:auto"> close road (speed 0)</label>
+    <button onclick="addRestriction()">Add restriction</button>
+    <div id="restrictions"></div>
+  </div>
+
+  <div id="tab-logt" class="tab">
+    <h2>Command log</h2>
+    <div id="log" style="max-height:400px"></div>
+  </div>
+</div>
+
+<div id="modal-bg" onclick="this.style.display='none'">
+  <div id="modal" onclick="event.stopPropagation()"><h3 id="modal-title"></h3><p id="modal-text"></p></div>
 </div>
 
 <script src="/static/vendor/leaflet.js"></script>
@@ -81,7 +124,22 @@ tiles.addTo(map);
 const canvas = L.canvas({ padding: 0.3 });
 let vehicleLayer = L.layerGroup().addTo(map);
 let segmentLayer = L.layerGroup().addTo(map);
+let selectLayer = L.layerGroup().addTo(map);
 let fitted = false;
+
+// Click anywhere on the map to select the nearest road segment: it gets
+// highlighted and the restriction form is pre-filled (Steering tab).
+map.on('click', async (e) => {
+  try {
+    const r = await fetch(`/api/nearest-segment?lat=${e.latlng.lat}&lon=${e.latlng.lng}`);
+    if (!r.ok) return;
+    const seg = await r.json();
+    pickSegment(seg.id);
+    selectLayer.clearLayers();
+    L.polyline(seg.geometry, { color: '#4aa3ff', weight: 6, opacity: 0.9, dashArray: '8 6' })
+      .bindTooltip(`selected: ${seg.id}`).addTo(selectLayer);
+  } catch (err) {}
+});
 
 const params = document.getElementById('params');
 PARAM_DEFS.forEach(p => {
@@ -89,6 +147,182 @@ PARAM_DEFS.forEach(p => {
 });
 let paramsTouched = false;
 params.addEventListener('input', () => paramsTouched = true);
+
+function destColor(dest) { // deterministic hash of dest node -> hue
+  let x = (dest >>> 0) || 0;
+  x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x) * 0x45d9f3b; x = (x >> 16) ^ x;
+  return `hsl(${(x >>> 0) % 360}, 75%, 60%)`;
+}
+
+function renderPerf(perf) {
+  const cv = document.getElementById('perf-chart');
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!perf) { document.getElementById('perf-summary').textContent = 'no step data yet'; return; }
+
+  const hist = perf.history || [];
+  if (hist.length > 1) {
+    const durs = hist.map(r => r[1]);
+    const maxD = Math.max(...durs) || 1;
+    ctx.strokeStyle = '#4aa3ff'; ctx.lineWidth = 1.5; ctx.beginPath();
+    hist.forEach((r, i) => {
+      const x = (i / (hist.length - 1)) * (cv.width - 4) + 2;
+      const y = cv.height - 3 - (r[1] / maxD) * (cv.height - 14);
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.stroke();
+    ctx.fillStyle = '#9aa0aa'; ctx.font = '9px system-ui';
+    ctx.fillText(`${maxD.toFixed(0)} ms max`, 4, 10);
+  }
+  const avg = hist.length ? hist.reduce((a, r) => a + r[1], 0) / hist.length : 0;
+  document.getElementById('perf-summary').textContent =
+    `step ${perf.duration_ms} ms · avg(${hist.length}) ${avg.toFixed(1)} ms · rerouting ${perf.need_new_route}`;
+
+  // per-phase line graphs: top 6 ranked by MEAN over the whole window, so the
+  // card set and order stay stable (single steps can't reshuffle them).
+  const ph = perf.phases_history || {};
+  const ranked = Object.entries(ph)
+    .map(([k, vs]) => {
+      const nn = vs.filter(v => v != null);
+      return [k, nn.length ? nn.reduce((a, b) => a + b, 0) / nn.length : 0];
+    })
+    .sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const box = document.getElementById('perf-parts');
+  const wanted = ranked.map(([k]) => k).sort().join(',');
+  if (box.dataset.keys !== wanted) {
+    box.innerHTML = ranked.map(([k]) => `
+      <div class="metric">
+        <div class="mv" id="pv-${k}">–</div>
+        <div class="ml"><span>${k}</span><span style="font-size:10px" id="pa-${k}"></span></div>
+        <canvas id="pc-${k}"></canvas>
+      </div>`).join('');
+    box.dataset.keys = wanted;
+  }
+  ranked.forEach(([k, mean]) => {
+    const vs = ph[k] || [];
+    const sm = rollingMean(vs, 5);
+    const el = document.getElementById('pv-' + k);
+    if (el) el.textContent = (sm[sm.length - 1] ?? 0).toFixed(1) + ' ms';
+    const avg = document.getElementById('pa-' + k);
+    if (avg) avg.textContent = 'avg ' + mean.toFixed(1);
+    const cv = document.getElementById('pc-' + k);
+    if (cv) sparkline(cv, vs, '#ff9d4a', { zero: true, smooth: 5 });
+  });
+}
+
+const METRIC_DEFS = {
+  n_active:       { label: 'active vehicles',   fmt: v => v,
+    help: 'Vehicles currently driving on the network in this step. Vehicles leave this count when they reach their destination (finished) or get stuck.' },
+  n_finished:     { label: 'finished vehicles', fmt: v => v,
+    help: 'Vehicles that have completed their route. finished + active = total vehicles loaded from the input OD matrix.' },
+  rerouting:      { label: 'rerouting now',     fmt: v => v,
+    help: 'Vehicles whose alternative routes were recomputed in this step (their route-recalculation frequency elapsed). These trigger the routing algorithm (Dijkstra/Plateau) and are the main per-step cost driver.' },
+  mean_speed_kph: { label: 'mean speed km/h',   fmt: v => v,
+    help: 'Average current speed over the road segments that vehicles occupy right now, weighted by the number of vehicles on each segment. Falling mean speed indicates growing congestion.' },
+  congestion_index: { label: 'congestion index', fmt: v => v,
+    help: '0 = all occupied segments flow at their maximum allowed speed; 1 = fully jammed. Computed as 1 minus the vehicle-weighted average of current/max speed over occupied segments.' },
+  occupied_segments: { label: 'occupied segments', fmt: v => v,
+    help: 'Number of distinct road segments that have at least one vehicle on them in this step. A proxy for how spread out the traffic is.' },
+  sim_speedup:    { label: 'sim speed ×',       fmt: v => v,
+    help: 'How much faster than real time the simulation runs: simulated seconds per wall-clock second (round-frequency / step duration). 60× means one minute of traffic is simulated every second.' },
+  records_seen:   { label: 'FCD records/step',  fmt: v => v,
+    help: 'Floating Car Data records generated this step (vehicle position/speed samples). These are buffered and written to the fcd_history HDF5 output files.' },
+  top_segments:   { label: '', fmt: v => v,
+    help: 'The road segments carrying the most vehicles at the current step, counted exactly over all active vehicles. On the map they are drawn thicker and redder the more loaded they are. Click a row to pre-fill the restriction form.' },
+  step_time:      { label: '', fmt: v => v,
+    help: 'Wall-clock duration of each simulation step (the blue line, last 120 steps; the scale label shows the maximum in the window). Below it, the same step broken into phases: alternatives = route computation, selected_routes = route choice, advance_vehicle = movement, update_map_speeds = map/speed propagation, end_step = console + save callbacks.' },
+};
+
+function showInfo(key) {
+  const d = METRIC_DEFS[key];
+  if (!d) return;
+  document.getElementById('modal-title').textContent = d.label || key.replace(/_/g, ' ');
+  document.getElementById('modal-text').textContent = d.help;
+  document.getElementById('modal-bg').style.display = 'block';
+}
+
+// history row layout: [step, ms, rerouting, active, mean_speed, congestion, occupied, records]
+const SERIES = { n_active: 3, rerouting: 2, mean_speed_kph: 4, congestion_index: 5,
+                 occupied_segments: 6, records_seen: 7 };
+
+function rollingMean(values, k) {
+  const out = [];
+  let sum = 0, cnt = 0;
+  const q = [];
+  for (const v of values) {
+    q.push(v);
+    if (v != null) { sum += v; cnt++; }
+    if (q.length > k) { const d = q.shift(); if (d != null) { sum -= d; cnt--; } }
+    out.push(cnt ? sum / cnt : null);
+  }
+  return out;
+}
+
+function sparkline(cv, values, color, opts) {
+  opts = opts || {};
+  const ctx = cv.getContext('2d');
+  const W = cv.width = cv.clientWidth * (window.devicePixelRatio || 1);
+  const H = cv.height = 36 * (window.devicePixelRatio || 1);
+  ctx.clearRect(0, 0, W, H);
+  const pts = values.filter(v => v !== null && v !== undefined);
+  if (pts.length < 2) return;
+  const min = opts.zero ? 0 : Math.min(...pts);
+  const max = Math.max(...pts), span = (max - min) || 1;
+  const n = values.length;
+  const draw = (series, width, alpha) => {
+    ctx.strokeStyle = color; ctx.globalAlpha = alpha;
+    ctx.lineWidth = width * (window.devicePixelRatio || 1);
+    ctx.beginPath();
+    let started = false;
+    series.forEach((v, i) => {
+      if (v === null || v === undefined) return;
+      const x = (i / (n - 1)) * (W - 4) + 2;
+      const y = H - 3 - ((v - min) / span) * (H - 8);
+      started ? ctx.lineTo(x, y) : ctx.moveTo(x, y); started = true;
+    });
+    ctx.stroke();
+  };
+  if (opts.smooth) {
+    draw(values, 1, 0.25);                       // raw, faint
+    draw(rollingMean(values, opts.smooth), 1.6, 1); // smoothed, bold
+  } else {
+    draw(values, 1.5, 1);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function renderMetrics(s) {
+  const vals = {
+    n_active: s.n_active, n_finished: s.n_finished,
+    rerouting: s.metrics?.rerouting, mean_speed_kph: s.metrics?.mean_speed_kph,
+    congestion_index: s.metrics?.congestion_index, occupied_segments: s.metrics?.occupied_segments,
+    sim_speedup: s.metrics?.sim_speedup, records_seen: s.metrics?.records_seen,
+  };
+  const box = document.getElementById('metrics');
+  const hist = s.perf?.history || [];
+  if (!box.dataset.built) {
+    box.innerHTML = Object.keys(vals).map(k => `
+      <div class="metric">
+        <div class="mv" id="mv-${k}">–</div>
+        <div class="ml"><span>${METRIC_DEFS[k].label}</span><span class="info" onclick="showInfo('${k}')">?</span></div>
+        ${SERIES[k] !== undefined ? `<canvas id="mc-${k}"></canvas>` : ''}
+      </div>`).join('');
+    box.dataset.built = '1';
+  }
+  Object.entries(vals).forEach(([k, v]) => {
+    document.getElementById('mv-' + k).textContent = v ?? '–';
+    if (SERIES[k] !== undefined) {
+      const zero = !(k === 'mean_speed_kph' || k === 'congestion_index');
+      sparkline(document.getElementById('mc-' + k), hist.map(r => r[SERIES[k]]), '#4aa3ff',
+                { zero, smooth: 5 });
+    }
+  });
+}
+
+function showTab(name) {
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-' + name));
+}
 
 function segColor(t) { // 0..1 -> yellow..red
   const g = Math.round(200 * (1 - t) + 30 * t);
@@ -139,6 +373,8 @@ async function tick() {
   document.getElementById('s-finished').textContent = s.n_finished;
   document.getElementById('s-ms').textContent = s.last_step_ms ?? '–';
   document.getElementById('paused').style.display = s.paused ? 'inline' : 'none';
+  renderPerf(s.perf);
+  renderMetrics(s);
 
   // top segments: table + map polylines scaled by load
   const maxCount = s.top_segments.length ? s.top_segments[0].count : 1;
@@ -156,12 +392,16 @@ async function tick() {
 
   // restrictions list
   document.getElementById('restrictions').innerHTML = (s.restrictions || []).map(r =>
-    `<div>${r.node_from}&rarr;${r.node_to} @ ${r.speed_kph} km/h ${r.active ? '<b style="color:var(--warn)">active</b>' : 'scheduled'}</div>`).join('');
+    `<div style="display:flex;align-items:center;gap:6px;margin-top:3px">
+       <span style="flex:1">${r.node_from}&rarr;${r.node_to} @ ${r.speed_kph} km/h ${r.active ? '<b style="color:var(--warn)">active</b>' : 'scheduled'}</span>
+       <button style="margin:0;padding:1px 8px" class="warn" title="remove restriction"
+               onclick="post('/api/restriction-delete', {node_from:${r.node_from}, node_to:${r.node_to}})">&#10005;</button>
+     </div>`).join('');
 
-  // vehicles as canvas dots
+  // vehicles as canvas dots, colored by destination (same dest = same hue)
   vehicleLayer.clearLayers();
   (s.vehicles || []).forEach(v => {
-    L.circleMarker([v[0], v[1]], { radius: 2.5, color: '#4aa3ff', fillOpacity: 0.8, stroke: false, renderer: canvas })
+    L.circleMarker([v[0], v[1]], { radius: 2.5, color: destColor(v[2]), fillOpacity: 0.85, stroke: false, renderer: canvas })
       .addTo(vehicleLayer);
   });
   if (!fitted && s.vehicles && s.vehicles.length) {
@@ -180,6 +420,7 @@ function pickSegment(id) {
   const [u, v] = id.split('-');
   document.getElementById('r-from').value = u;
   document.getElementById('r-to').value = v;
+  showTab('steer');
 }
 
 setInterval(tick, 1000);

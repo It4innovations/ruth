@@ -42,6 +42,15 @@ def _print_state(state):
                f"finished {state['n_finished']}/{state['n_total']}  "
                f"step_ms {state.get('last_step_ms')}")
     click.echo("settings: " + "  ".join(f"{k}={v}" for k, v in state["settings"].items()))
+    perf = state.get("perf")
+    if perf:
+        hist = perf.get("history") or []
+        avg = sum(r[1] for r in hist) / len(hist) if hist else 0
+        click.echo(f"perf: step {perf['duration_ms']} ms  avg({len(hist)}) {avg:.1f} ms  "
+                   f"rerouting {perf['need_new_route']}")
+        parts = list(perf.get("parts_ms", {}).items())[:5]
+        if parts:
+            click.echo("      " + "  ".join(f"{k}={v}ms" for k, v in parts))
     if state.get("restrictions"):
         click.echo("restrictions:")
         for r in state["restrictions"]:
@@ -97,6 +106,17 @@ def restrict(url, node_from, node_to, speed_kph, duration_s, start_offset_s):
         "node_from": node_from, "node_to": node_to, "speed_kph": speed_kph,
         "duration_s": duration_s, "start_offset_s": start_offset_s,
     })
+    click.echo(f"queued command #{result['id']}")
+
+
+@main.command()
+@click.argument("node_from", type=int)
+@click.argument("node_to", type=int)
+@click.pass_obj
+def unrestrict(url, node_from, node_to):
+    """Remove restriction(s) on a segment (active ones expire next step)."""
+    result = _request(url, "/api/restriction-delete",
+                      {"node_from": node_from, "node_to": node_to})
     click.echo(f"queued command #{result['id']}")
 
 

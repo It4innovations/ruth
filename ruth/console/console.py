@@ -70,6 +70,9 @@ class SimulationConsole:
     def geometry_for_ids(self, ids):
         return self.snapshot_builder.geometry_for_ids(ids)
 
+    def nearest_segment(self, lat, lon):
+        return self.snapshot_builder.nearest_segment(lat, lon)
+
     # -- sim-thread side ---------------------------------------------------
 
     def _set_result(self, cmd_id, status, detail=""):
@@ -121,6 +124,26 @@ class SimulationConsole:
             # keep the init_temporary_max_speeds sort invariant
             routing_map.temporary_speeds.sort(key=lambda ts: ts.timestamp_from)
             return f"{u}->{v} @ {p['speed_kph']} km/h until {t_to}"
+
+        if cmd.type == "remove-restriction":
+            u, v = cmd.payload["node_from"], cmd.payload["node_to"]
+            speeds = sim.routing_map.temporary_speeds
+            matches = [ts for ts in speeds if ts.node_from == u and ts.node_to == v]
+            if not matches:
+                raise ValueError(f"no restriction on {u} -> {v}")
+            removed = 0
+            for ts in matches:
+                if ts.active:
+                    # Backdate the window end: the per-step
+                    # update_temporary_max_speeds() restores the original max
+                    # speed and drops the entry on the next step.
+                    ts.timestamp_to = (sim.setting.departure_time
+                                       + sim.compute_current_offset()
+                                       - timedelta(seconds=1))
+                else:
+                    speeds.remove(ts)
+                removed += 1
+            return f"removed {removed} restriction(s) on {u}->{v}"
 
         if cmd.type == "pause":
             self._paused = True

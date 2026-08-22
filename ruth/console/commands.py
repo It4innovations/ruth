@@ -98,3 +98,11 @@ def validate_restriction(body: dict):
         "duration_s": duration,
         "start_offset_s": start_offset,
     }
+
+
+def validate_restriction_delete(body: dict):
+    """Validate a POST /api/restriction-delete body."""
+    try:
+        return {"node_from": int(body["node_from"]), "node_to": int(body["node_to"])}
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("node_from and node_to must be integer OSM node ids")
