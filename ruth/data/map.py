@@ -220,6 +220,12 @@ class Map:
         self.graphml_file = None
 
         if graphml_file is not None:
+            # Fail loudly rather than let load_graphml raise a cryptic error (or, in
+            # other call paths, silently fall through to a bbox-derived map).
+            if not os.path.isfile(graphml_file):
+                raise FileNotFoundError(
+                    f"map-graphml '{Path(graphml_file).absolute()}' does not exist or is "
+                    f"not a file.")
             cl.info(f"Loading map from {graphml_file}.")
             self.graphml_file = graphml_file
             self.network = load_graphml(graphml_file)

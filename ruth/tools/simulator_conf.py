@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import sys
@@ -177,13 +178,17 @@ class Args:
 
 def fill_args(config_file: str, ctx: Optional[click.Context] = None, workdir: Optional[str] = None, debug: bool = False) -> tuple[Args, Path]:
     if os.path.isfile(config_file):
-        logging.info(f"Settings taken from config file {config_file}.")
+        # Log the ABSOLUTE path: --config-file defaults to a CWD-relative name, so
+        # running from a different folder can silently read a different config.
+        logging.info(f"Settings taken from config file {Path(config_file).absolute()}.")
         with open(config_file, 'r') as f:
             config_data = f.read()
             args = from_json(Args, config_data)
+            config_json = json.loads(config_data)  # raw view for the map-graphml guard
     else:
         logging.info(f"Config file not found.")
         args = Args(CommonArgs(), RunArgs(), AlternativesRatio(), RouteSelectionRatio())
+        config_json = None
 
     p = args.run.vehicles_path
     if p is None:
@@ -198,6 +203,51 @@ def fill_args(config_file: str, ctx: Optional[click.Context] = None, workdir: Op
     # check if vehicles path is valid
     if not p.exists():
         raise ValueError(f"Vehicles path {p.absolute()} does not exist.")
+
+    # --- map-graphml: fail loudly instead of silently rebuilding a bbox map ---
+    # When common.map_graphml is None the routing map is silently rebuilt from the
+    # vehicles' bbox (Map._load / OSM download), which masks two mistakes:
+    #   (a) map-graphml set but placed OUTSIDE the "ruth-simulator" object (pyserde
+    #       drops unknown keys), and
+    #   (b) map-graphml pointing at a missing/inaccessible file.
+    # Both previously surfaced only as "No link ... in the network" / "No active
+    # vehicles found". Catch them here at config time.
+    def _find_key(obj, key):
+        if isinstance(obj, dict):
+            if key in obj:
+                return obj[key]
+            for value in obj.values():
+                found = _find_key(value, key)
+                if found is not None:
+                    return found
+        elif isinstance(obj, list):
+            for item in obj:
+                found = _find_key(item, key)
+                if found is not None:
+                    return found
+        return None
+
+    parsed_map_graphml = getattr(args.common, "map_graphml", None)
+    raw_map_graphml = _find_key(config_json, "map-graphml") if config_json is not None else None
+    if raw_map_graphml and not parsed_map_graphml:
+        raise ValueError(
+            f"'map-graphml' is present in {Path(config_file).absolute()} (value "
+            f"{raw_map_graphml!r}) but was not applied. It must be nested INSIDE the "
+            f"\"ruth-simulator\" object; a key placed anywhere else is silently ignored."
+        )
+    if parsed_map_graphml:
+        mg = Path(parsed_map_graphml)
+        if not mg.is_absolute() and workdir is not None:
+            mg = Path(workdir) / mg
+        if not mg.exists():
+            raise ValueError(
+                f"map-graphml is set to '{mg.absolute()}' but that file does not exist "
+                f"(config: {Path(config_file).absolute()}). Refusing to fall back to a "
+                f"bbox-derived map, which would mismatch the vehicles' routes."
+            )
+        # Pin the resolved absolute path so the loader can't reinterpret it per-CWD.
+        args.common.map_graphml = str(mg.absolute())
+        logging.info(f"Using map-graphml: {args.common.map_graphml}")
 
     if ctx is not None:
         ctx.obj['DEBUG'] = debug
