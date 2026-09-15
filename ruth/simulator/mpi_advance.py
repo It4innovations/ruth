@@ -89,45 +89,54 @@ if _expected != ADVANCE_TASK_DTYPE.itemsize:
     )
 
 
-def _fill_task(row, vehicle: Vehicle, routing_map: Map):
-    """Fill one ADVANCE_TASK_DTYPE row from a vehicle + its ≤2 upcoming segments."""
-    idx = vehicle.start_index
-    segs = routing_map.osm_route_to_py_segments(vehicle.osm_route[idx:idx + 3])
-    seg0 = segs[0]
+def _build_task_array(vehicles: List[Vehicle], routing_map: Map) -> np.ndarray:
+    """One ADVANCE_TASK_DTYPE row per vehicle + its ≤2 upcoming segments.
 
-    row["vehicle_id"] = vehicle.id
-    row["start_index"] = vehicle.start_index
-    row["start_offset_m"] = vehicle.start_distance_offset
-    row["time_offset_us"] = _td_to_us(vehicle.time_offset)
-    row["frequency_us"] = _td_to_us(vehicle.frequency)
-    row["fcd_period_us"] = _td_to_us(vehicle.fcd_sampling_period)
+    Filled column-wise: whole-column assignment from list comprehensions
+    replaces the per-row structured __setitem__ (14 field resolutions per
+    vehicle per step), which profiling put at ~1.5% of wall on its own.
+    """
+    n = len(vehicles)
+    arr = np.zeros(n, dtype=ADVANCE_TASK_DTYPE)
+    if n == 0:
+        return arr
 
-    row["seg0_id"] = routing_map.segment_id_to_int(seg0.id)
-    row["seg0_len"] = seg0.length
-    row["seg0_max_kph"] = seg0.max_allowed_speed_kph  # original limit (for speed*LoS)
-    row["seg0_lanes"] = seg0.lanes
-    row["seg0_valid"] = 1
+    seg_int = routing_map.segment_id_to_int
+    cur_max = routing_map.get_current_max_speed
+    seg_pairs = [
+        routing_map.osm_route_to_py_segments(
+            v.osm_route[v.start_index:v.start_index + 3])
+        for v in vehicles
+    ]
+
+    arr["vehicle_id"] = [v.id for v in vehicles]
+    arr["start_index"] = [v.start_index for v in vehicles]
+    arr["start_offset_m"] = [v.start_distance_offset for v in vehicles]
+    arr["time_offset_us"] = [_td_to_us(v.time_offset) for v in vehicles]
+    arr["frequency_us"] = [_td_to_us(v.frequency) for v in vehicles]
+    arr["fcd_period_us"] = [_td_to_us(v.fcd_sampling_period) for v in vehicles]
+
+    seg0 = [segs[0] for segs in seg_pairs]
+    arr["seg0_id"] = [seg_int(s.id) for s in seg0]
+    arr["seg0_len"] = [s.length for s in seg0]
+    arr["seg0_max_kph"] = [s.max_allowed_speed_kph for s in seg0]  # original limit (for speed*LoS)
+    arr["seg0_lanes"] = [s.lanes for s in seg0]
+    arr["seg0_valid"] = 1
     # is_closed uses the CURRENT max speed (closures live in the current network),
     # matching Vehicle.has_next_segment_closed / Map.get_current_max_speed.
-    row["seg0_closed"] = 1 if routing_map.get_current_max_speed(seg0.node_from, seg0.node_to) == 0 else 0
+    arr["seg0_closed"] = [1 if cur_max(s.node_from, s.node_to) == 0 else 0 for s in seg0]
 
-    if len(segs) > 1:
-        seg1 = segs[1]
-        row["seg1_id"] = routing_map.segment_id_to_int(seg1.id)
-        row["seg1_len"] = seg1.length
-        row["seg1_max_kph"] = seg1.max_allowed_speed_kph
-        row["seg1_lanes"] = seg1.lanes
-        row["seg1_valid"] = 1
-        row["seg1_closed"] = 1 if routing_map.get_current_max_speed(seg1.node_from, seg1.node_to) == 0 else 0
-    # else: seg1_valid / seg1_closed stay 0 (np.zeros init)
+    idx1 = [i for i, segs in enumerate(seg_pairs) if len(segs) > 1]
+    if idx1:
+        seg1 = [seg_pairs[i][1] for i in idx1]
+        arr["seg1_id"][idx1] = [seg_int(s.id) for s in seg1]
+        arr["seg1_len"][idx1] = [s.length for s in seg1]
+        arr["seg1_max_kph"][idx1] = [s.max_allowed_speed_kph for s in seg1]
+        arr["seg1_lanes"][idx1] = [s.lanes for s in seg1]
+        arr["seg1_valid"][idx1] = 1
+        arr["seg1_closed"][idx1] = [1 if cur_max(s.node_from, s.node_to) == 0 else 0 for s in seg1]
+    # rows without a second segment: seg1_valid / seg1_closed stay 0 (np.zeros init)
 
-
-def _build_task_array(vehicles: List[Vehicle], routing_map: Map) -> np.ndarray:
-    # TODO(perf): this per-vehicle Python loop mirrors the serial get_vehicle_speeds
-    # cost; vectorize the segment lookups if it shows up in profiling.
-    arr = np.zeros(len(vehicles), dtype=ADVANCE_TASK_DTYPE)
-    for i, vehicle in enumerate(vehicles):
-        _fill_task(arr[i], vehicle, routing_map)
     return arr
 
 
