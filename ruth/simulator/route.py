@@ -367,3 +367,94 @@ def advance_vehicles_with_queues(vehicles_to_be_moved: List[Vehicle], departure_
 
     queues_manager.batch_update()
     return fcds, vehicles_moved
+
+
+class SegmentArrivals:
+    """
+        Actual entries, independent of FCD sampling and GlobalView retention.
+    """
+
+    def __init__(self, state=None):
+        # Persist only data: older RUTH installations do not know this class.
+        if state is None:
+            state = {}
+        self.last_segment = state.setdefault("last_segment", {})
+        self.arrivals = state.setdefault("arrivals", {})
+
+    def add(self, vehicle_id, segment_id, when):
+        if self.last_segment.get(vehicle_id) != segment_id:
+            self.arrivals.setdefault(segment_id, []).append((when, vehicle_id))
+            self.last_segment[vehicle_id] = segment_id
+
+    def count_vehicles(self, segment_id, when):
+        lower = when - timedelta(seconds=60)
+        return len({vid for time, vid in self.arrivals.get(segment_id, ())
+                    if lower < time <= when})
+
+    def drop_older_than(self, earliest_time):
+        lower = earliest_time - timedelta(seconds=60)
+        for segment_id in list(self.arrivals):
+            recent = [(time, vid) for time, vid in self.arrivals[segment_id] if time > lower]
+            if recent:
+                self.arrivals[segment_id] = recent
+            else:
+                del self.arrivals[segment_id]
+
+
+class VolumeToCapacityMovementModel(MovementModel):
+    """Volume-to-capacity BPR and density saturation, without lone-vehicle self-congestion."""
+
+    # Midpoints of the per-lane capacity ranges on page 4, vehicles/hour/lane.
+    CAPACITY_PER_LANE = {
+        "motorway": 2100, "trunk": 1900, "primary": 1600,
+        "secondary": 1200, "tertiary": 1000, "unclassified": 700,
+        "residential": 500, "living_street": 100, "service": 250,
+        "motorway_link": 1500, "trunk_link": 1300, "primary_link": 1100,
+        "secondary_link": 900, "tertiary_link": 700, "road": 650,
+    }
+    JAM_DENSITY = 130.0  # vehicles/km/lane
+
+    def __init__(self, gv_db, routing_map, los_vehicles_tolerance,
+                 arrivals=None):
+        self.gv_db = gv_db
+        self.routing_map = routing_map
+        self.los_vehicles_tolerance = los_vehicles_tolerance
+        self.arrivals = arrivals if arrivals is not None else SegmentArrivals()
+
+    def traffic_factor(self, current_time, segment, vehicle_id, position, tolerance):
+        if segment.length <= 0 or segment.lanes <= 0:
+            return 0.0
+        ahead = self.gv_db.number_of_vehicles_ahead(current_time, segment.id, tolerance, vehicle_id, position)
+
+        # A vehicle cannot block itself, even on a segment shorter than its nominal jam-density spacing.
+        density = (ahead + 1) / (segment.length / 1000.0 * segment.lanes) if ahead else 0.0
+        saturation = density / self.JAM_DENSITY
+
+        # get edge type
+        edge = self.routing_map.current_network[segment.node_from][segment.node_to]
+        highway = edge.get("highway", "unclassified")
+        if isinstance(highway, list):
+            highway = highway[0] if highway else "unclassified"
+
+        capacity = self.CAPACITY_PER_LANE.get(highway, 700) * segment.lanes
+        volume = self.arrivals.count_vehicles(segment.id, current_time) * 60
+
+        return max(0.0, 1.0 - saturation ** 2) / (1.0 + 0.15 * (volume / capacity) ** 4)
+
+    def compute_batch(self, movement_inputs):
+        results = []
+        for item in movement_inputs:
+            vehicle, current_time, route = item
+            changed = vehicle.segment_position.position == route[0].length
+            if changed and vehicle.has_next_segment_closed(self.routing_map):
+                speed, changed = 0.0, False
+            else:
+                segment = route[1] if changed else route[0]
+                position = 0.0 if changed else vehicle.segment_position.position
+                factor = self.traffic_factor(current_time, segment, vehicle.id,
+                                             position, self.los_vehicles_tolerance)
+                speed = speed_kph_to_mps(segment.max_allowed_speed_kph * factor)
+            result = MovementResult(*move_on_segment(vehicle, route, current_time, speed, changed))
+            results.append(result)
+
+        return results

@@ -273,6 +273,15 @@ node_from;node_to;speed;timestamp_from;timestamp_to
 8400868548;10703818;0;2026-08-03 00:10:00;2026-08-03 00:25:00
 ```
 
+### Optional volume-to-capacity vehicle speed model
+
+Set `RUTH_ENABLE_VTC_MOVEMENT=1` before starting the simulator to use
+`VolumeToCapacityMovementModel`, implementing speed calculation?
+
+`v = vf * max(0, 1 - rho²) / (1 + 0.15 * (V/C)⁴)`, where
+`rho = (vehicles_ahead + 1) / (length_km * lanes * 130)` when vehicles are ahead,
+and `rho = 0` otherwise. This adjustment prevents a lone vehicle from jamming itself.
+
 ## Animation
 To create animation of the simulation, `FFmpeg` needs to be installed. Using option `--gif` to generate 
 gif instead of mp4 does not require `FFmpeg`.

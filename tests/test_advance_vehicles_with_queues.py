@@ -14,6 +14,140 @@ from ruth.vehicle import Vehicle
 from ruth.vehicle_types import DEFAULT_VEHICLE_CLASSES
 
 
+@pytest.mark.parametrize("improved,heterogeneous", [(False, False), (True, False),
+                                                   (False, True), (True, True)])
+def test_simulator_movement_switches(monkeypatch, current_time, improved, heterogeneous):
+    from ruth.simulator import singlenode
+    from ruth.simulator.route import VolumeToCapacityMovementModel
+
+    monkeypatch.setenv("RUTH_ENABLE_VTC_MOVEMENT", "1" if improved else "0")
+    monkeypatch.setattr(singlenode, "HeterogeneousMovementModel",
+                        HeterogeneousMovementModel if heterogeneous else None)
+    captured = {}
+
+    def advance(*args, movement_model):
+        captured["model"] = movement_model
+        return [], False
+
+    monkeypatch.setattr(singlenode, "advance_vehicles_with_queues", advance)
+    sim = SimpleNamespace(
+        global_view=GlobalView(), routing_map=MagicMock(Map), queues_manager=QueuesManager(),
+        setting=SimpleNamespace(departure_time=current_time, los_vehicles_tolerance=timedelta(0)),
+        compute_current_offset=lambda: timedelta(0))
+    if improved and heterogeneous:
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            singlenode.Simulator(sim)
+        assert not captured
+        return
+    simulator = singlenode.Simulator(sim)
+    assert simulator.advance_vehicles([]) == ([], False)
+    assert not hasattr(sim, "segment_arrivals")
+    model = captured["model"]
+    if improved:
+        assert isinstance(model, VolumeToCapacityMovementModel)
+        simulator.advance_vehicles([])
+        assert captured["model"].arrivals is model.arrivals
+    elif heterogeneous:
+        assert isinstance(model, HeterogeneousMovementModel)
+    else:
+        assert model is None
+
+
+@pytest.mark.parametrize("transition", [False, True])
+def test_simulator_publishes_arrivals_after_movement(monkeypatch, current_time, transition):
+    from ruth.simulator import singlenode
+
+    monkeypatch.setenv("RUTH_ENABLE_VTC_MOVEMENT", "1")
+    vehicle = SimpleNamespace(id=1, current_node=0, next_node=1, time_offset=timedelta(0),
+                              segment_position=SegmentPosition(0, 1000 if transition else 0))
+    sim = SimpleNamespace(
+        global_view=GlobalView(), routing_map=MagicMock(Map), queues_manager=QueuesManager(),
+        setting=SimpleNamespace(departure_time=current_time, los_vehicles_tolerance=timedelta(0)),
+        compute_current_offset=lambda: timedelta(0))
+    simulator = singlenode.Simulator(sim)
+
+    def advance(*args, movement_model):
+        assert not movement_model.arrivals.arrivals
+        if transition:
+            vehicle.current_node, vehicle.next_node = 1, 2
+        vehicle.segment_position = SegmentPosition(int(transition), 100)
+        vehicle.time_offset += timedelta(seconds=10)
+        return [], True
+
+    monkeypatch.setattr(singlenode, "advance_vehicles_with_queues", advance)
+    simulator.advance_vehicles([vehicle])
+    assert not simulator.segment_arrivals.arrivals
+    assert not sim.segment_arrivals_state["arrivals"]
+    simulator.update_segment_arrivals()
+    assert sim.segment_arrivals_state["arrivals"][(0, 1)] == [(current_time, 1)]
+    assert simulator.segment_arrivals.count_vehicles((0, 1), current_time) == 1
+    assert simulator.segment_arrivals.count_vehicles((1, 2), current_time) == int(transition)
+    assert not hasattr(sim, "segment_arrivals")
+    simulator.update_segment_arrivals()
+    assert len(simulator.segment_arrivals.arrivals[(0, 1)]) == 1
+
+
+def test_simulator_counts_entry_after_blocked_departure(
+        monkeypatch, current_time, setup_vehicles, mock_routing_map):
+    from ruth.simulator import singlenode
+
+    monkeypatch.setenv("RUTH_ENABLE_VTC_MOVEMENT", "1")
+    monkeypatch.setattr(singlenode, "HeterogeneousMovementModel", None)
+    vehicle = setup_vehicles[0]
+    gv = MagicMock(GlobalView)
+    gv.number_of_vehicles_ahead.return_value = 130  # Saturate the 1 km segment.
+    mock_routing_map.current_network = {0: {1: {"highway": "residential"}}}
+    sim = SimpleNamespace(
+        global_view=gv, routing_map=mock_routing_map, queues_manager=QueuesManager(),
+        setting=SimpleNamespace(departure_time=current_time, los_vehicles_tolerance=timedelta(0)),
+        compute_current_offset=lambda: timedelta(0))
+    simulator = singlenode.Simulator(sim)
+
+    # Wait longer than the arrival window, using the actual movement path.
+    for _ in range(7):
+        assert simulator.advance_vehicles([vehicle]) == ([], False)
+        simulator.current_offset = vehicle.time_offset
+        simulator.update_segment_arrivals()
+        assert not simulator.segment_arrivals.arrivals
+        assert not simulator.segment_arrivals.last_segment
+
+    entry_time = current_time + vehicle.time_offset
+    gv.number_of_vehicles_ahead.return_value = 0
+    fcds, moved = simulator.advance_vehicles([vehicle])
+    assert moved and fcds
+    assert vehicle.start_distance_offset > 0
+    assert not simulator.segment_arrivals.arrivals  # Publish after the batch.
+    simulator.update_segment_arrivals()
+    assert simulator.segment_arrivals.arrivals[(0, 1)] == [(entry_time, vehicle.id)]
+    assert simulator.segment_arrivals.count_vehicles((0, 1), entry_time) == 1
+
+    # Residence and later movement on the same segment are not new entries.
+    gv.number_of_vehicles_ahead.return_value = 130
+    simulator.advance_vehicles([vehicle])
+    simulator.update_segment_arrivals()
+    gv.number_of_vehicles_ahead.return_value = 0
+    simulator.advance_vehicles([vehicle])
+    simulator.update_segment_arrivals()
+    assert simulator.segment_arrivals.arrivals[(0, 1)] == [(entry_time, vehicle.id)]
+
+
+@pytest.mark.parametrize("length", [1000, 5, 1000 / 130, 0.1])
+def test_vtc_model_lone_vehicle_moves(setup_vehicles, current_time, length):
+    from ruth.simulator.route import VolumeToCapacityMovementModel, MovementInput
+    vehicle = setup_vehicles[0]
+    vehicle.vehicle_type = "truck"
+    segment = Segment(0, 1, length, 50, 1)
+    gv = GlobalView()
+    routing_map = MagicMock(Map)
+    routing_map.current_network = {0: {1: {"highway": "residential"}}}
+    model = VolumeToCapacityMovementModel(gv, routing_map, timedelta(0))
+    result, = model.compute_batch([MovementInput(vehicle, current_time, [segment])])
+    assert result.assigned_speed_mps > 0
+    assert result.segment_pos.position > 0
+    factor = 1.0  # This step's arrivals are not yet visible.
+    assert result.assigned_speed_mps == pytest.approx(50 / 3.6 * factor)
+
+
 @pytest.fixture
 def setup_vehicles():
     """Create multiple test vehicles."""

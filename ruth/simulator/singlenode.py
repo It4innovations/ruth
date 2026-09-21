@@ -5,12 +5,12 @@ from typing import Callable, List, Optional, Tuple
 
 from .kernels import AlternativesProvider, RouteSelectionProvider, VehicleWithPlans, AlternativeRoutes, \
     VehicleWithRoute, MPIDistributedAlternatives
-from ..feature_flags import heterogeneous_vehicles_enabled
+from ..feature_flags import heterogeneous_vehicles_enabled, vtc_movement_enabled
 if heterogeneous_vehicles_enabled():
     from .route_heterogeneous import HeterogeneousMovementModel
 else:
     HeterogeneousMovementModel = None
-from .route import advance_vehicles_with_queues
+from .route import SegmentArrivals, advance_vehicles_with_queues
 from .simulation import FCDRecord, Simulation
 from ..data.map import Map
 from ..utils import TimerSet
@@ -30,7 +30,15 @@ class Simulator:
             sim: Simulation
                 State of the simulation.
         """
+        if vtc_movement_enabled() and HeterogeneousMovementModel is not None:
+            raise ValueError(
+                "VTC and heterogeneous movement are mutually exclusive; enable only one of "
+                "RUTH_ENABLE_VTC_MOVEMENT and RUTH_ENABLE_HETEROGENEOUS_VEHICLES.")
         self.sim = sim
+        if not hasattr(sim, "segment_arrivals_state"):
+            sim.segment_arrivals_state = {}
+        self.segment_arrivals = SegmentArrivals(sim.segment_arrivals_state)
+        self._pending_arrivals = []
         self.current_offset = self.sim.compute_current_offset()
 
     @property
@@ -155,6 +163,7 @@ class Simulator:
                         moved_last_step = True
                 with timer_set.get("update_global_view"):
                     self.sim.update(fcds)
+                    self.update_segment_arrivals()
 
                 with timer_set.get("fcd_history_extend"):
                     self.sim.history.extend(fcds)
@@ -213,19 +222,53 @@ class Simulator:
         """Move the vehicles on its route and generate FCD records"""
 
         movement_model = None
-        if HeterogeneousMovementModel is not None:
+        if vtc_movement_enabled():
+            from .route import VolumeToCapacityMovementModel
+
+            movement_model = VolumeToCapacityMovementModel(
+                self.sim.global_view, self.sim.routing_map,
+                self.sim.setting.los_vehicles_tolerance, self.segment_arrivals)
+        elif HeterogeneousMovementModel is not None:
             movement_model = HeterogeneousMovementModel(
                 self.sim.global_view,
                 self.sim.routing_map,
                 self.sim.setting.los_vehicles_tolerance
             )
 
-        return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
+        # Keep the arrival view unchanged throughout all movement batches.
+        observations = [
+            (vehicle, (vehicle.current_node, vehicle.next_node),
+             vehicle.segment_position,
+             self.sim.setting.departure_time + vehicle.time_offset)
+            for vehicle in vehicles
+        ] if vtc_movement_enabled() else []
+        result = advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             self.sim.global_view,
                                             self.sim.routing_map,
                                             self.sim.queues_manager,
                                             self.sim.setting.los_vehicles_tolerance,
                                             movement_model=movement_model)
+        for vehicle, previous_segment, previous_position, when in observations:
+            if (previous_position.index == 0 and previous_position.position == 0.0
+                    and vehicle.segment_position == previous_position):
+                # A blocked departure has not entered its first segment yet.
+                # Leave it unregistered so its eventual first move is counted.
+                continue
+            self._pending_arrivals.append((vehicle.id, previous_segment, when))
+            current_segment = (vehicle.current_node, vehicle.next_node)
+            if current_segment != previous_segment and vehicle.next_node is not None:
+                # Segment entry occurs at the start of the move, before FCD sampling.
+                self._pending_arrivals.append((vehicle.id, current_segment, when))
+        return result
+
+    def update_segment_arrivals(self):
+        """Publish this step's entries after movement, alongside GlobalView."""
+        for observation in self._pending_arrivals:
+            self.segment_arrivals.add(*observation)
+        self._pending_arrivals.clear()
+        if self.current_offset is not None:
+            self.segment_arrivals.drop_older_than(
+                self.sim.setting.departure_time + self.current_offset)
 
     def change_baseline_alternatives(self,
                                      vehicles: List[Vehicle],
