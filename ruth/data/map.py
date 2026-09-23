@@ -30,7 +30,7 @@ CUSTOM_DRIVE_FILTER = (
     '["highway"]'
     '["area"!~"yes"]'
     '["access"!~"private"]'
-    '["highway"!~"abandoned|bridleway|bus_guideway|corridor|cycleway|elevator|escalator'
+    '["highway"!~"abandoned|bridleway|bus_guideway|construction|corridor|cycleway|elevator|escalator'
     '|footway|no|path|pedestrian|planned|platform|proposed|raceway|razed|steps|track|closed"]'
     '["motor_vehicle"!~"no"]'
     '["motorcar"!~"no"]'
@@ -218,6 +218,9 @@ class Map:
         self.download_date = download_date
         self.data_dir = data_dir
         self.graphml_file = None
+        self.map_policy_version = os.environ.get("RUTH_MAP_POLICY", MAP_POLICY_VERSION)
+        if self.map_policy_version not in ("drive-v1", MAP_POLICY_VERSION):
+            raise ValueError("RUTH_MAP_POLICY must be 'drive-v1' or 'drive-v2'.")
 
         if graphml_file is not None:
             cl.info(f"Loading map from {graphml_file}.")
@@ -336,7 +339,8 @@ class Map:
             return self.graphml_file
 
         """Path to locally stored map."""
-        return os.path.join(self.data_dir, f"{self.name}_{MAP_POLICY_VERSION}.graphml")
+        policy = getattr(self, "map_policy_version", "drive-v2")
+        return os.path.join(self.data_dir, f"{self.name}_{policy}.graphml")
 
     def provenance(self) -> Dict[str, Optional[str]]:
         return {
@@ -534,16 +538,22 @@ class Map:
         else:
             cl.info(f"Loading map for {self.file_path} via OSM API...")
 
-            osmnx.settings.overpass_settings = f"[out:json][timeout:{{timeout}}][date:'{self.download_date}']"
-
             north, west, south, east = self.bbox.get_coords()
-            network = graph_from_bbox(bbox=(west, south, east, north),
-                                      network_type="drive",
-                                      retain_all=False,
-                                      custom_filter=CUSTOM_DRIVE_FILTER)
+            custom_filter = None if self.map_policy_version == "drive-v1" else CUSTOM_DRIVE_FILTER
+            previous_settings = osmnx.settings.overpass_settings
+            try:
+                osmnx.settings.overpass_settings = (
+                    f"[out:json][timeout:{{timeout}}]{{maxsize}}[date:'{self.download_date}']"
+                )
+                network = graph_from_bbox(bbox=(north, south, east, west),
+                                          network_type="drive",
+                                          retain_all=False,
+                                          custom_filter=custom_filter)
+            finally:
+                osmnx.settings.overpass_settings = previous_settings
             network.graph.update({
-                "ruth_map_policy_version": MAP_POLICY_VERSION,
-                "ruth_custom_filter": CUSTOM_DRIVE_FILTER,
+                "ruth_map_policy_version": self.map_policy_version,
+                "ruth_custom_filter": custom_filter or "osmnx:drive",
                 "ruth_osmnx_version": ox.__version__,
             })
 
