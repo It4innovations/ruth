@@ -120,7 +120,7 @@ class Simulator:
                             break
                 # END if self.sim.setting.stuck_detection
 
-                with timer_set.get("update_map_speeds"):
+                with timer_set.get("update_map_speeds", profile=True):
                     last_map_update, updated_speeds = self.update_map_speeds(updated_speeds, last_map_update,
                                                                              alternatives_providers)
 
@@ -155,15 +155,16 @@ class Simulator:
                         vehicle.update_followup_route(route, self.sim.routing_map,
                                                       self.sim.setting.travel_time_limit_perc)
 
-                with timer_set.get("advance_vehicle"):
+                with timer_set.get("advance_vehicle", profile=True):
                     fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy())
                     moved_last_step = False
                     if has_moved or self.sim.routing_map.has_temporary_speeds_planned():
                         last_time_moved = self.current_offset
                         moved_last_step = True
                 with timer_set.get("update_global_view"):
-                    self.sim.update(fcds)
-                    self.update_segment_arrivals()
+                    with timer_set.get("global_view_add", profile=True):
+                        self.sim.update(fcds)
+                    self.update_segment_arrivals(timer_set)
 
                 with timer_set.get("fcd_history_extend"):
                     self.sim.history.extend(fcds)
@@ -261,14 +262,18 @@ class Simulator:
                 self._pending_arrivals.append((vehicle.id, current_segment, when))
         return result
 
-    def update_segment_arrivals(self):
+    def update_segment_arrivals(self, timer_set=None):
         """Publish this step's entries after movement, alongside GlobalView."""
-        for observation in self._pending_arrivals:
-            self.segment_arrivals.add(*observation)
-        self._pending_arrivals.clear()
-        if self.current_offset is not None:
-            self.segment_arrivals.drop_older_than(
-                self.sim.setting.departure_time + self.current_offset)
+        if timer_set is None:
+            timer_set = TimerSet()
+        with timer_set.get("arrival_publish", profile=True):
+            for observation in self._pending_arrivals:
+                self.segment_arrivals.add(*observation)
+            self._pending_arrivals.clear()
+        with timer_set.get("arrival_cleanup", profile=True):
+            if self.current_offset is not None:
+                self.segment_arrivals.drop_older_than(
+                    self.sim.setting.departure_time + self.current_offset)
 
     def change_baseline_alternatives(self,
                                      vehicles: List[Vehicle],

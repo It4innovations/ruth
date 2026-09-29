@@ -78,7 +78,13 @@ def test_simulator_publishes_arrivals_after_movement(monkeypatch, current_time, 
     simulator.advance_vehicles([vehicle])
     assert not simulator.segment_arrivals.arrivals
     assert not sim.segment_arrivals_state["arrivals"]
-    simulator.update_segment_arrivals()
+    from ruth.utils import TimerSet
+    timers = TimerSet()
+    simulator.update_segment_arrivals(timers)
+    metrics = timers.collect()
+    for phase in ("arrival_publish", "arrival_cleanup"):
+        assert metrics[phase] >= metrics[f"{phase}_gc_ms"] >= 0
+        assert metrics[f"{phase}_cpu_ms"] >= 0
     assert sim.segment_arrivals_state["arrivals"][(0, 1)] == [(current_time, 1)]
     assert simulator.segment_arrivals.count_vehicles((0, 1), current_time) == 1
     assert simulator.segment_arrivals.count_vehicles((1, 2), current_time) == int(transition)

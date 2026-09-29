@@ -440,3 +440,33 @@ def test_has_temporary_speeds_planned_false(routing_map):
     """Test checking if temporary speeds are planned (false case)."""
     routing_map.temporary_speeds = []
     assert routing_map.has_temporary_speeds_planned() is False
+
+
+@pytest.mark.parametrize("speed,expected", [(None, 40), (100, 40), (12.5, 13), (0, 0)])
+def test_update_current_speeds_sparse_preserves_limits_and_untouched_edges(speed, expected):
+    import networkx as nx
+
+    routing_map = Map.__new__(Map)
+    routing_map.map_id = 7
+    routing_map.current_network = nx.DiGraph()
+    routing_map.current_network.add_edge(1, 2, speed_kph=40, current_speed=20)
+    # An unrelated edge need not even have a speed limit for a sparse update.
+    routing_map.current_network.add_edge(2, 3, current_speed=17, current_travel_time=9)
+    routing_map.segment_lengths = {(1, 2): 100}
+    untouched = dict(routing_map.current_network[2][3])
+
+    result = routing_map.update_current_speeds({(1, 2): speed})
+
+    assert result == {(1, 2): expected}
+    assert routing_map.map_id == 8
+    edge = routing_map.current_network[1][2]
+    assert edge["speed_kph"] == 40
+    assert edge["current_speed"] == expected
+    assert edge["current_travel_time"] == pytest.approx(
+        float("inf") if expected == 0 else 360 / expected)
+    assert dict(routing_map.current_network[2][3]) == untouched
+
+    routing_map.current_network[1][2]["speed_kph"] = 30
+    assert routing_map.update_current_speeds({(1, 2): None}) == {(1, 2): 30}
+    assert routing_map.update_current_speeds({}) == {}
+    assert routing_map.map_id == 10

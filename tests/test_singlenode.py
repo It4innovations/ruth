@@ -169,3 +169,30 @@ def test_update_map_speeds_no_overlap(setup_simulator):
 # TODO: test sim update fcds
 # TODO: test drop old records
 # TODO: test change baseline alts
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_profile_timer_observes_gc_and_removes_callback(fail):
+    import gc
+    from ruth.utils import TimerSet
+
+    callbacks = list(gc.callbacks)
+    enabled = gc.isenabled()
+    timers = TimerSet()
+    try:
+        with timers.get("phase", profile=True):
+            gc.collect(2)
+            if fail:
+                raise RuntimeError("test failure")
+    except RuntimeError:
+        assert fail
+
+    assert gc.callbacks == callbacks
+    assert gc.isenabled() == enabled
+    metrics = timers.collect()
+    assert metrics["phase"] >= metrics["phase_gc_ms"] >= 0
+    assert metrics["phase_cpu_ms"] >= 0
+    assert metrics["phase_gc_gen2_collections"] >= 1
+    with timers.get("plain"):
+        pass
+    assert set(timers.collect()) - set(metrics) == {"plain"}

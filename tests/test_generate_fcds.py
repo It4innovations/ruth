@@ -171,3 +171,31 @@ def test_generate_fcds_correct_segment_references(setup_vehicle, setup_driving_r
 
     # All FCD records should reference first segment
     assert all(fcd.segment == setup_driving_route[0] for fcd in fcds)
+
+
+def test_fcd_conversion_profile_preserves_output_and_resets_step_metrics(
+        tmp_path, setup_vehicle, setup_driving_route, current_time):
+    import gc
+    import h5py
+    import numpy as np
+    from ruth.fcd_history import FCDHistory
+    from ruth.data.hdf_stream_writer import fcd_records_to_array
+
+    records = generate_fcds(
+        current_time, current_time + timedelta(seconds=10),
+        SegmentPosition(0, LengthMeters(0)), SegmentPosition(0, LengthMeters(100)),
+        SpeedMps(10), setup_vehicle, setup_driving_route, remains_active=True)
+    callbacks = list(gc.callbacks)
+    with FCDHistory(str(tmp_path / "profile.h5"), buffer_size=1,
+                    max_records_per_file=1000) as history:
+        history.extend(records)
+        metrics = history.collect_step_metrics()
+        assert metrics["fcd_records_flushed"] == len(records)
+        assert metrics["fcd_convert_ms"] >= metrics["fcd_convert_gc_ms"] >= 0
+        assert metrics["fcd_convert_cpu_ms"] >= 0
+        assert all(metrics[f"fcd_convert_gc_gen{g}_collections"] >= 0 for g in range(3))
+        assert history.collect_step_metrics() == {}
+        assert history.collect_total_metrics() == metrics
+    assert gc.callbacks == callbacks
+    with h5py.File(tmp_path / "profile-part0000.h5", "r") as output:
+        np.testing.assert_array_equal(output["fcd"][:], fcd_records_to_array(records))

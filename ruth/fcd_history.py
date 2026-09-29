@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, TYPE_CHECKING
 import numpy as np
 
 from .data.hdf_stream_writer import HDF5Writer, fcd_records_to_array
+from .utils import Timer
 
 if TYPE_CHECKING:
     from .simulator.simulation import FCDRecord
@@ -367,9 +368,11 @@ class FCDHistory:
         self._ensure_started()
         n_records = len(self.buffer)
 
-        t0 = time.perf_counter()
-        data = fcd_records_to_array(self.buffer)
-        self._add_metric("fcd_convert_ms", (time.perf_counter() - t0) * 1000.0)
+        with Timer("fcd_convert", profile=True) as conversion_timer:
+            data = fcd_records_to_array(self.buffer)
+        self._add_metric("fcd_convert_ms", conversion_timer.duration_ms)
+        for name, value in conversion_timer.profile_metrics.items():
+            self._add_metric(name, value)
 
         # Release FCDRecord object references as early as possible. The async
         # writer receives the compact structured array, not Vehicle/Segment objects.

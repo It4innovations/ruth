@@ -1,3 +1,4 @@
+import gc
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -38,16 +39,58 @@ def is_root_debug_logging() -> bool:
 
 class Timer:
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, profile: bool = False):
         self.name = name
+        self.profile = profile
 
     def __enter__(self):
-        self.start = time.time()
         self.end = None
+        if self.profile:
+            self.gc_ms = 0.0
+            self.gc_collections = [0, 0, 0]
+            self._gc_started = {}
+            self._gc_callback = self._record_gc
+            gc.callbacks.append(self._gc_callback)
+            self.cpu_start = time.process_time()
+        self.start = time.perf_counter()
         return self
 
+    def _record_gc(self, phase, info):
+        generation = info["generation"]
+        if phase == "start":
+            self._gc_started[generation] = time.perf_counter()
+        elif phase == "stop":
+            started = self._gc_started.pop(generation, None)
+            if started is not None:
+                self.gc_ms += (time.perf_counter() - started) * 1000.0
+                self.gc_collections[generation] += 1
+
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.end = time.time()
+        self.end = time.perf_counter()
+        if self.profile:
+            self.cpu_end = time.process_time()
+            gc.callbacks.remove(self._gc_callback)
+            del self._gc_callback  # Do not leave a bound-method reference cycle.
+
+    @property
+    def profile_metrics(self):
+        """Process CPU includes all its threads; GC time overlaps phase wall time.
+
+        Scoped callbacks observe collections without forcing or disabling GC.
+        Nested timers may attribute the same collection to both phases.
+        """
+        if not self.profile:
+            return {}
+        assert self.end is not None, "Trying to collect an unfinished timer."
+        metrics = {
+            f"{self.name}_cpu_ms": (self.cpu_end - self.cpu_start) * 1000.0,
+            f"{self.name}_gc_ms": self.gc_ms,
+        }
+        metrics.update({
+            f"{self.name}_gc_gen{generation}_collections": count
+            for generation, count in enumerate(self.gc_collections)
+        })
+        return metrics
 
     @property
     def duration_ms(self):
@@ -60,9 +103,13 @@ class TimerSet:
     def __init__(self):
         self.timers = []
 
-    def get(self, name):
-        self.timers.append(Timer(name))
+    def get(self, name, profile=False):
+        self.timers.append(Timer(name, profile=profile))
         return self.timers[-1]
 
     def collect(self):
-        return dict((timer.name, timer.duration_ms) for timer in self.timers)
+        metrics = {}
+        for timer in self.timers:
+            metrics[timer.name] = timer.duration_ms
+            metrics.update(timer.profile_metrics)
+        return metrics
