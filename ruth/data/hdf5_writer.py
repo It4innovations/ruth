@@ -159,8 +159,8 @@ def save_graph_to_hdf5(g, file_path):
         in_edges = g.in_edges(node_id, data=True)
         in_edges = filter_by_edge_data(in_edges, edge_data_dict)
 
-        latitude_int = coord_to_int(node_data['x'])
-        longitude_int = coord_to_int(node_data['y'])
+        latitude_int = coord_to_int(node_data['y'])
+        longitude_int = coord_to_int(node_data['x'])
         edge_out_count = len(out_edges)
         edge_in_count = len(in_edges)
 

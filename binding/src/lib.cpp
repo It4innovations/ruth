@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <numeric>
@@ -41,6 +42,8 @@ private:
   std::shared_ptr<std::vector<std::pair<int, float>>> route_travel_times_;
   std::mutex state_mutex;
 
+  std::string graph_path_;
+  std::string graph_signature_;
   bool is_simulation_running_ = true;
   State() {}
 
@@ -54,6 +57,8 @@ public:
   State &operator=(const State &) = delete;
 
   bool is_graph_set() { return graph_ != nullptr; }
+  const std::string &graph_path() const { return graph_path_; }
+  const std::string &graph_signature() const { return graph_signature_; }
 
   bool is_simulation_running() {
     std::lock_guard<std::mutex> guard(state_mutex);
@@ -65,11 +70,14 @@ public:
     is_simulation_running_ = running;
   }
 
-  void set_graph(const std::shared_ptr<Routing::Data::GraphMemory> graph) {
+  void set_graph(const std::shared_ptr<Routing::Data::GraphMemory> graph,
+                 const std::string &path, const std::string &signature) {
     if (graph_) {
       log("Graph already set");
     }
     graph_ = graph;
+    graph_path_ = path;
+    graph_signature_ = signature;
 
     auto settings = Routing::Algorithms::AlgorithmSettings();
     settings.filterSettings.allFilterOff = true;
@@ -254,12 +262,28 @@ public:
     // Variable commented out to avoid unused variable warning
     // int my_rank = ace::CommInterface::instance()->get_rank();
 
+    const auto map_signature = [](const std::string &path) {
+      return std::to_string(std::filesystem::file_size(path)) + ":" +
+             std::to_string(std::filesystem::last_write_time(path).time_since_epoch().count());
+    };
+    const auto signature = map_signature(map_path);
     if (State::instance().is_graph_set()) {
+      if (State::instance().graph_path() != map_path ||
+          State::instance().graph_signature() != signature) {
+        throw std::runtime_error("Native graph reload requires a fresh process: loaded=" +
+                                 State::instance().graph_path() + " requested=" + map_path);
+      }
       log("No need to load graph again");
       return;
     }
     auto graph = Routing::Tests::LoadGraph(map_path);
-    State::instance().set_graph(graph);
+    if (map_signature(map_path) != signature) {
+      throw std::runtime_error("Native graph file changed during load: " + map_path);
+    }
+    State::instance().set_graph(graph, map_path, signature);
+    // #TODO: Capture the exact native input path on every rank.
+    log("#TODO routing load: rank=" + std::to_string(ace::CommInterface::instance()->get_rank()) +
+        " path=" + map_path);
     log("Graph loaded");
   }
 
@@ -664,8 +688,36 @@ public:
         const VehicleTask& task = vehicle_tasks[i];
         vehicle_ids[i] = task.vehicle_id;  // Always set vehicle ID to maintain order
 
-        const std::unique_ptr<std::vector<Result>> routeResults = alg->GetResults(
-          task.origin, task.destination, requested_max_routes, false, 0, use_origin_speed_for_routes);
+        // #TODO: Set RUTH_ROUTING_DIAGNOSTICS=1 to retain begin/end evidence for every query.
+        static const bool diagnostics = [] {
+          const char *value = std::getenv("RUTH_ROUTING_DIAGNOSTICS");
+          return value && std::strcmp(value, "1") == 0;
+        }();
+        auto query_log = [&](const std::string &event) {
+          static std::mutex diagnostic_mutex;
+          std::lock_guard<std::mutex> guard(diagnostic_mutex);
+          std::cerr << "#TODO routing " << event
+                    << " rank=" << ace::CommInterface::instance()->get_rank()
+                    << " thread=" << std::this_thread::get_id()
+                    << " query=" << task.vehicle_id
+                    << " origin=" << task.origin << " destination=" << task.destination
+                    << " graph=" << State::instance().graph_path() << std::endl;
+        };
+        if (!alg || !alg->GetRoutingGraph()->ContainsNode(task.origin) ||
+            !alg->GetRoutingGraph()->ContainsNode(task.destination)) {
+          query_log("invalid-OD");
+          throw std::runtime_error("Invalid native routing OD");
+        }
+        if (diagnostics) query_log("begin");
+        std::unique_ptr<std::vector<Result>> routeResults;
+        try {
+          routeResults = alg->GetResults(task.origin, task.destination, requested_max_routes,
+                                        false, 0, use_origin_speed_for_routes);
+        } catch (const std::exception &error) {
+          query_log(std::string("exception: ") + error.what());
+          throw;
+        }
+        if (diagnostics) query_log("end");
 
         if (routeResults && !routeResults->empty()) {
           std::vector<std::vector<int>> routes;
