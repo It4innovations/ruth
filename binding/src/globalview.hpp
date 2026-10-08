@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <map>
 #include <vector>
 #include <deque>
 #include <shared_mutex>
@@ -10,6 +11,19 @@
 #include <set>
 #include <mutex>
 #include <unordered_set>
+#include <cstdio>
+#include <cstdlib>
+
+// Debug check for the ordering invariant get_segment_speed's dedup rests on.
+// Defined by CMake in Debug / RelWithDebInfo builds (RUTH_GV_CHECK_FCD_ORDER);
+// compiled out entirely otherwise, so Release pays nothing. A compile-time
+// toggle rather than a runtime one on purpose: this verifies a structural
+// property of the code, so it belongs to the build, not to a config file.
+#ifdef RUTH_GV_CHECK_FCD_ORDER
+inline constexpr bool kCheckFcdOrder = true;
+#else
+inline constexpr bool kCheckFcdOrder = false;
+#endif
 
 struct FCDRecord {
     double datetime_seconds;      // Timestamp as seconds (epoch)
@@ -148,6 +162,45 @@ private:
     // Hash map: segment_id -> segment's FCD records
     std::unordered_map<int64_t, SegmentGlobalView> segments_;
 
+    // Verify the invariant get_segment_speed's dedup depends on: in storage
+    // order, a vehicle's records on a segment never go backwards in time, so the
+    // LAST one kept is its most recent one. Compiled out unless
+    // RUTH_GV_CHECK_FCD_ORDER (see kCheckFcdOrder above).
+    //
+    // This holds today because a vehicle is evaluated by exactly one workload on
+    // one rank, advance_one_vehicle emits its samples in increasing datetime,
+    // and evaluate_batch, append_fcds, the all-gather and add_batch_raw's
+    // group-by-segment all concatenate whole blocks without reordering inside
+    // them. Nothing enforces that chain, which is why it is checked rather than
+    // merely asserted in a comment.
+    //
+    // Fails loud: a wrong segment speed feeds update_current_speeds -> routing
+    // -> trajectories, where it would surface much later as an unexplained
+    // divergence rather than as a fault here.
+    static void check_per_vehicle_datetime_order(int64_t segment_id,
+                                                 const std::vector<FCDRecord>& fcds) {
+        std::unordered_map<int, double> last_seen;
+        last_seen.reserve(fcds.size());
+
+        for (const auto& fcd : fcds) {
+            const auto seen = last_seen.find(fcd.vehicle_id);
+            if (seen != last_seen.end() && fcd.datetime_seconds < seen->second) {
+                std::fprintf(stderr,
+                    "[ruth] GlobalView ordering invariant VIOLATED on segment %lld: "
+                    "vehicle %d has a record at t=%.9f stored after one at t=%.9f. "
+                    "get_segment_speed keeps the last record per vehicle, so it is no "
+                    "longer keeping the most recent one and the segment speed is wrong. "
+                    "Fix: select by max datetime explicitly instead of by position "
+                    "(see the note above get_segment_speed in globalview.hpp).\n",
+                    static_cast<long long>(segment_id), fcd.vehicle_id,
+                    fcd.datetime_seconds, seen->second);
+                std::fflush(stderr);
+                std::abort();
+            }
+            last_seen[fcd.vehicle_id] = fcd.datetime_seconds;
+        }
+    }
+
     static constexpr double MILE_TO_METERS = 1609.344;
     static constexpr double ENDING_LENGTH = 200.0;
 
@@ -249,6 +302,30 @@ public:
         );
     }
 
+    // Average of the per-vehicle speeds currently recorded on this segment.
+    //
+    // std::map rather than unordered_map, for ONE reason: the sum below must run
+    // in a fixed order. Floating-point addition is not associative, and
+    // unordered_map iteration order follows insertion order, which under the
+    // distributed advance is the all-gather order and so varies with rank count.
+    // Measured drift on the returned speed: ~9e-16, on ~60% of reorderings.
+    // round_speed() in map.py quantizes to whole km/h and hides that in all but
+    // a vanishingly rare case where the average sits within an ULP of a .5
+    // boundary -- but this speed feeds update_current_speeds -> routing ->
+    // trajectories, and ordering the map is cheaper than reasoning about when
+    // the quantization saves us.
+    //
+    // NOTE on the dedup: keeping the LAST record seen per vehicle is keeping its
+    // most recent one, but only because of an invariant nothing here enforces --
+    // a vehicle's records reach this container contiguous and in increasing
+    // datetime. advance_one_vehicle emits them that way; one vehicle is
+    // evaluated by exactly one workload on one rank; and evaluate_batch,
+    // append_fcds, the all-gather and add_batch_raw's group-by-segment all
+    // concatenate whole blocks without reordering within them. IF THAT EVER
+    // BREAKS -- a queue split across ranks, a parallel merge that interleaves
+    // one vehicle's samples -- this silently starts picking an arbitrary sample
+    // rather than the latest, and the fix is to select by max datetime
+    // explicitly instead of by position.
     double get_segment_speed(int64_t segment_id) const {
         const auto it = segments_.find(segment_id);
         if (it == segments_.end()) {
@@ -260,14 +337,20 @@ public:
             return std::numeric_limits<double>::quiet_NaN();
         }
 
-        std::unordered_map<int, double> speeds;
-        speeds.reserve(fcds.size() / 2);  // Pre-allocate
+        // Checked here, at the point of use, rather than at insertion: this is
+        // the only place the ordering actually matters, and checking it here
+        // needs no per-segment bookkeeping carried between calls.
+        if constexpr (kCheckFcdOrder) {
+            check_per_vehicle_datetime_order(segment_id, fcds);
+        }
+
+        std::map<int, double> speeds;
 
         for (const auto& fcd : fcds) {
             speeds[fcd.vehicle_id] = fcd.vehicle_speed_mps;
         }
 
-        // Calculate average
+        // Calculate average (vehicle-id order, see above)
         double sum = 0.0;
         for (const auto& [vid, speed] : speeds) {
             sum += speed;

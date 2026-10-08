@@ -15,22 +15,11 @@ namespace ruthlib {
 // has slack to balance load. Matches MULTIPLIER in lib.cpp.
 static constexpr size_t ADVANCE_WORK_MULTIPLIER = 16;
 
-// Determinism aid. The gathered FCDs are a set-identical but arbitrarily-ordered
-// concatenation of every rank's contribution, so the FCD history file's row
-// order varies with rank count (results are unaffected — same records). In
-// Debug / RelWithDebInfo builds CMake defines RUTH_ADVANCE_SORT_FCDS; the Python
-// master then reorders each step's FCDs into serial's write order
-// (free vehicles, then queues FIFO, then waiting; datetime within each vehicle),
-// making the FCD history byte-identical to a serial run. Reordering happens
-// entirely master-side — the workloads and the serial path are untouched.
-// Release leaves the gather order (avoids the per-step reorder).
-#ifdef RUTH_ADVANCE_SORT_FCDS
-static constexpr bool kSortFcdsForDeterminism = true;
-#else
-static constexpr bool kSortFcdsForDeterminism = false;
-#endif
-
-bool advance_debug_sort_enabled() { return kSortFcdsForDeterminism; }
+// NOTE: the FCD reordering that used to be selected here by the compile-time
+// RUTH_ADVANCE_SORT_FCDS flag is now a runtime setting, config.json
+// ace.deterministic-order, read by ruth/simulator/mpi_advance.py. The flag, the
+// kSortFcdsForDeterminism constant and advance_debug_sort_enabled() are gone;
+// reordering is still entirely master-side and the workloads are untouched.
 
 void register_advance_workloads() {
   auto comm = ace::CommInterface::instance();

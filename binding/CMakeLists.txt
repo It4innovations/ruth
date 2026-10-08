@@ -44,18 +44,24 @@ set(ADVANCE_SOURCES
     src/advance_workloads.cpp
     src/advance_orchestration.cpp)
 
-# In Debug / RelWithDebInfo builds, sort the gathered FCDs into a canonical
-# (vehicle, time) order so the FCD history is byte-reproducible while debugging.
-# Release skips this time-consuming per-step sort (results are identical either
-# way — only row order in the output file changes).
-set(ADVANCE_SORT_FCDS OFF)
+# In Debug / RelWithDebInfo builds, check the ordering invariant
+# GlobalView::get_segment_speed relies on: a vehicle's records never go backwards
+# in time in storage order, so keeping the last one keeps the most recent one.
+# Nothing in the type system enforces that chain, so it is verified at the point
+# of use and aborts loudly. Release compiles the check out entirely.
+#
+# NOTE: this must reach globalview_cpp as well, not just ruth/ruthlib --
+# get_segment_speed is called from Python through that module (see
+# globalview_wrapper.take_segment_speeds), so an unflagged globalview_cpp would
+# leave the production call path unchecked.
+set(GV_CHECK_FCD_ORDER OFF)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
-  set(ADVANCE_SORT_FCDS ON)
+  set(GV_CHECK_FCD_ORDER ON)
 endif()
 
 add_library(ruth src/lib.cpp ${ADVANCE_SOURCES})
-if(ADVANCE_SORT_FCDS)
-  target_compile_definitions(ruth PRIVATE RUTH_ADVANCE_SORT_FCDS)
+if(GV_CHECK_FCD_ORDER)
+  target_compile_definitions(ruth PRIVATE RUTH_GV_CHECK_FCD_ORDER)
 endif()
 
 # Link libraries to your main program
@@ -66,8 +72,8 @@ target_include_directories(ruth PUBLIC ${HDF5_INCLUDE_DIRS})
 target_include_directories(ruth PUBLIC src)
 
 pybind11_add_module(ruthlib src/bindings.cpp ${ADVANCE_SOURCES})
-if(ADVANCE_SORT_FCDS)
-  target_compile_definitions(ruthlib PRIVATE RUTH_ADVANCE_SORT_FCDS)
+if(GV_CHECK_FCD_ORDER)
+  target_compile_definitions(ruthlib PRIVATE RUTH_GV_CHECK_FCD_ORDER)
 endif()
 target_link_libraries(ruthlib PRIVATE routing inih ace MPI::MPI_CXX pthread)
 target_include_directories(ruthlib PRIVATE RoutingAlg)
@@ -77,6 +83,9 @@ target_include_directories(ruthlib PRIVATE src)
 
 # GlobalView C++ module with spatial indexing
 pybind11_add_module(globalview_cpp src/globalview_bindings.cpp)
+if(GV_CHECK_FCD_ORDER)
+  target_compile_definitions(globalview_cpp PRIVATE RUTH_GV_CHECK_FCD_ORDER)
+endif()
 target_include_directories(globalview_cpp PRIVATE src)
 target_link_libraries(globalview_cpp PRIVATE OpenMP::OpenMP_CXX)
 set_target_properties(globalview_cpp PROPERTIES

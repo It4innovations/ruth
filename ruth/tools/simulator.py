@@ -59,6 +59,14 @@ class AceArgs:
     mpi_advance: bool = False
     # ACE scheduler queue policy: "prioritized" (no_redist/notify/lambda first) or "fifo".
     queue: str = "prioritized"
+    # Reorder each step's FCDs into serial's write order (history row order only,
+    # never vehicle positions). Validation aid for diffing against a serial run.
+    deterministic_order: bool = False
+    # Log a hash of the post-advance movement state each step; the compliance
+    # check for "same vehicle positions at every timestep".
+    trajectory_digest: bool = False
+    # When >= 0, dump the full per-vehicle state for that step to CSV.
+    trajectory_dump_step: int = -1
 
 
 @dataclass
@@ -147,7 +155,10 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                         fcd_writer_queue_size=fcd_writer_queue_size,
                     stuck_detection=stuck_detection,
                     plateau_default_route=plateau_default_route,
-                    mpi_advance=ace_args.mpi_advance)
+                    mpi_advance=ace_args.mpi_advance,
+                    deterministic_order=ace_args.deterministic_order,
+                    trajectory_digest=ace_args.trajectory_digest,
+                    trajectory_dump_step=ace_args.trajectory_dump_step)
 
     simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 

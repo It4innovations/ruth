@@ -51,11 +51,6 @@ void sync_advance();
 /// reproduce serial's read-time GV contents. Passing -inf prunes nothing.
 void advance_drop_old(double threshold_epoch_s);
 
-/// True in Debug / RelWithDebInfo builds (compile flag RUTH_ADVANCE_SORT_FCDS):
-/// the Python master reorders each step's FCDs into serial's write order so the
-/// FCD history is byte-identical. False in Release (skips the reorder).
-bool advance_debug_sort_enabled();
-
 /// Append FCDs to THIS rank's local accumulator before sync_advance, so they
 /// are included in the gather. Used by the master to inject the stationary FCDs
 /// of "after-gap" waiting vehicles (queued+selected behind a non-selected

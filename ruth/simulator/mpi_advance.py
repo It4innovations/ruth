@@ -29,14 +29,19 @@ from .simulation import FCDRecord
 
 logger = logging.getLogger(__name__)
 
-# Debug builds (CMAKE_BUILD_TYPE Debug/RelWithDebInfo) compile ruthlib with the
-# FCD-sort flag on; when set, the master reorders each step's gathered FCDs into
-# serial's write order (free, then queues FIFO, then waiting) so the FCD history
-# is byte-identical to a serial run. Off in Release (skips the reorder).
-try:
-    _DEBUG_SORT_FCDS = bool(ruthlib.advance_debug_sort_enabled())
-except AttributeError:
-    _DEBUG_SORT_FCDS = False
+# Whether each step's gathered FCDs are reordered into serial's write order is a
+# RUNTIME choice (config.json ace.deterministic-order), passed in per call by the
+# caller. It used to be a compile-time flag (RUTH_ADVANCE_SORT_FCDS, exposed as
+# ruthlib.advance_debug_sort_enabled()), which tied reproducibility to the build
+# flavour and could not be flipped to validate a release build; that flag and its
+# accessor are removed.
+#
+# This affects the ORDER of the FCD history rows only, NOT vehicle positions.
+# Positions do not depend on FCD order: the LoS query counts a set of distinct
+# vehicle ids, drop_old works on whole batches, and GlobalView::get_segment_speed
+# sums in vehicle-id order. Turn this on to diff the HDF5 history against a
+# serial baseline; leave it off otherwise and compare the per-step trajectory
+# digests instead (trajectory_digest.py), which is the real compliance check.
 
 # Time is carried as integer microseconds end-to-end to match the serial path's
 # timedelta arithmetic exactly. Using float seconds accumulates sub-second drift
@@ -275,7 +280,8 @@ def _reorder_fcds_to_serial(fcd_arrays: dict, free: List[Vehicle],
                             queue_groups: List[List[Vehicle]], waiting: List[Vehicle]) -> dict:
     """Reorder the gathered FCDs into serial's exact write order: free vehicles
     (in split order), then each queue group FIFO, then waiting — and by datetime
-    within each vehicle. Debug aid only; makes the history byte-identical to serial.
+    within each vehicle. Validation aid (ace.deterministic-order); makes the
+    history byte-identical to serial so the HDF5 files can be diffed directly.
     The workloads and the serial path are untouched — this is pure master-side
     reordering, valid because the per-step FCD *set* is identical to serial's."""
     order: Dict[int, int] = {}
@@ -298,12 +304,17 @@ def _reorder_fcds_to_serial(fcd_arrays: dict, free: List[Vehicle],
 
 def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
                          routing_map: Map, queues_manager: QueuesManager,
-                         los_vehicles_tolerance, drop_before_time=None
+                         los_vehicles_tolerance, drop_before_time=None,
+                         deterministic_order: bool = False
                          ) -> Tuple[List[FCDRecord], bool]:
     """Distributed equivalent of route.advance_vehicles_with_queues.
 
     Note: LoS is evaluated against the C++ GlobalView replicas (kept in sync by
     the all-gather), not the Python global_view — so this does not take a gv_db.
+
+    :param deterministic_order: reorder the returned FCDs into serial's write
+        order (config.json ace.deterministic-order). Row order only; the records
+        themselves and the resulting vehicle positions are identical either way.
     """
     departure_epoch_us = _datetime_to_epoch_us(departure_time)
     los_tolerance_s = los_vehicles_tolerance.total_seconds()
@@ -365,9 +376,9 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
 
     queues_manager.batch_update()
 
-    # Debug only: reorder gathered FCDs into serial's write order so the FCD
+    # Validation only: reorder gathered FCDs into serial's write order so the FCD
     # history is byte-identical (content is already identical either way).
-    if _DEBUG_SORT_FCDS:
+    if deterministic_order:
         fcd_arrays = _reorder_fcds_to_serial(fcd_arrays, free, queue_groups, waiting)
 
     moved_by_id = {v.id: v for v in vehicles_to_be_moved}

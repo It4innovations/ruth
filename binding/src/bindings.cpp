@@ -157,11 +157,6 @@ PYBIND11_MODULE(ruthlib, m) {
         py::arg("departure_epoch_us"), py::arg("los_tolerance_s"),
         "phase 1: evaluate free vehicles and queues across ranks");
 
-    // Debug/RelWithDebInfo flag (compiled): whether the Python master should
-    // reorder each step's FCDs into serial's write order for byte-identical output.
-    m.def("advance_debug_sort_enabled", &ruthlib::advance_debug_sort_enabled,
-          "true if FCDs should be reordered to serial's write order (debug builds)");
-
     // Prune every rank's GV replica to datetime >= threshold_epoch_s. Call at
     // the start of each step (before do_advance) to match serial's read-time GV.
     m.def("advance_drop_old",

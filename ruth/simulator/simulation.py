@@ -83,6 +83,20 @@ class SimSetting:
     # Distribute the vehicle-advance phase over ACE (barrier-based BSP) instead of
     # running it serially on the master. Sourced from the config.json "ace" section.
     mpi_advance: bool = False
+    # Reorder each step's gathered FCDs into serial's write order so the FCD
+    # history file can be diffed against a serial baseline. Affects the ORDER of
+    # the history rows only -- never vehicle positions, which are order-
+    # independent (see GlobalView::get_segment_speed). Validation aid; off in
+    # production runs because it costs a sort per step.
+    deterministic_order: bool = False
+    # Log one hash of the post-advance movement state per step. This is the
+    # compliance check for "same vehicle positions at every timestep"; comparing
+    # two runs means comparing the logged digest column. Costs one O(N) pass per
+    # step, so off by default.
+    trajectory_digest: bool = False
+    # When >= 0, also dump the full per-vehicle state for that step to CSV. Set
+    # it to the first step whose digest differs to find the diverging vehicle.
+    trajectory_dump_step: int = -1
     fcd_history_base_name: str = "fcd_history"
 
     def __post_init__(self, seed: Optional[int]):

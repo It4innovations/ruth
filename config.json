@@ -34,6 +34,14 @@
     "title": "",
     "gif": false
   },
+  "ace": {
+    "threads": null,
+    "mpi-advance": false,
+    "queue": "prioritized",
+    "deterministic-order": false,
+    "trajectory-digest": false,
+    "trajectory-dump-step": -1
+  },
   "console": {
     "enabled": false,
     "host": "127.0.0.1",

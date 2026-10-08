@@ -148,6 +148,11 @@ class Simulator:
                     if has_moved or self.sim.routing_map.has_temporary_speeds_planned():
                         last_time_moved = self.current_offset
                         moved_last_step = True
+                # Post-advance state, before pruning changes the population: this
+                # is the point both the serial and the distributed path must agree
+                # on, step for step.
+                self.emit_trajectory_digest(step)
+
                 with timer_set.get("update_global_view"):
                     self.sim.update(fcds)
 
@@ -204,6 +209,36 @@ class Simulator:
                 logger.info("Simulation stopped after reaching the configured limit of %s steps.", max_steps)
             logger.info(f"Simulation done in {self.sim.duration}.")
 
+    def emit_trajectory_digest(self, step: int):
+        """Log one hash of the post-advance movement state (ace.trajectory-digest).
+
+        This is the compliance check for "the vehicles are in the same exact
+        position": diff the logged digest column between a serial run and a
+        distributed run at any rank count, and the first differing line is the
+        first diverging step. It deliberately does not look at the FCD history,
+        whose row order is allowed to differ.
+
+        Off by default — it costs one O(N) pass per step.
+        """
+        setting = self.sim.setting
+        # getattr throughout: see the note in advance_vehicles about checkpoints
+        # written before these settings existed.
+        if not getattr(setting, "trajectory_digest", False):
+            return
+
+        # Imported lazily so the module is not a hard dependency of a normal run.
+        from .trajectory_digest import dump_trajectory, trajectory_digest
+
+        logger.info("trajectory_digest: step=%s n=%s digest=%s",
+                    step, len(self.sim.vehicles), trajectory_digest(self.sim.vehicles))
+
+        dump_step = getattr(setting, "trajectory_dump_step", -1)
+        if dump_step is not None and dump_step >= 0 and step == dump_step:
+            path = f"trajectory-step{step:06d}.csv"
+            rows = dump_trajectory(self.sim.vehicles, path)
+            logger.info("trajectory_digest: wrote %s rows of step %s state to %s",
+                        rows, step, path)
+
     def _use_mpi_advance(self) -> bool:
         # Driven by the config.json "ace" section (ace.mpi-advance), carried on the
         # SimSetting. Previously toggled via the RUTH_MPI_ADVANCE env var.
@@ -218,11 +253,16 @@ class Simulator:
             from .mpi_advance import advance_vehicles_mpi
             drop_before = (self.sim.setting.departure_time + self.current_offset
                            if self.current_offset is not None else None)
+            # getattr: a simulation resumed from a checkpoint written before this
+            # setting existed unpickles a SimSetting without the field (dataclass
+            # defaults do not apply to __setstate__), and must keep running.
             return advance_vehicles_mpi(vehicles, self.sim.setting.departure_time,
                                         self.sim.routing_map,
                                         self.sim.queues_manager,
                                         self.sim.setting.los_vehicles_tolerance,
-                                        drop_before_time=drop_before)
+                                        drop_before_time=drop_before,
+                                        deterministic_order=getattr(
+                                            self.sim.setting, "deterministic_order", False))
 
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             self.sim.global_view,
