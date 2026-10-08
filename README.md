@@ -29,6 +29,27 @@ cd ruth
 pip install -e .
 ```
 
+#### RoutingAlg performance patch (required for the pinned submodule)
+
+The `binding/RoutingAlg` submodule is pinned to commit `e02f45b` (adaptive
+visited-map pre-sizing, LTO, FindPlateaus copy elimination — Prague 2K −31%
+on the routing phase), which is **not available from the RoutingAlg remote**.
+The commit ships with this repository in `patches/`:
+
+```bash
+# after cloning with --recurse-submodules (RoutingAlg will be at the pinned
+# commit's parent or report a missing commit):
+cd binding/RoutingAlg
+git fetch ../../patches/RoutingAlg-presize.bundle perf/presize-dijkstra-maps:perf/presize-dijkstra-maps
+git checkout e02f45b   # the exact pinned commit; `git submodule status` is clean again
+```
+
+The bundle recreates the commit byte-for-byte, so the submodule pointer
+resolves exactly. For human review, the same change is also provided as a
+plain diff in `patches/0001-RoutingAlg-presize-dijkstra-maps.patch`
+(appliable with `git am` onto RoutingAlg `master`, producing an equivalent
+commit with a different hash).
+
 #### Option 2: Install this branch directly from GitHub
 
 ```bash
