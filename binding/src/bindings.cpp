@@ -563,21 +563,6 @@ PYBIND11_MODULE(ruthlib, m) {
 
     // --- queue registry (shadow mode) ---------------------------------------
 
-    m.def("advance_queues_touch",
-        [](py::array_t<int64_t, py::array::c_style | py::array::forcecast> node_from,
-           py::array_t<int64_t, py::array::c_style | py::array::forcecast> node_to) {
-            const py::ssize_t n = node_from.shape(0);
-            if (node_to.shape(0) != n) {
-                throw std::runtime_error("advance_queues_touch: array lengths differ");
-            }
-            auto& queues = ruthlib::QueueRegistry::instance();
-            for (py::ssize_t i = 0; i < n; ++i) {
-                queues.touch(node_from.at(i), node_to.at(i));
-            }
-        },
-        py::arg("node_from"), py::arg("node_to"),
-        "read (and so create) these queues, in order -- defaultdict parity");
-
     m.def("advance_queues_stage",
         [](py::array_t<int32_t, py::array::c_style | py::array::forcecast> removal_id,
            py::array_t<int64_t, py::array::c_style | py::array::forcecast> removal_from,
@@ -596,6 +581,21 @@ PYBIND11_MODULE(ruthlib, m) {
         py::arg("removal_id"), py::arg("removal_from"), py::arg("removal_to"),
         py::arg("addition_id"), py::arg("addition_from"), py::arg("addition_to"),
         "stage this step's queue operations");
+
+    m.def("advance_queues_split",
+        [](py::array_t<int32_t, py::array::c_style | py::array::forcecast> vehicle_ids) {
+            auto result = ruthlib::split_selected(
+                ruthlib::VehicleStore::instance(), ruthlib::QueueRegistry::instance(),
+                vehicle_ids.data(), static_cast<size_t>(vehicle_ids.shape(0)));
+            py::dict d;
+            d["free"] = vec_to_numpy(std::move(result.free_ids));
+            d["queue_ids"] = vec_to_numpy(std::move(result.queue_ids));
+            d["queue_offsets"] = vec_to_numpy(std::move(result.queue_offsets));
+            d["waiting"] = vec_to_numpy(std::move(result.waiting_ids));
+            return d;
+        },
+        py::arg("vehicle_ids"),
+        "partition the selected vehicles into free / queue groups / waiting");
 
     m.def("advance_queues_batch_update",
         []() { ruthlib::QueueRegistry::instance().batch_update(); },

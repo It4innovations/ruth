@@ -27,6 +27,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "advance_store.hpp"
+
 namespace ruthlib {
 
 class QueueRegistry {
@@ -62,6 +64,9 @@ public:
   /// Number of keys, including empty queues -- an empty deque left behind by a
   /// lookup is still a key, and Python counts it too.
   size_t key_count() const { return order_.size(); }
+
+  /// One queue by position in creation order, for iterating without copying.
+  const std::deque<int32_t>& queue_at(size_t slot) const { return queues_[slot]; }
 
   /// Flatten for comparison against Python: keys in creation order, plus a CSR
   /// of the ids queued under each.
@@ -101,5 +106,34 @@ private:
 
   size_t slot_for(int64_t node_from, int64_t node_to);
 };
+
+/// How one step's selected vehicles divide up, as _split_vehicles divides them.
+struct SplitResult {
+  std::vector<int32_t> free_ids;        ///< not queued; order-independent work
+  std::vector<int32_t> queue_ids;       ///< the groups, concatenated
+  std::vector<int32_t> queue_offsets;   ///< CSR into queue_ids, n_groups + 1
+  std::vector<int32_t> waiting_ids;     ///< queued behind a gap; they wait
+};
+
+/// Port of mpi_advance._split_vehicles.
+///
+/// `queues` is NOT const: the first pass reads queues[(current, next)] per
+/// vehicle, and on a defaultdict that read creates the key. Those creations are
+/// half the point -- they are what establishes the key order the second pass
+/// then iterates in.
+///
+/// Four orderings here are observable and all are preserved:
+///   1. `free` follows the order the vehicles were given in;
+///   2. the groups follow queue key creation order;
+///   3. within a group, the queue's own front-to-back order;
+///   4. `waiting` follows the order vehicles were first found to be queued,
+///      which is Python's dict insertion order for `in_queue`.
+///
+/// The store must hold each vehicle's CURRENT position before this is called:
+/// current_node/next_node are read from the route at start_index.
+SplitResult split_selected(const VehicleStore& store,
+                           QueueRegistry& queues,
+                           const int32_t* vehicle_id,
+                           size_t n);
 
 }  // namespace ruthlib

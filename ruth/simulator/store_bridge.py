@@ -537,28 +537,6 @@ def _compare_queue_events(kind: str, store_events: dict, python_events) -> None:
                 f"{got} in the store, {expected} in Python")
 
 
-def queues_touch(vehicles: Sequence) -> None:
-    """Mirror _split_vehicles' queue lookups into the C++ registry, in order.
-
-    QueuesManager.queues is a defaultdict, so _split_vehicles' read of
-    queues[(current_node, next_node)] CREATES the key when it is absent -- and
-    the order keys are created in is observable, because _split_vehicles later
-    iterates queues.items() to build the queue groups. Replaying the same reads
-    in the same order is what keeps the registry's key order identical.
-    """
-    n = len(vehicles)
-    if n == 0:
-        return
-    node_from = np.empty(n, dtype=np.int64)
-    node_to = np.empty(n, dtype=np.int64)
-    for i, vehicle in enumerate(vehicles):
-        node_from[i] = vehicle.current_node
-        # next_node is None at the end of a route; -1 is what the store uses.
-        nxt = vehicle.next_node
-        node_to[i] = -1 if nxt is None else nxt
-    ruthlib.advance_queues_touch(node_from, node_to)
-
-
 def queues_stage(queue_events: dict) -> None:
     """Stage the queue operations apply_deltas reported, removals then additions."""
     removals, additions = queue_events["removals"], queue_events["additions"]
@@ -604,3 +582,54 @@ def shadow_check_queues(queues_manager) -> int:
                 f"store shadow check (queue {key}): registry has {store_queue}, "
                 f"Python has {python_queue}")
     return len(store_keys)
+
+
+def shadow_check_split(selected: Sequence, python_free: Sequence,
+                       python_queue_groups: Sequence, python_waiting: Sequence) -> int:
+    """Check the C++ partition matches _split_vehicles'. Returns vehicles split.
+
+    Compares all four observable orderings, not just membership: `free` order,
+    the number and order of queue groups, each group's front-to-back contents,
+    and `waiting` order. Group order decides dispatch order, position within a
+    group decides which vehicle blocks which, and `waiting` order feeds the
+    stationary FCDs -- so a set comparison would pass on states that later
+    diverge.
+
+    Pushes movement first: the partition is read from each vehicle's current
+    position in its route, so a store still holding last step's start_index
+    would partition a different world.
+    """
+    push_movement(selected)
+
+    ids = np.fromiter((v.id for v in selected), dtype=np.int32, count=len(selected))
+    result = ruthlib.advance_queues_split(ids)
+
+    store_free = [int(x) for x in result["free"]]
+    expected_free = [int(v.id) for v in python_free]
+    if store_free != expected_free:
+        raise AssertionError(_first_difference("split free",
+                                               np.asarray(store_free, dtype=np.int32),
+                                               np.asarray(expected_free, dtype=np.int32)))
+
+    offsets = [int(x) for x in result["queue_offsets"]]
+    queue_ids = [int(x) for x in result["queue_ids"]]
+    store_groups = [queue_ids[offsets[g]:offsets[g + 1]] for g in range(len(offsets) - 1)]
+    expected_groups = [[int(v.id) for v in group] for group in python_queue_groups]
+    if store_groups != expected_groups:
+        if len(store_groups) != len(expected_groups):
+            raise AssertionError(
+                f"store shadow check (split groups): {len(store_groups)} groups in the "
+                f"registry, {len(expected_groups)} in Python")
+        for g, (got, expected) in enumerate(zip(store_groups, expected_groups)):
+            if got != expected:
+                raise AssertionError(
+                    f"store shadow check (split group {g}): registry has {got}, "
+                    f"Python has {expected}")
+
+    store_waiting = [int(x) for x in result["waiting"]]
+    expected_waiting = [int(v.id) for v in python_waiting]
+    if store_waiting != expected_waiting:
+        raise AssertionError(_first_difference("split waiting",
+                                               np.asarray(store_waiting, dtype=np.int32),
+                                               np.asarray(expected_waiting, dtype=np.int32)))
+    return len(selected)

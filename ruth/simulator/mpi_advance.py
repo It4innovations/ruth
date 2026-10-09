@@ -337,9 +337,9 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     if store_shadow_check:
         from . import store_bridge
         # Must run right after _split_vehicles and before anything stages a queue
-        # operation: it replays that function's defaultdict reads, which is what
-        # fixes the registry's key order.
-        store_bridge.queues_touch(vehicles_to_be_moved)
+        # operation: split_selected replays that function's defaultdict reads,
+        # which is what fixes the registry's key order.
+        store_bridge.shadow_check_split(vehicles_to_be_moved, free, queue_groups, waiting)
 
     flat_queue_vehicles = [v for group in queue_groups for v in group]
 
