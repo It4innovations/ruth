@@ -275,7 +275,8 @@ def _build_fcd_columns(fcd_arrays: dict, moved_by_id: Dict[int, Vehicle]) -> FCD
 
 
 def _replay_deltas(replay_order: List[Vehicle], deltas: dict,
-                   queues_manager: QueuesManager) -> bool:
+                   queues_manager: QueuesManager,
+                   store_apply_deltas: bool = False) -> bool:
     """Apply the step's deltas to `replay_order`, in that order. Returns moved.
 
     Same effect as calling _apply_delta per vehicle, with the per-vehicle
@@ -318,6 +319,17 @@ def _replay_deltas(replay_order: List[Vehicle], deltas: dict,
     moved_flags = np.asarray(deltas["moved"])[position].astype(bool).tolist()
     changed_segment = np.asarray(deltas["changed_segment"])[position].astype(bool).tolist()
     reached_end = np.asarray(deltas["reached_end"])[position].astype(bool).tolist()
+
+    # The store keeps its own copy of the movement state, and from here it is
+    # maintained in production, not just under the shadow check: C++ selection
+    # reads these columns, and refreshing them with a Python pass over every
+    # vehicle would cost more than the selection saves. Same arrays the loop
+    # below uses, so this adds one C++ call per step and no per-vehicle work.
+    if store_apply_deltas:
+        from . import store_select
+        store_select.apply_delta_columns(
+            wanted_ids, new_start_index, new_offset_m, new_time_offset_us,
+            moved_flags, changed_segment, reached_end)
 
     vehicles_moved = False
     remove_vehicle = queues_manager.remove_vehicle
@@ -435,6 +447,7 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
                          fcd_columns: bool = True,
                          fast_replay: bool = True,
                          batch_workloads: bool = True,
+                         store_selection: bool = True,
                          phase_times: dict = None
                          ) -> Tuple[object, bool]:
     """Distributed equivalent of route.advance_vehicles_with_queues.
@@ -462,6 +475,10 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
         sending one per queue (config.json ace.advance-batch). The queues are
         tiny -- 1-3 vehicles -- so one workload each made the barrier 93-97% of
         the phase. False restores the old dispatch, for an A/B.
+    :param store_selection: keep the store's movement columns current in C++ so
+        the step loop can select from them (config.json ace.store-selection).
+        Without it the store is only refreshed for the vehicles that move, which
+        is enough to build their tasks but not to choose them.
     :param phase_times: when given, filled with this step's per-phase wall times
         in milliseconds. The step loop merges them into step_timers, so a slow
         advance can be attributed without guessing. Always on -- a few
@@ -584,7 +601,8 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     additions_before = len(queues_manager.to_be_added)
 
     if fast_replay:
-        vehicles_moved = _replay_deltas(replay_order, deltas, queues_manager)
+        vehicles_moved = _replay_deltas(replay_order, deltas, queues_manager,
+                                        store_apply_deltas=store_selection)
     else:
         delta_by_id = _delta_by_id()
         vehicles_moved = False
@@ -595,6 +613,9 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     # After-gap waiting: advance time only, no movement, no queue op.
     for vehicle in waiting:
         vehicle.__dict__["time_offset"] = vehicle.time_offset + vehicle.frequency
+    if store_selection and waiting:
+        from . import store_select
+        store_select.advance_waiting(waiting)
 
     # Shadow mode: the store replays the same deltas and must land on the same
     # state. Runs BEFORE batch_update, while the staged operations are still

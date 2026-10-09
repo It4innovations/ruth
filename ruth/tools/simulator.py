@@ -80,6 +80,9 @@ class AceArgs:
     fast_replay: bool = True
     # Cap the number of ACE workloads per step instead of one per queue.
     advance_batch: bool = True
+    # Select the step's vehicles and the next offset from the C++ store instead
+    # of walking every Vehicle in Python.
+    store_selection: bool = True
 
 
 @dataclass
@@ -176,7 +179,8 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                     store_tasks=ace_args.store_tasks,
                     fcd_columns=ace_args.fcd_columns,
                     fast_replay=ace_args.fast_replay,
-                    advance_batch=ace_args.advance_batch)
+                    advance_batch=ace_args.advance_batch,
+                    store_selection=ace_args.store_selection)
 
     simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 

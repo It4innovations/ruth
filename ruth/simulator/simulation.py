@@ -147,6 +147,12 @@ class SimSetting:
     # barrier that tracked workload count rather than work. On by default; false
     # restores the old dispatch for an A/B.
     advance_batch: bool = True
+    # Select each step's vehicles, and the next current offset, from the C++
+    # VehicleStore instead of walking every Vehicle in Python. The store then
+    # maintains its own movement columns each step (it has to, to answer the
+    # question). On by default; false restores the Python comprehensions, which
+    # is also what the serial path always uses.
+    store_selection: bool = True
     fcd_history_base_name: str = "fcd_history"
 
     def __post_init__(self, seed: Optional[int]):

@@ -27,6 +27,8 @@ class Simulator:
         """
         self.sim = sim
         self.current_offset = self.sim.compute_current_offset()
+        self._store_population_done = False
+        self._vehicle_index = None
 
     @property
     def state(self):
@@ -115,12 +117,7 @@ class Simulator:
                                                                              alternatives_providers)
 
                 with timer_set.get("allowed_vehicles"):
-                    vehicles_to_be_moved = [v for v in self.sim.vehicles
-                                            if self.sim.is_vehicle_within_offset(v, offset_seconds)]
-
-                    need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
-                                      vehicle.is_at_the_end_of_segment(self.sim.routing_map)
-                                      and vehicle.alternatives != VehicleAlternatives.DEFAULT]
+                    vehicles_to_be_moved, need_new_route = self.select_vehicles(offset_seconds)
 
                 self.shadow_check_selection(offset_seconds, vehicles_to_be_moved)
 
@@ -170,7 +167,7 @@ class Simulator:
                 with timer_set.get("compute_offset"):
                     previous_offset = self.current_offset
                     self.sim.prune_inactive_vehicles()
-                    current_offset_new = self.sim.compute_current_offset()
+                    current_offset_new = self.current_offset_from_store()
                     if self.sim.streaming:
                         self.load_due_streaming_vehicles(alternatives_providers)
                         current_offset_new = self.sim.compute_current_offset()
@@ -248,6 +245,63 @@ class Simulator:
             logger.info("trajectory_digest: wrote %s rows of step %s state to %s",
                         rows, step, path)
 
+    def select_vehicles(self, offset_seconds: int):
+        """The vehicles moving this step, and those of them needing a new route.
+
+        Both passes used to walk every vehicle in Python: at 936k vehicles that
+        was ~384 ms per step no matter how few were active, which became the
+        largest single cost in the run once the advance itself got cheap. The
+        store answers both from its own columns, so the Python work is
+        proportional to the ANSWER rather than to the population.
+
+        Falls back to the original comprehensions when the store is not in use,
+        so the serial path and ace.store-selection=false are unchanged.
+        """
+        if not self._use_store_selection():
+            vehicles_to_be_moved = [v for v in self.sim.vehicles
+                                    if self.sim.is_vehicle_within_offset(v, offset_seconds)]
+            need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
+                              vehicle.is_at_the_end_of_segment(self.sim.routing_map)
+                              and vehicle.alternatives != VehicleAlternatives.DEFAULT]
+            return vehicles_to_be_moved, need_new_route
+
+        from . import store_select
+
+        by_id = self._vehicle_by_id()
+        selected_ids = store_select.select_within_offset(offset_seconds,
+                                                         self.sim._freq_seconds)
+        vehicles_to_be_moved = [by_id[int(i)] for i in selected_ids]
+
+        # The store answers the geometric half (sitting exactly at a segment
+        # end); the behaviour half is a Python-only attribute, and it filters a
+        # set that is already small.
+        at_end_ids = store_select.at_segment_end(selected_ids)
+        need_new_route = [by_id[int(i)] for i in at_end_ids]
+        need_new_route = [v for v in need_new_route
+                          if v.alternatives != VehicleAlternatives.DEFAULT]
+        return vehicles_to_be_moved, need_new_route
+
+    def current_offset_from_store(self):
+        """compute_current_offset() answered from the store's columns."""
+        if not self._use_store_selection():
+            return self.sim.compute_current_offset()
+
+        from . import store_select
+        offset_us = store_select.min_active_time_offset_us()
+        return None if offset_us is None else timedelta(microseconds=int(offset_us))
+
+    def _vehicle_by_id(self):
+        """id -> Vehicle, rebuilt only when the population changes."""
+        index = getattr(self, "_vehicle_index", None)
+        if index is None or len(index) != len(self.sim.vehicles):
+            index = {v.id: v for v in self.sim.vehicles}
+            self._vehicle_index = index
+        return index
+
+    def _use_store_selection(self) -> bool:
+        return (self._use_store()
+                and getattr(self.sim.setting, "store_selection", True))
+
     def _use_store(self) -> bool:
         """Whether the C++ VehicleStore is in use this run.
 
@@ -273,9 +327,18 @@ class Simulator:
         if not self._use_store():
             return
 
+        # Only streaming adds or removes vehicles: load_next_vehicle_bucket and
+        # prune_inactive_vehicles are both no-ops otherwise. Rebuilding the id
+        # vector every step to discover that cost ~46 ms at 936k vehicles, so
+        # after the first population it is only re-checked when it can change.
+        if self._store_population_done and not self.sim.streaming:
+            return
+
         from .store_bridge import ensure_population
         if ensure_population(self.sim.vehicles, self.sim.routing_map):
+            self._vehicle_index = None
             logger.info("store: re-initialised for %d vehicles", len(self.sim.vehicles))
+        self._store_population_done = True
 
     def push_store_routes(self, vehicles: List[Vehicle]):
         """Push rewritten routes into the store."""
@@ -374,6 +437,7 @@ class Simulator:
                                             self.sim.setting, "fast_replay", True),
                                         batch_workloads=getattr(
                                             self.sim.setting, "advance_batch", True),
+                                        store_selection=self._use_store_selection(),
                                         phase_times=self.advance_phase_times)
 
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,

@@ -147,7 +147,7 @@ class AceArgs(AceArgsInner):
     # kebab-case JSON keys: "threads", "mpi-advance", "queue",
     # "deterministic-order", "trajectory-digest", "trajectory-dump-step",
     # "store-shadow-check", "store-tasks", "fcd-columns", "fast-replay",
-    # "advance-batch". threads=None -> all cores.
+    # "advance-batch", "store-selection". threads=None -> all cores.
     threads: Optional[int] = None
     mpi_advance: bool = False
     queue: str = "prioritized"
@@ -159,6 +159,7 @@ class AceArgs(AceArgsInner):
     fcd_columns: bool = True
     fast_replay: bool = True
     advance_batch: bool = True
+    store_selection: bool = True
 
 
 @serde(rename_all="kebabcase")
