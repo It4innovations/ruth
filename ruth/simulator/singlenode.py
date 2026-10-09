@@ -148,6 +148,9 @@ class Simulator:
                     self.push_store_routes([v for (v, _) in selected_plans])
 
                 with timer_set.get("advance_vehicle"):
+                    # advance_vehicles arms the task digest, which needs the step
+                    # number; it is not otherwise threaded down there.
+                    self._current_step = step
                     fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy())
                     moved_last_step = False
                     if has_moved or self.sim.routing_map.has_temporary_speeds_planned():
@@ -238,12 +241,41 @@ class Simulator:
         logger.info("trajectory_digest: step=%s n=%s digest=%s",
                     step, len(self.sim.vehicles), trajectory_digest(self.sim.vehicles))
 
+        # The kernel is a pure function of (task, GlobalView). Logging the task
+        # digest next to the position digest says which of the two diverged:
+        # if the task digests already differ at the first diverging step the
+        # inputs are at fault, and if they agree the GlobalView is the only
+        # input left. Absent on the serial path, which builds no tasks.
+        if self._use_mpi_advance():
+            from . import mpi_advance
+            if mpi_advance.last_task_digest is not None:
+                logger.info("task_digest: step=%s digest=%s",
+                            step, mpi_advance.last_task_digest)
+
         dump_step = getattr(setting, "trajectory_dump_step", -1)
         if dump_step is not None and dump_step >= 0 and step == dump_step:
             path = f"trajectory-step{step:06d}.csv"
             rows = dump_trajectory(self.sim.vehicles, path)
             logger.info("trajectory_digest: wrote %s rows of step %s state to %s",
                         rows, step, path)
+
+    def arm_task_digest(self, mpi_advance) -> None:
+        """Tell mpi_advance whether to hash (and dump) this step's tasks.
+
+        Shares ace.trajectory-digest and ace.trajectory-dump-step with the
+        trajectory digest: the two numbers are only useful read together, and a
+        separate flag would just be one more thing to forget to turn on.
+        """
+        setting = self.sim.setting
+        enabled = bool(getattr(setting, "trajectory_digest", False))
+        mpi_advance.task_digest_enabled = enabled
+
+        dump_step = getattr(setting, "trajectory_dump_step", -1)
+        step = getattr(self, "_current_step", None)
+        if enabled and dump_step is not None and dump_step >= 0 and step == dump_step:
+            mpi_advance.task_dump_path = "tasks-step%06d.csv" % step
+        else:
+            mpi_advance.task_dump_path = None
 
     def select_vehicles(self, offset_seconds: int):
         """The vehicles moving this step, and those of them needing a new route.
@@ -414,7 +446,10 @@ class Simulator:
         if self._use_mpi_advance():
             # LoS is evaluated against the C++ GlobalView replicas (kept in sync
             # by the all-gather), so the Python global_view is not passed here.
+            from . import mpi_advance
             from .mpi_advance import advance_vehicles_mpi
+
+            self.arm_task_digest(mpi_advance)
             drop_before = (self.sim.setting.departure_time + self.current_offset
                            if self.current_offset is not None else None)
             # getattr: a simulation resumed from a checkpoint written before this

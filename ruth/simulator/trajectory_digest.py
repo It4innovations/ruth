@@ -101,3 +101,79 @@ def dump_trajectory(vehicles: Sequence, path: str) -> int:
                 vehicle_id[i], start_index[i], offset_m[i],
                 time_offset_us[i], active[i]))
     return len(vehicle_id)
+
+
+# ---------------------------------------------------------------------------
+# Task digest: the other half of the comparison.
+#
+# The trajectory digest hashes where the vehicles ARE. It deliberately does not
+# hash routes, segment geometry or closures, because those are not part of "the
+# vehicle is in the same position". That blind spot matters when two runs agree
+# on every position at step N and disagree at step N+1: the kernel is a pure
+# function of (task, GlobalView), so if the positions going in were identical,
+# either a task field differed -- a route that was rewritten differently, a
+# closure that landed on a different segment -- or the GlobalView did.
+#
+# Hashing the task array splits those two cases with one number per step:
+#
+#   * task digests already differ at the first diverging step -> the inputs
+#     diverged, and the dump names the field. Nothing to look for in the LoS.
+#   * task digests are equal and the positions still differ -> every scalar
+#     input was identical, so the only remaining input is the GlobalView.
+#
+# Rows are hashed in vehicle-id order for the same reason the trajectory digest
+# is: the digest must depend on the SET of tasks, not on how they were split
+# across free/queue buffers or distributed across ranks.
+
+# Hashed field by field rather than with one tobytes() over the row: the dtype
+# carries padding between the SegmentDesc members, and padding is not part of
+# the kernel's input. Reading it would make the digest depend on whether the
+# buffer came from np.zeros or from C++.
+_TASK_FIELDS = (
+    "vehicle_id", "start_index", "start_offset_m", "time_offset_us",
+    "frequency_us", "fcd_period_us",
+    "seg0_id", "seg0_len", "seg0_max_kph", "seg0_lanes", "seg0_valid", "seg0_closed",
+    "seg1_id", "seg1_len", "seg1_max_kph", "seg1_lanes", "seg1_valid", "seg1_closed",
+)
+
+
+def _tasks_in_id_order(task_arrays):
+    """The step's task buffers concatenated and sorted by vehicle id, or None."""
+    present = [arr for arr in task_arrays if arr is not None and len(arr) > 0]
+    if not present:
+        return None
+    combined = np.concatenate(present) if len(present) > 1 else present[0]
+    order = np.argsort(combined["vehicle_id"], kind="stable")
+    return combined[order]
+
+
+def task_digest(task_arrays) -> str:
+    """Hex digest of the step's AdvanceTask inputs, order-independent."""
+    tasks = _tasks_in_id_order(task_arrays)
+    hasher = blake2b(digest_size=_DIGEST_SIZE)
+    if tasks is None or len(tasks) == 0:
+        return hasher.hexdigest()
+    for name in _TASK_FIELDS:
+        hasher.update(np.ascontiguousarray(tasks[name]).tobytes())
+    return hasher.hexdigest()
+
+
+def dump_tasks(task_arrays, path: str) -> int:
+    """Write the step's tasks to `path` as CSV. Returns the row count.
+
+    Same 17-significant-digit floats as dump_trajectory, so two dumps diff
+    exactly and the first differing column names the field that diverged.
+    """
+    tasks = _tasks_in_id_order(task_arrays)
+    if tasks is None:
+        return 0
+
+    float_fields = {"start_offset_m", "seg0_len", "seg0_max_kph",
+                    "seg1_len", "seg1_max_kph"}
+    with open(path, "w") as handle:
+        handle.write(",".join(_TASK_FIELDS) + "\n")
+        for row in tasks:
+            handle.write(",".join(
+                ("%.17g" % row[name]) if name in float_fields else ("%d" % row[name])
+                for name in _TASK_FIELDS) + "\n")
+    return len(tasks)

@@ -95,6 +95,31 @@ if _expected != ADVANCE_TASK_DTYPE.itemsize:
     )
 
 
+# Task-digest hand-off (ace.trajectory-digest). The step loop knows the step
+# number; this module knows the tasks, and they are gone again by the time the
+# loop regains control. Rather than widen advance_vehicles_mpi's return type for
+# a diagnostic, the loop arms these before the call and reads last_task_digest
+# after it. Both are reset every step, so a stale digest cannot be logged.
+task_digest_enabled = False
+task_dump_path = None
+last_task_digest = None
+
+
+def _emit_task_digest(free_arr, queue_arr) -> None:
+    """Hash (and optionally dump) the tasks the kernel is about to be given."""
+    global last_task_digest
+    last_task_digest = None
+    if not task_digest_enabled:
+        return
+
+    from .trajectory_digest import dump_tasks, task_digest
+    arrays = (free_arr, queue_arr)
+    last_task_digest = task_digest(arrays)
+    if task_dump_path is not None:
+        rows = dump_tasks(arrays, task_dump_path)
+        logger.info("task_digest: wrote %s task rows to %s", rows, task_dump_path)
+
+
 def _fill_task(row, vehicle: Vehicle, routing_map: Map):
     """Fill one ADVANCE_TASK_DTYPE row from a vehicle + its ≤2 upcoming segments."""
     idx = vehicle.start_index
@@ -550,6 +575,10 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
         shadow_check(free, routing_map, reference_free, ADVANCE_TASK_DTYPE, "free")
         shadow_check(flat_queue_vehicles, routing_map, reference_queue,
                      ADVANCE_TASK_DTYPE, "queues")
+
+    # Hashed here, after the buffers are final and before the kernel reads them:
+    # this is exactly what do_advance is handed, whoever built it.
+    _emit_task_digest(free_arr, queue_arr)
 
     times["adv_build_tasks_ms"] = (clock() - mark) * 1000.0
     mark = clock()
