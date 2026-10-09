@@ -146,7 +146,7 @@ class RouteSelectionRatio(RouteSelectionRatioInner):
 class AceArgs(AceArgsInner):
     # kebab-case JSON keys: "threads", "mpi-advance", "queue",
     # "deterministic-order", "trajectory-digest", "trajectory-dump-step",
-    # "store-shadow-check", "store-tasks", "fcd-columns".
+    # "store-shadow-check", "store-tasks", "fcd-columns", "fast-replay".
     # threads=None -> all cores.
     threads: Optional[int] = None
     mpi_advance: bool = False
@@ -157,6 +157,7 @@ class AceArgs(AceArgsInner):
     store_shadow_check: bool = False
     store_tasks: bool = True
     fcd_columns: bool = True
+    fast_replay: bool = True
 
 
 @serde(rename_all="kebabcase")

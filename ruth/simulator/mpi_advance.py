@@ -273,6 +273,82 @@ def _build_fcd_columns(fcd_arrays: dict, moved_by_id: Dict[int, Vehicle]) -> FCD
     )
 
 
+def _replay_deltas(replay_order: List[Vehicle], deltas: dict,
+                   queues_manager: QueuesManager) -> bool:
+    """Apply the step's deltas to `replay_order`, in that order. Returns moved.
+
+    Same effect as calling _apply_delta per vehicle, with the per-vehicle
+    intermediates removed. Three of them mattered:
+
+      * the deltas arrive in gather order, so the old code built a dict of dicts
+        keyed by vehicle id -- N dicts and seven numpy scalar reads each. One
+        vectorised permutation puts the columns in replay order instead, and
+        .tolist() hands the loop native scalars;
+      * _apply_delta was a function call per vehicle; and
+      * Vehicle overrides __setattr__ to cache _frequency_seconds whenever
+        `frequency` is written. Replay never writes `frequency`, so every
+        movement write paid a Python-level dispatch and a string compare for
+        nothing. Writing through __dict__ skips it and is otherwise identical --
+        the override's only side effect is the one for `frequency`.
+
+    Queue bookkeeping is unchanged and still goes through QueuesManager.
+    """
+    n = len(replay_order)
+    if n == 0:
+        return False
+
+    # Put the columns in replay order. searchsorted over the sorted gather order
+    # is O(n log n) of vectorised work, against O(n) dict inserts before.
+    gathered_ids = np.asarray(deltas["vehicle_id"])
+    wanted_ids = np.fromiter((v.id for v in replay_order), dtype=gathered_ids.dtype,
+                             count=n)
+    sorter = np.argsort(gathered_ids)
+    position = sorter[np.searchsorted(gathered_ids, wanted_ids, sorter=sorter)]
+
+    if not np.array_equal(gathered_ids[position], wanted_ids):
+        missing = wanted_ids[gathered_ids[position] != wanted_ids][:5]
+        raise AssertionError(
+            f"replay: no delta came back for vehicles {missing.tolist()}; the "
+            "gathered set and the replayed set disagree")
+
+    new_start_index = np.asarray(deltas["new_start_index"])[position].tolist()
+    new_offset_m = np.asarray(deltas["new_offset_m"])[position].tolist()
+    new_time_offset_us = np.asarray(deltas["new_time_offset_us"])[position].tolist()
+    moved_flags = np.asarray(deltas["moved"])[position].astype(bool).tolist()
+    changed_segment = np.asarray(deltas["changed_segment"])[position].astype(bool).tolist()
+    reached_end = np.asarray(deltas["reached_end"])[position].astype(bool).tolist()
+
+    vehicles_moved = False
+    remove_vehicle = queues_manager.remove_vehicle
+    add_to_queue = queues_manager.add_to_queue
+
+    for i, vehicle in enumerate(replay_order):
+        state = vehicle.__dict__
+        old_index = state["start_index"]
+
+        state["start_index"] = new_start_index[i]
+        state["start_distance_offset"] = new_offset_m[i]
+        state["time_offset"] = timedelta(microseconds=new_time_offset_us[i])
+
+        moved = moved_flags[i]
+        vehicles_moved = vehicles_moved or moved
+
+        # Left the previous segment's queue (was at its end, index advanced).
+        if changed_segment[i]:
+            route = state["osm_route"]
+            remove_vehicle(vehicle, route[old_index], route[old_index + 1])
+
+        # Reached the end of the current segment on a moving step: either arrive
+        # or queue up. Gating on `moved` keeps blockers and waiters no-ops.
+        if reached_end[i] and moved:
+            if vehicle.next_node == vehicle.dest_node:
+                state["active"] = False
+            else:
+                add_to_queue(vehicle)
+
+    return vehicles_moved
+
+
 def _build_history(fcd_arrays: dict, moved_by_id: Dict[int, Vehicle],
                    routing_map: Map) -> List[FCDRecord]:
     """Materialize FCDRecords from the gathered numeric FCDs, annotating status
@@ -355,7 +431,8 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
                          deterministic_order: bool = False,
                          store_shadow_check: bool = False,
                          store_tasks: bool = True,
-                         fcd_columns: bool = True
+                         fcd_columns: bool = True,
+                         fast_replay: bool = True
                          ) -> Tuple[object, bool]:
     """Distributed equivalent of route.advance_vehicles_with_queues.
 
@@ -373,6 +450,11 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     :param fcd_columns: return the step's FCDs as columns instead of FCDRecord
         objects (config.json ace.fcd-columns). False restores the record path,
         for an A/B measurement of the history phase.
+    :param fast_replay: apply the deltas with vectorised unpacking and direct
+        __dict__ writes (config.json ace.fast-replay). False restores the
+        per-vehicle _apply_delta path, for an A/B of the replay phase. Both
+        produce the same state; ace.store-shadow-check verifies that against the
+        store's independent replay either way.
 
     Returns (fcds, vehicles_moved), where fcds is an FCDColumns or, with
     fcd_columns off, a list of FCDRecord. Simulation.update and
@@ -449,16 +531,18 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     deltas = ruthlib.get_advance_deltas()
     fcd_arrays = ruthlib.get_advance_fcds()
 
-    # Index deltas by vehicle id, then apply in canonical order (free first, then
-    # each queue group in FIFO order) so the queue batch_update is deterministic.
-    delta_by_id = {int(deltas["vehicle_id"][i]): {
-        "new_start_index": deltas["new_start_index"][i],
-        "new_offset_m": deltas["new_offset_m"][i],
-        "new_time_offset_us": deltas["new_time_offset_us"][i],
-        "moved": deltas["moved"][i],
-        "changed_segment": deltas["changed_segment"][i],
-        "reached_end": deltas["reached_end"][i],
-    } for i in range(len(deltas["vehicle_id"]))}
+    # The store's shadow replay and the reference path both want the deltas keyed
+    # by id; the fast path does not, and building this for it would reintroduce
+    # the per-vehicle dict it exists to avoid.
+    def _delta_by_id():
+        return {int(deltas["vehicle_id"][i]): {
+            "new_start_index": deltas["new_start_index"][i],
+            "new_offset_m": deltas["new_offset_m"][i],
+            "new_time_offset_us": deltas["new_time_offset_us"][i],
+            "moved": deltas["moved"][i],
+            "changed_segment": deltas["changed_segment"][i],
+            "reached_end": deltas["reached_end"][i],
+        } for i in range(len(deltas["vehicle_id"]))}
 
     # Canonical replay order: free vehicles, then each queue group front to
     # back. The queue operations staged here are consumed in this order by
@@ -472,12 +556,18 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     removals_before = len(queues_manager.to_be_removed)
     additions_before = len(queues_manager.to_be_added)
 
-    vehicles_moved = False
-    for vehicle in replay_order:
-        vehicles_moved |= _apply_delta(vehicle, delta_by_id[vehicle.id], routing_map, queues_manager)
+    if fast_replay:
+        vehicles_moved = _replay_deltas(replay_order, deltas, queues_manager)
+    else:
+        delta_by_id = _delta_by_id()
+        vehicles_moved = False
+        for vehicle in replay_order:
+            vehicles_moved |= _apply_delta(vehicle, delta_by_id[vehicle.id], routing_map,
+                                           queues_manager)
+
     # After-gap waiting: advance time only, no movement, no queue op.
     for vehicle in waiting:
-        vehicle.time_offset += vehicle.frequency
+        vehicle.__dict__["time_offset"] = vehicle.time_offset + vehicle.frequency
 
     # Shadow mode: the store replays the same deltas and must land on the same
     # state. Runs BEFORE batch_update, while the staged operations are still
@@ -485,7 +575,7 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     # have staged.
     if store_shadow_check:
         from . import store_bridge
-        queue_events = store_bridge.apply_deltas(replay_order, delta_by_id)
+        queue_events = store_bridge.apply_deltas(replay_order, _delta_by_id())
         store_bridge.advance_waiting(waiting)
         store_bridge.shadow_check_deltas(
             replay_order + list(waiting), queue_events,

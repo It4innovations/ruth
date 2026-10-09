@@ -43,7 +43,8 @@
     "trajectory-dump-step": -1,
     "store-shadow-check": false,
     "store-tasks": true,
-    "fcd-columns": true
+    "fcd-columns": true,
+    "fast-replay": true
   },
   "console": {
     "enabled": false,

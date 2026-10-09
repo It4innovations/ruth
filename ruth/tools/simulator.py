@@ -76,6 +76,8 @@ class AceArgs:
     # Hand the step's FCDs to the global view and the history writer as columns
     # instead of FCDRecord objects. On by default.
     fcd_columns: bool = True
+    # Apply movement deltas without a dict and a function call per vehicle.
+    fast_replay: bool = True
 
 
 @dataclass
@@ -170,7 +172,8 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                     trajectory_dump_step=ace_args.trajectory_dump_step,
                     store_shadow_check=ace_args.store_shadow_check,
                     store_tasks=ace_args.store_tasks,
-                    fcd_columns=ace_args.fcd_columns)
+                    fcd_columns=ace_args.fcd_columns,
+                    fast_replay=ace_args.fast_replay)
 
     simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 

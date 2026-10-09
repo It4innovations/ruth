@@ -136,6 +136,11 @@ class SimSetting:
     # record path for an A/B of the history phase; the serial path is unaffected
     # either way, it always produces records.
     fcd_columns: bool = True
+    # Apply the step's movement deltas with vectorised unpacking and direct
+    # __dict__ writes instead of a dict and a function call per vehicle. On by
+    # default; false restores the per-vehicle path for an A/B of replay. Only the
+    # distributed path is affected -- serial never builds deltas.
+    fast_replay: bool = True
     fcd_history_base_name: str = "fcd_history"
 
     def __post_init__(self, seed: Optional[int]):

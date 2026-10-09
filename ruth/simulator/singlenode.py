@@ -364,7 +364,9 @@ class Simulator:
                                         store_tasks=getattr(
                                             self.sim.setting, "store_tasks", True),
                                         fcd_columns=getattr(
-                                            self.sim.setting, "fcd_columns", True))
+                                            self.sim.setting, "fcd_columns", True),
+                                        fast_replay=getattr(
+                                            self.sim.setting, "fast_replay", True))
 
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             self.sim.global_view,
