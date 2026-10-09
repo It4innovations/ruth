@@ -88,7 +88,10 @@ if(GV_CHECK_FCD_ORDER)
   target_compile_definitions(globalview_cpp PRIVATE RUTH_GV_CHECK_FCD_ORDER)
 endif()
 target_include_directories(globalview_cpp PRIVATE src)
-target_link_libraries(globalview_cpp PRIVATE OpenMP::OpenMP_CXX)
+# globalview.hpp fails a check through CommInterface::abort() so one rank cannot
+# abort alone and strand the rest; ace exports its includes PUBLIC, so linking it
+# supplies both the header and the symbol.
+target_link_libraries(globalview_cpp PRIVATE ace OpenMP::OpenMP_CXX)
 set_target_properties(globalview_cpp PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
 )

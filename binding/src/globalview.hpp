@@ -14,6 +14,12 @@
 #include <cstdio>
 #include <cstdlib>
 
+// A fatal check here must tear down the whole job, not one rank: a lone
+// std::abort() leaves the other ranks blocked in a collective. ACE is a
+// dependency of ruth, so this is included unconditionally and globalview_cpp
+// links it too.
+#include "comm/comm_interface.hpp"
+
 // Debug check for the ordering invariant get_segment_speed's dedup rests on.
 // Defined by CMake in Debug / RelWithDebInfo builds (RUTH_GV_CHECK_FCD_ORDER);
 // compiled out entirely otherwise, so Release pays nothing. A compile-time
@@ -195,6 +201,11 @@ private:
                     static_cast<long long>(segment_id), fcd.vehicle_id,
                     fcd.datetime_seconds, seen->second);
                 std::fflush(stderr);
+                // instance() is null before ACE is initialised (a serial run,
+                // or a failure during setup); still terminate in that case.
+                if (auto comm = ace::CommInterface::instance()) {
+                    comm->abort();
+                }
                 std::abort();
             }
             last_seen[fcd.vehicle_id] = fcd.datetime_seconds;

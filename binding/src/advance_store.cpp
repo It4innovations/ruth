@@ -5,7 +5,33 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "comm/comm_interface.hpp"
+
 namespace ruthlib {
+
+namespace {
+
+// Kill the JOB, not just this rank.
+//
+// std::abort() ends one process and leaves every other rank blocked in
+// drain_until_quiescent(), waiting on a collective that will never complete --
+// so the job hangs until walltime rather than failing. CommInterface::abort()
+// is overridden by MPIComm to MPI_Abort, which tears the whole job down; it is
+// what ACE's own scheduler calls when a workload throws (scheduler.cpp).
+//
+// instance() is null until ACE is initialised, so a failure during setup, or in
+// a build that never brings ACE up, still terminates instead of dereferencing
+// null. comm->abort() is [[noreturn]], so the fallback below is reached only in
+// that case.
+[[noreturn]] void fatal() {
+  std::fflush(stderr);
+  if (auto comm = ace::CommInterface::instance()) {
+    comm->abort();
+  }
+  std::abort();
+}
+
+}  // namespace
 
 const SegmentGeom VehicleStore::kMissingSegment{};
 
@@ -116,8 +142,7 @@ void VehicleStore::set_route(int32_t slot,
                  "(%zu segment ids vs %zu nodes) writing vehicle %d with route_len %d.\n",
                  route_segment_ids_.size(), route_nodes_.size(),
                  vehicle_id_[slot], route_len);
-    std::fflush(stderr);
-    std::abort();
+    fatal();
   }
 }
 
@@ -132,8 +157,7 @@ void VehicleStore::set_segment(int64_t routing_id, double length_m, double max_s
                  "[ruth] VehicleStore::set_segment: routing_id %lld out of range "
                  "(table holds %zu entries); call resize_segments() first.\n",
                  static_cast<long long>(routing_id), segments_.size());
-    std::fflush(stderr);
-    std::abort();
+    fatal();
   }
   SegmentGeom& geom = segments_[static_cast<size_t>(routing_id)];
   geom.length_m = length_m;
@@ -158,8 +182,7 @@ size_t VehicleStore::update_movement(const int32_t* vehicle_id,
                    "re-initialise the store after the population changes "
                    "(streaming load or prune).\n",
                    vehicle_id[i]);
-      std::fflush(stderr);
-      std::abort();
+      fatal();
     }
     start_index_[slot] = start_index[i];
     start_offset_m_[slot] = start_offset_m[i];
@@ -188,8 +211,7 @@ void VehicleStore::set_routes(const int32_t* vehicle_id,
       std::fprintf(stderr,
                    "[ruth] VehicleStore::set_routes: vehicle %d is not in the store.\n",
                    vehicle_id[i]);
-      std::fflush(stderr);
-      std::abort();
+      fatal();
     }
     const int32_t begin = route_offsets[i];
     const int32_t len = route_offsets[i + 1] - begin;
@@ -208,8 +230,7 @@ std::vector<AdvanceTask> VehicleStore::make_tasks(const int32_t* vehicle_id,
       std::fprintf(stderr,
                    "[ruth] VehicleStore::make_tasks: vehicle %d is not in the store.\n",
                    vehicle_id[i]);
-      std::fflush(stderr);
-      std::abort();
+      fatal();
     }
     tasks.push_back(make_task(slot));
   }
