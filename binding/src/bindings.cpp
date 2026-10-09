@@ -351,4 +351,42 @@ PYBIND11_MODULE(ruthlib, m) {
     m.def("advance_store_size",
         []() { return ruthlib::VehicleStore::instance().size(); },
         "number of vehicles currently in the store");
+
+    // --- step selection (shadow mode) ---------------------------------------
+
+    m.def("advance_store_select_within_offset",
+        [](int64_t offset_seconds, int64_t freq_seconds) {
+            return vec_to_numpy(
+                ruthlib::VehicleStore::instance().select_within_offset(
+                    offset_seconds, freq_seconds));
+        },
+        py::arg("offset_seconds"), py::arg("freq_seconds"),
+        "vehicle ids selected for this step, in slot order");
+
+    // None rather than a sentinel, so the Python side compares against
+    // compute_current_offset()'s None directly instead of inventing a rule for
+    // what -1 means.
+    m.def("advance_store_min_active_time_offset_us",
+        []() -> py::object {
+            int64_t out = 0;
+            if (!ruthlib::VehicleStore::instance().min_active_time_offset_us(out)) {
+                return py::none();
+            }
+            return py::int_(out);
+        },
+        "smallest non-zero time offset among active vehicles, or None");
+
+    m.def("advance_store_count_active",
+        []() { return ruthlib::VehicleStore::instance().count_active(); },
+        "number of active vehicles in the store");
+
+    m.def("advance_store_at_segment_end",
+        [](py::array_t<int32_t, py::array::c_style | py::array::forcecast> vehicle_ids) {
+            std::vector<int32_t> ids(vehicle_ids.data(),
+                                     vehicle_ids.data() + vehicle_ids.shape(0));
+            return vec_to_numpy(
+                ruthlib::VehicleStore::instance().at_segment_end_ids(ids));
+        },
+        py::arg("vehicle_ids"),
+        "of vehicle_ids, those sitting exactly at the end of their segment");
 }

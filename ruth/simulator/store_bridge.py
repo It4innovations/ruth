@@ -155,3 +155,72 @@ def shadow_check(vehicles: Sequence, routing_map, python_tasks: np.ndarray,
     raise AssertionError(
         f"store shadow check ({label}): arrays differ but no row does; "
         "the dtype padding almost certainly disagrees with the C++ struct")
+
+
+def shadow_check_selection(all_vehicles: Sequence, routing_map,
+                           offset_seconds: int, freq_seconds: int,
+                           python_selected: Sequence, python_at_segment_end: Sequence,
+                           python_current_offset) -> int:
+    """Check the store reproduces the step's selection. Returns the count checked.
+
+    Covers the three things singlenode asks the vehicle population each step:
+    which vehicles move now (`is_vehicle_within_offset`), which of those sit at a
+    segment end (the geometric half of `need_new_route`), and what the next
+    offset is (`compute_current_offset`). Both have a detail worth stating,
+    because both are reproduced deliberately rather than by accident:
+
+      * the rounding in `is_vehicle_within_offset` is Python's round(), which is
+        half-to-EVEN; and
+      * `compute_current_offset`'s `filter(None, ...)` drops a time offset of
+        exactly zero, not just None.
+
+    Raises on any disagreement, for the reason `shadow_check` does.
+    """
+    populate(all_vehicles, routing_map)
+
+    store_selected = ruthlib.advance_store_select_within_offset(
+        int(offset_seconds), int(freq_seconds))
+    expected = np.fromiter((v.id for v in python_selected),
+                           dtype=np.int32, count=len(python_selected))
+    if not np.array_equal(store_selected, expected):
+        raise AssertionError(
+            _first_difference("selection", store_selected, expected))
+
+    selected_ids = expected
+    store_at_end = ruthlib.advance_store_at_segment_end(selected_ids)
+    expected_at_end = np.fromiter((v.id for v in python_at_segment_end),
+                                  dtype=np.int32, count=len(python_at_segment_end))
+    if not np.array_equal(store_at_end, expected_at_end):
+        raise AssertionError(
+            _first_difference("at_segment_end", store_at_end, expected_at_end))
+
+    store_offset_us = ruthlib.advance_store_min_active_time_offset_us()
+    expected_offset_us = (None if python_current_offset is None
+                          else python_current_offset // _ONE_US)
+    if store_offset_us != expected_offset_us:
+        raise AssertionError(
+            f"store shadow check (current_offset): store={store_offset_us} "
+            f"python={expected_offset_us} (microseconds)")
+
+    store_active = ruthlib.advance_store_count_active()
+    expected_active = sum(1 for v in all_vehicles if v.active)
+    if store_active != expected_active:
+        raise AssertionError(
+            f"store shadow check (active count): store={store_active} "
+            f"python={expected_active}")
+
+    return len(all_vehicles)
+
+
+def _first_difference(label: str, store_ids: np.ndarray, python_ids: np.ndarray) -> str:
+    """Name the first differing id rather than just reporting inequality."""
+    if len(store_ids) != len(python_ids):
+        extra = sorted(set(store_ids.tolist()) ^ set(python_ids.tolist()))[:10]
+        return (f"store shadow check ({label}): {len(store_ids)} ids from the store "
+                f"vs {len(python_ids)} from Python; symmetric difference starts "
+                f"{extra}")
+    for i, (a, b) in enumerate(zip(store_ids.tolist(), python_ids.tolist())):
+        if a != b:
+            return (f"store shadow check ({label}): position {i} is vehicle {a} in "
+                    f"the store, {b} in Python")
+    return f"store shadow check ({label}): arrays differ but no position does"

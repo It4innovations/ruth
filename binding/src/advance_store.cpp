@@ -1,5 +1,6 @@
 #include "advance_store.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -187,6 +188,110 @@ void VehicleStore::fill_segment_desc(SegmentDesc& desc, int64_t routing_id) cons
   desc.valid = 1;
   desc.is_closed = geom.is_closed;
   desc._pad = 0;
+}
+
+namespace {
+
+// Python's round() is round-half-to-EVEN (round(2.5) == 2, round(3.5) == 4),
+// not the round-half-away-from-zero that std::round gives. Selection compares
+// the rounded offset for exact equality, so getting this wrong would silently
+// drop or add vehicles on any step whose offset lands exactly on a half
+// frequency -- which, with whole-second frequencies and offsets, is not a rare
+// corner but a regular occurrence.
+//
+// Written out rather than leaning on std::nearbyint + FE_TONEAREST: that would
+// be correct only while nothing else in the process has changed the floating
+// point rounding mode, and a dependency on ambient global state is exactly what
+// this should not have.
+int64_t round_half_to_even(double x) {
+  const double floor_x = std::floor(x);
+  const double frac = x - floor_x;
+  const int64_t below = static_cast<int64_t>(floor_x);
+
+  if (frac > 0.5) return below + 1;
+  if (frac < 0.5) return below;
+  return (below % 2 == 0) ? below : below + 1;   // exactly .5 -> the even side
+}
+
+// timedelta.total_seconds() is ((days*86400 + seconds)*10**6 + microseconds) /
+// 10**6: exact integer arithmetic followed by a single division. Converting the
+// microsecond count to double is exact below 2^53 us (~285 years of simulated
+// time) and 1e6 is exactly representable, so this reproduces the Python float
+// bit for bit rather than merely closely.
+double total_seconds(int64_t time_offset_us) {
+  return static_cast<double>(time_offset_us) / 1e6;
+}
+
+}  // namespace
+
+std::vector<int32_t> VehicleStore::select_within_offset(int64_t offset_seconds,
+                                                        int64_t freq_seconds) const {
+  std::vector<int32_t> selected;
+  if (freq_seconds == 0) {
+    return selected;  // would divide by zero; Python would raise
+  }
+
+  for (size_t slot = 0; slot < vehicle_id_.size(); ++slot) {
+    if (active_[slot] == 0) {
+      continue;
+    }
+    const double scaled = total_seconds(time_offset_us_[slot]) /
+                          static_cast<double>(freq_seconds);
+    const int64_t rounded = freq_seconds * round_half_to_even(scaled);
+    if (rounded == offset_seconds) {
+      selected.push_back(vehicle_id_[slot]);
+    }
+  }
+  return selected;
+}
+
+bool VehicleStore::min_active_time_offset_us(int64_t& out_time_offset_us) const {
+  // compute_current_offset() is
+  //     min(filter(None, map(lambda v: v.time_offset if v.active else None, ...)))
+  // and filter(None, ...) drops every FALSY value -- which includes
+  // timedelta(0), not just the None it looks like it is filtering. So a vehicle
+  // sitting at exactly offset zero does not participate. That is reproduced
+  // here deliberately: this is a port, and changing the rule would change which
+  // step the simulation runs next.
+  bool found = false;
+  int64_t best = 0;
+
+  for (size_t slot = 0; slot < vehicle_id_.size(); ++slot) {
+    if (active_[slot] == 0 || time_offset_us_[slot] == 0) {
+      continue;
+    }
+    if (!found || time_offset_us_[slot] < best) {
+      best = time_offset_us_[slot];
+      found = true;
+    }
+  }
+
+  if (found) {
+    out_time_offset_us = best;
+  }
+  return found;
+}
+
+int32_t VehicleStore::count_active() const {
+  int32_t n = 0;
+  for (const int32_t a : active_) {
+    n += (a != 0) ? 1 : 0;
+  }
+  return n;
+}
+
+std::vector<int32_t> VehicleStore::at_segment_end_ids(
+    const std::vector<int32_t>& vehicle_ids) const {
+  std::vector<int32_t> out;
+  out.reserve(vehicle_ids.size());
+
+  for (const int32_t id : vehicle_ids) {
+    const int32_t slot = slot_of(id);
+    if (slot >= 0 && at_segment_end(slot)) {
+      out.push_back(id);
+    }
+  }
+  return out;
 }
 
 AdvanceTask VehicleStore::make_task(int32_t slot) const {

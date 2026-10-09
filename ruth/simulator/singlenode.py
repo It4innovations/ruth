@@ -119,6 +119,8 @@ class Simulator:
                                       vehicle.is_at_the_end_of_segment(self.sim.routing_map)
                                       and vehicle.alternatives != VehicleAlternatives.DEFAULT]
 
+                self.shadow_check_selection(offset_seconds, vehicles_to_be_moved)
+
                 with timer_set.get("alternatives"):
                     computed_vehicles, alts = compute_alternatives(alternatives_providers,
                                                                        need_new_route, self.sim.setting.k_alternatives)
@@ -238,6 +240,34 @@ class Simulator:
             rows = dump_trajectory(self.sim.vehicles, path)
             logger.info("trajectory_digest: wrote %s rows of step %s state to %s",
                         rows, step, path)
+
+    def shadow_check_selection(self, offset_seconds: int, selected: List[Vehicle]):
+        """Check the C++ VehicleStore reproduces this step's selection.
+
+        Verification only (ace.store-shadow-check); nothing here feeds the
+        simulation. Unlike the task check in mpi_advance, this runs on the serial
+        path too, because the selection it verifies is not specific to the
+        distributed advance.
+
+        It populates the store separately from the task check rather than
+        sharing one population: update_followup_route rewrites routes between
+        this point and task construction, so a population made here would be
+        stale by then.
+        """
+        if not getattr(self.sim.setting, "store_shadow_check", False):
+            return
+
+        from .store_bridge import shadow_check_selection
+
+        # The geometric half of need_new_route on its own; the alternatives mode
+        # is a Python-only attribute the store does not carry.
+        at_segment_end = [vehicle for vehicle in selected
+                          if vehicle.is_at_the_end_of_segment(self.sim.routing_map)]
+
+        shadow_check_selection(self.sim.vehicles, self.sim.routing_map,
+                               offset_seconds, self.sim._freq_seconds,
+                               selected, at_segment_end,
+                               self.sim.compute_current_offset())
 
     def _use_mpi_advance(self) -> bool:
         # Driven by the config.json "ace" section (ace.mpi-advance), carried on the

@@ -134,6 +134,33 @@ public:
   /// field for field, including the seg1_valid == 0 case at the end of a route.
   AdvanceTask make_task(int32_t slot) const;
 
+  // --- step selection ------------------------------------------------------
+  //
+  // These mirror Simulation.is_vehicle_within_offset and
+  // Simulation.compute_current_offset. Both have a detail that a plain reading
+  // of the Python misses; see the notes on the definitions in the .cpp.
+
+  /// Vehicle ids of every active vehicle whose rounded time offset equals
+  /// `offset_seconds`, in slot order -- the store's form of
+  /// `[v for v in sim.vehicles if sim.is_vehicle_within_offset(v, offset_seconds)]`.
+  /// `freq_seconds` is SimSetting._freq_seconds.
+  std::vector<int32_t> select_within_offset(int64_t offset_seconds,
+                                            int64_t freq_seconds) const;
+
+  /// Smallest NON-ZERO time offset among active vehicles -- the store's form of
+  /// compute_current_offset(). Returns false when there is none, matching that
+  /// function's `default=None`.
+  bool min_active_time_offset_us(int64_t& out_time_offset_us) const;
+
+  /// Number of active vehicles.
+  int32_t count_active() const;
+
+  /// Of `vehicle_ids`, those sitting exactly at the end of their current
+  /// segment -- the geometric half of singlenode's `need_new_route` filter. The
+  /// other half (alternatives != DEFAULT) is a Python-only attribute and stays
+  /// in Python.
+  std::vector<int32_t> at_segment_end_ids(const std::vector<int32_t>& vehicle_ids) const;
+
 private:
   // One entry per vehicle, indexed by slot.
   std::vector<int32_t> vehicle_id_;
