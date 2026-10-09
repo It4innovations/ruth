@@ -119,7 +119,8 @@ class Simulator:
                 with timer_set.get("allowed_vehicles"):
                     vehicles_to_be_moved, need_new_route = self.select_vehicles(offset_seconds)
 
-                self.shadow_check_selection(offset_seconds, vehicles_to_be_moved)
+                with timer_set.get("store_shadow_check"):
+                    self.shadow_check_selection(offset_seconds, vehicles_to_be_moved)
 
                 with timer_set.get("alternatives"):
                     computed_vehicles, alts = compute_alternatives(alternatives_providers,
@@ -400,18 +401,26 @@ class Simulator:
         Verification only (ace.store-shadow-check); nothing here feeds the
         simulation.
 
-        Gated on _use_store(), so it does nothing at all when ace.mpi-advance is
-        off. The serial path must behave exactly as it always has: it never
-        populates the store, so it must never read or push to it either. An
-        earlier version guarded only on store_shadow_check and pushed into an
-        empty store on a serial run, which aborted.
+        Gated on BOTH ace.store-shadow-check and _use_store(), and it needs both:
+
+          * store_shadow_check, because everything here is verification. It
+            pushes all ~936k vehicles into the store, walks the selected set in
+            Python for `is_at_the_end_of_segment`, and calls
+            compute_current_offset() over the whole population -- the three
+            costs ace.store-selection exists to remove. Measured at ~605 ms per
+            step, and invisible, because the call site had no timer on it.
+          * _use_store(), because the serial path must behave exactly as it
+            always has: it never populates the store, so it must never read or
+            push to it either.
+
 
         It populates the store separately from the task check rather than
         sharing one population: update_followup_route rewrites routes between
         this point and task construction, so a population made here would be
         stale by then.
         """
-        if not self._use_store():
+        if not (self._use_store()
+                and getattr(self.sim.setting, "store_shadow_check", False)):
             return
 
         from .store_bridge import push_movement, shadow_check_selection
