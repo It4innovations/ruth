@@ -11,10 +11,11 @@
 // marshalled payload, and so task construction and delta replay stop crossing
 // the Python boundary at all.
 //
-// NOTHING USES THIS YET. It is introduced on its own, unreferenced, so it can be
-// reviewed and unit-tested against the Python it will eventually replace before
-// anything depends on it. make_task() is included precisely so that can be
-// checked: it must reproduce mpi_advance._fill_task exactly, field for field.
+// WHAT USES IT. make_task() is the production task builder (ace.store-tasks);
+// _build_task_array is kept as the reference the shadow check compares against.
+// apply_deltas() and the selection helpers are still shadow-only: the Python
+// Vehicle objects remain authoritative for movement state until the store takes
+// over replay, so for now those are computed twice and required to agree.
 //
 // OWNERSHIP RULE (for later patches): a column has exactly one writer, and the
 // writer changes only at a barrier. Movement columns (start_index,
@@ -68,6 +69,7 @@ public:
                       int64_t frequency_us,
                       int64_t fcd_period_us,
                       int32_t active,
+                      int64_t dest_node,
                       const int64_t* route_nodes,
                       const int64_t* route_segment_ids,
                       int32_t route_len);
@@ -109,6 +111,44 @@ public:
 
   /// Build tasks for `n` vehicles addressed by id, in the order given.
   std::vector<AdvanceTask> make_tasks(const int32_t* vehicle_id, size_t n) const;
+
+  // --- delta application ---------------------------------------------------
+
+  /// One staged queue operation, as QueuesManager records it.
+  struct QueueEvent {
+    int32_t vehicle_id;
+    int64_t node_from;
+    int64_t node_to;
+  };
+
+  /// What applying a step's deltas implied beyond the movement columns.
+  /// `removals` and `additions` are in application order, which is the order
+  /// QueuesManager.batch_update() will consume them.
+  struct DeltaOutcome {
+    std::vector<QueueEvent> removals;
+    std::vector<QueueEvent> additions;
+    int32_t moved_count = 0;
+  };
+
+  /// Apply one step's movement deltas, in the order given.
+  ///
+  /// Mirrors mpi_advance._apply_delta, including two orderings that are easy to
+  /// get backwards: the queue a vehicle LEAVES is keyed by its route nodes at
+  /// the OLD index, while arrival and the queue it JOINS are decided from the
+  /// NEW one. Call order matters -- free vehicles, then each queue group in
+  /// FIFO order -- because that is the order the queue events are replayed in.
+  DeltaOutcome apply_deltas(const int32_t* vehicle_id,
+                            const int32_t* new_start_index,
+                            const double*  new_offset_m,
+                            const int64_t* new_time_offset_us,
+                            const int32_t* moved,
+                            const int32_t* changed_segment,
+                            const int32_t* reached_end,
+                            size_t n);
+
+  /// Advance the clock of vehicles that waited this step: time only, no
+  /// movement and no queue operation (route.py's advance_waiting_vehicle).
+  void advance_waiting(const int32_t* vehicle_id, size_t n);
 
   /// This vehicle's route as the store holds it: the node span and the
   /// routing_id of each of its segments. For diagnosing a task mismatch, where
@@ -165,7 +205,13 @@ public:
   /// route_nodes[start_index + 1], or -1 at the end of the route --
   /// Vehicle.next_node.
   int64_t next_node(int32_t slot) const;
-  /// Last node of the route -- Vehicle.dest_node.
+  /// Vehicle.dest_node, as stored.
+  ///
+  /// Carried as its own column rather than read off the end of the route.
+  /// update_followup_route asserts `suggested_route[-1] == self.dest_node`, so
+  /// the two agree for any route the simulation produces -- but nothing
+  /// enforces it for the routes that arrive in the input parquet, and the
+  /// arrival test is not somewhere to rely on an invariant we cannot check.
   int64_t dest_node(int32_t slot) const;
 
   /// True when the vehicle sits exactly at the end of its current segment, the
@@ -214,6 +260,7 @@ private:
   std::vector<int64_t> frequency_us_;
   std::vector<int64_t> fcd_period_us_;
   std::vector<int32_t> active_;
+  std::vector<int64_t> dest_node_;
 
   // CSR routes: vehicle `slot` owns route_nodes_[route_offset_[slot] ...
   // + route_len_[slot]) and the matching route_len_[slot] - 1 segment ids.

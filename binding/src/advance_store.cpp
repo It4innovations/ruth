@@ -52,6 +52,7 @@ void VehicleStore::clear() {
   frequency_us_.clear();
   fcd_period_us_.clear();
   active_.clear();
+  dest_node_.clear();
   route_offset_.clear();
   route_len_.clear();
   route_nodes_.clear();
@@ -68,6 +69,7 @@ void VehicleStore::reserve(size_t n_vehicles, size_t n_route_nodes) {
   frequency_us_.reserve(n_vehicles);
   fcd_period_us_.reserve(n_vehicles);
   active_.reserve(n_vehicles);
+  dest_node_.reserve(n_vehicles);
   route_offset_.reserve(n_vehicles);
   route_len_.reserve(n_vehicles);
   route_nodes_.reserve(n_route_nodes);
@@ -84,6 +86,7 @@ int32_t VehicleStore::add_vehicle(int32_t vehicle_id,
                                   int64_t frequency_us,
                                   int64_t fcd_period_us,
                                   int32_t active,
+                                  int64_t dest_node,
                                   const int64_t* route_nodes,
                                   const int64_t* route_segment_ids,
                                   int32_t route_len) {
@@ -96,6 +99,7 @@ int32_t VehicleStore::add_vehicle(int32_t vehicle_id,
   frequency_us_.push_back(frequency_us);
   fcd_period_us_.push_back(fcd_period_us);
   active_.push_back(active);
+  dest_node_.push_back(dest_node);
   route_offset_.push_back(0);
   route_len_.push_back(0);
 
@@ -241,6 +245,82 @@ std::vector<AdvanceTask> VehicleStore::make_tasks(const int32_t* vehicle_id,
   return tasks;
 }
 
+VehicleStore::DeltaOutcome VehicleStore::apply_deltas(const int32_t* vehicle_id,
+                                                      const int32_t* new_start_index,
+                                                      const double*  new_offset_m,
+                                                      const int64_t* new_time_offset_us,
+                                                      const int32_t* moved,
+                                                      const int32_t* changed_segment,
+                                                      const int32_t* reached_end,
+                                                      size_t n) {
+  DeltaOutcome outcome;
+
+  for (size_t i = 0; i < n; ++i) {
+    const int32_t slot = slot_of(vehicle_id[i]);
+    if (slot < 0) {
+      std::fprintf(stderr,
+                   "[ruth] VehicleStore::apply_deltas: vehicle %d is not in the store.\n",
+                   vehicle_id[i]);
+      fatal();
+    }
+
+    // Read the OLD index before overwriting it: the queue the vehicle leaves is
+    // keyed by the segment it was on, not the one it is on now.
+    const int32_t old_index = start_index_[slot];
+    const int32_t base = route_offset_[slot];
+
+    start_index_[slot] = new_start_index[i];
+    start_offset_m_[slot] = new_offset_m[i];
+    time_offset_us_[slot] = new_time_offset_us[i];
+
+    if (moved[i] != 0) {
+      ++outcome.moved_count;
+    }
+
+    if (changed_segment[i] != 0) {
+      // route.py indexes osm_route[old_index] and [old_index + 1] unguarded; a
+      // changed_segment delta implies both exist, so an out-of-range pair here
+      // means the store's route disagrees with the one the task was built from.
+      if (old_index + 1 >= route_len_[slot]) {
+        std::fprintf(stderr,
+                     "[ruth] VehicleStore::apply_deltas: vehicle %d changed segment from "
+                     "index %d but its route holds only %d nodes.\n",
+                     vehicle_id[i], old_index, route_len_[slot]);
+        fatal();
+      }
+      outcome.removals.push_back(QueueEvent{vehicle_id[i],
+                                            route_nodes_[base + old_index],
+                                            route_nodes_[base + old_index + 1]});
+    }
+
+    if (reached_end[i] != 0 && moved[i] != 0) {
+      // Decided from the NEW position: next_node is what the vehicle is heading
+      // to now, and reaching the destination ends its run.
+      const int64_t next = next_node(slot);
+      if (next == dest_node(slot)) {
+        active_[slot] = 0;
+      } else {
+        outcome.additions.push_back(QueueEvent{vehicle_id[i],
+                                               current_node(slot), next});
+      }
+    }
+  }
+  return outcome;
+}
+
+void VehicleStore::advance_waiting(const int32_t* vehicle_id, size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    const int32_t slot = slot_of(vehicle_id[i]);
+    if (slot < 0) {
+      std::fprintf(stderr,
+                   "[ruth] VehicleStore::advance_waiting: vehicle %d is not in the store.\n",
+                   vehicle_id[i]);
+      fatal();
+    }
+    time_offset_us_[slot] += frequency_us_[slot];
+  }
+}
+
 void VehicleStore::route_view(int32_t slot,
                               std::vector<int64_t>& out_nodes,
                               std::vector<int64_t>& out_segment_ids) const {
@@ -307,7 +387,7 @@ int64_t VehicleStore::next_node(int32_t slot) const {
 }
 
 int64_t VehicleStore::dest_node(int32_t slot) const {
-  return route_nodes_[route_offset_[slot] + route_len_[slot] - 1];
+  return dest_node_[slot];
 }
 
 bool VehicleStore::at_segment_end(int32_t slot) const {

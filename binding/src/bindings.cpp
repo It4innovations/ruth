@@ -289,6 +289,7 @@ PYBIND11_MODULE(ruthlib, m) {
            py::array_t<int64_t, py::array::c_style | py::array::forcecast> frequency_us,
            py::array_t<int64_t, py::array::c_style | py::array::forcecast> fcd_period_us,
            py::array_t<int32_t, py::array::c_style | py::array::forcecast> active,
+           py::array_t<int64_t, py::array::c_style | py::array::forcecast> dest_node,
            py::array_t<int64_t, py::array::c_style | py::array::forcecast> route_nodes,
            py::array_t<int64_t, py::array::c_style | py::array::forcecast> route_segment_ids,
            py::array_t<int32_t, py::array::c_style | py::array::forcecast> route_offsets) {
@@ -306,14 +307,14 @@ PYBIND11_MODULE(ruthlib, m) {
                 const int32_t len = off[i + 1] - begin;
                 store.add_vehicle(vehicle_id.at(i), start_index.at(i), start_offset_m.at(i),
                                   time_offset_us.at(i), frequency_us.at(i),
-                                  fcd_period_us.at(i), active.at(i),
+                                  fcd_period_us.at(i), active.at(i), dest_node.at(i),
                                   nodes + begin, segs + begin, len);
             }
         },
         py::arg("vehicle_id"), py::arg("start_index"), py::arg("start_offset_m"),
         py::arg("time_offset_us"), py::arg("frequency_us"), py::arg("fcd_period_us"),
-        py::arg("active"), py::arg("route_nodes"), py::arg("route_segment_ids"),
-        py::arg("route_offsets"),
+        py::arg("active"), py::arg("dest_node"), py::arg("route_nodes"),
+        py::arg("route_segment_ids"), py::arg("route_offsets"),
         "bulk-add vehicles from columns + a CSR of their routes");
 
     // Returned as raw bytes rather than a structured dtype declared here: the
@@ -449,6 +450,90 @@ PYBIND11_MODULE(ruthlib, m) {
         py::arg("vehicle_ids"),
         "AdvanceTasks for the named vehicles, as raw bytes to view through "
         "ADVANCE_TASK_DTYPE");
+
+    m.def("advance_store_apply_deltas",
+        [](py::array_t<int32_t, py::array::c_style | py::array::forcecast> vehicle_id,
+           py::array_t<int32_t, py::array::c_style | py::array::forcecast> new_start_index,
+           py::array_t<double,  py::array::c_style | py::array::forcecast> new_offset_m,
+           py::array_t<int64_t, py::array::c_style | py::array::forcecast> new_time_offset_us,
+           py::array_t<int32_t, py::array::c_style | py::array::forcecast> moved,
+           py::array_t<int32_t, py::array::c_style | py::array::forcecast> changed_segment,
+           py::array_t<int32_t, py::array::c_style | py::array::forcecast> reached_end) {
+            const py::ssize_t n = vehicle_id.shape(0);
+            if (new_start_index.shape(0) != n || new_offset_m.shape(0) != n ||
+                new_time_offset_us.shape(0) != n || moved.shape(0) != n ||
+                changed_segment.shape(0) != n || reached_end.shape(0) != n) {
+                throw std::runtime_error("advance_store_apply_deltas: array lengths differ");
+            }
+            auto outcome = ruthlib::VehicleStore::instance().apply_deltas(
+                vehicle_id.data(), new_start_index.data(), new_offset_m.data(),
+                new_time_offset_us.data(), moved.data(), changed_segment.data(),
+                reached_end.data(), static_cast<size_t>(n));
+
+            // Queue events come back as three parallel columns per kind rather
+            // than a list of tuples: the Python side compares them against
+            // QueuesManager's staged lists, and columns compare without boxing.
+            auto columns = [](const std::vector<ruthlib::VehicleStore::QueueEvent>& events) {
+                std::vector<int32_t> ids;
+                std::vector<int64_t> from_nodes, to_nodes;
+                ids.reserve(events.size());
+                from_nodes.reserve(events.size());
+                to_nodes.reserve(events.size());
+                for (const auto& e : events) {
+                    ids.push_back(e.vehicle_id);
+                    from_nodes.push_back(e.node_from);
+                    to_nodes.push_back(e.node_to);
+                }
+                py::dict d;
+                d["vehicle_id"] = vec_to_numpy(std::move(ids));
+                d["node_from"] = vec_to_numpy(std::move(from_nodes));
+                d["node_to"] = vec_to_numpy(std::move(to_nodes));
+                return d;
+            };
+
+            py::dict result;
+            result["removals"] = columns(outcome.removals);
+            result["additions"] = columns(outcome.additions);
+            result["moved_count"] = outcome.moved_count;
+            return result;
+        },
+        py::arg("vehicle_id"), py::arg("new_start_index"), py::arg("new_offset_m"),
+        py::arg("new_time_offset_us"), py::arg("moved"), py::arg("changed_segment"),
+        py::arg("reached_end"),
+        "apply a step's deltas in the order given; returns the queue events implied");
+
+    m.def("advance_store_advance_waiting",
+        [](py::array_t<int32_t, py::array::c_style | py::array::forcecast> vehicle_id) {
+            ruthlib::VehicleStore::instance().advance_waiting(
+                vehicle_id.data(), static_cast<size_t>(vehicle_id.shape(0)));
+        },
+        py::arg("vehicle_id"),
+        "advance the clock of vehicles that waited this step");
+
+    m.def("advance_store_movement_columns",
+        []() {
+            auto& store = ruthlib::VehicleStore::instance();
+            const size_t n = store.size();
+            std::vector<int32_t> ids(n), start_index(n), active(n);
+            std::vector<double> offset(n);
+            std::vector<int64_t> time_offset(n);
+            for (size_t slot = 0; slot < n; ++slot) {
+                const int32_t s = static_cast<int32_t>(slot);
+                ids[slot] = store.vehicle_id(s);
+                start_index[slot] = store.start_index(s);
+                offset[slot] = store.start_offset_m(s);
+                time_offset[slot] = store.time_offset_us(s);
+                active[slot] = store.active(s);
+            }
+            py::dict d;
+            d["vehicle_id"] = vec_to_numpy(std::move(ids));
+            d["start_index"] = vec_to_numpy(std::move(start_index));
+            d["start_offset_m"] = vec_to_numpy(std::move(offset));
+            d["time_offset_us"] = vec_to_numpy(std::move(time_offset));
+            d["active"] = vec_to_numpy(std::move(active));
+            return d;
+        },
+        "the store's movement columns, in slot order");
 
     m.def("advance_store_debug_vehicle",
         [](int32_t vehicle_id) {

@@ -69,6 +69,7 @@ def initialize(vehicles: Sequence, routing_map) -> None:
     frequency_us = np.empty(n, dtype=np.int64)
     fcd_period_us = np.empty(n, dtype=np.int64)
     active = np.empty(n, dtype=np.int32)
+    dest_node = np.empty(n, dtype=np.int64)
     route_offsets = np.empty(n + 1, dtype=np.int32)
 
     route_nodes: List[int] = []
@@ -83,6 +84,7 @@ def initialize(vehicles: Sequence, routing_map) -> None:
         frequency_us[i] = vehicle.frequency // _ONE_US
         fcd_period_us[i] = vehicle.fcd_sampling_period // _ONE_US
         active[i] = 1 if vehicle.active else 0
+        dest_node[i] = vehicle.dest_node
 
         route = vehicle.osm_route
         route_offsets[i] = acc
@@ -101,7 +103,7 @@ def initialize(vehicles: Sequence, routing_map) -> None:
 
     ruthlib.advance_store_add_vehicles(
         vehicle_id, start_index, start_offset_m, time_offset_us, frequency_us,
-        fcd_period_us, active,
+        fcd_period_us, active, dest_node,
         np.asarray(route_nodes, dtype=np.int64),
         np.asarray(route_segment_ids, dtype=np.int64),
         route_offsets)
@@ -438,3 +440,98 @@ def _first_difference(label: str, store_ids: np.ndarray, python_ids: np.ndarray)
             return (f"store shadow check ({label}): position {i} is vehicle {a} in "
                     f"the store, {b} in Python")
     return f"store shadow check ({label}): arrays differ but no position does"
+
+
+def apply_deltas(ordered_vehicles: Sequence, delta_by_id) -> dict:
+    """Apply this step's deltas to the store, in `ordered_vehicles` order.
+
+    The order is not incidental. Python replays free vehicles first, then each
+    queue group front to back, and the queue operations it stages are consumed
+    in that order by QueuesManager.batch_update(); the store has to see the same
+    sequence or the queues end up holding the same ids in a different order.
+    """
+    n = len(ordered_vehicles)
+    vehicle_id = np.empty(n, dtype=np.int32)
+    new_start_index = np.empty(n, dtype=np.int32)
+    new_offset_m = np.empty(n, dtype=np.float64)
+    new_time_offset_us = np.empty(n, dtype=np.int64)
+    moved = np.empty(n, dtype=np.int32)
+    changed_segment = np.empty(n, dtype=np.int32)
+    reached_end = np.empty(n, dtype=np.int32)
+
+    for i, vehicle in enumerate(ordered_vehicles):
+        d = delta_by_id[vehicle.id]
+        vehicle_id[i] = vehicle.id
+        new_start_index[i] = int(d["new_start_index"])
+        new_offset_m[i] = float(d["new_offset_m"])
+        new_time_offset_us[i] = int(d["new_time_offset_us"])
+        moved[i] = 1 if d["moved"] else 0
+        changed_segment[i] = 1 if d["changed_segment"] else 0
+        reached_end[i] = 1 if d["reached_end"] else 0
+
+    return ruthlib.advance_store_apply_deltas(
+        vehicle_id, new_start_index, new_offset_m, new_time_offset_us,
+        moved, changed_segment, reached_end)
+
+
+def advance_waiting(vehicles: Sequence) -> None:
+    """Advance the store's clock for vehicles that waited this step."""
+    if not vehicles:
+        return
+    ids = np.fromiter((v.id for v in vehicles), dtype=np.int32, count=len(vehicles))
+    ruthlib.advance_store_advance_waiting(ids)
+
+
+def shadow_check_deltas(vehicles: Sequence, queue_events: dict,
+                        python_removals, python_additions) -> None:
+    """Check the store's post-replay state matches the Python objects'.
+
+    Two halves, because delta application has two effects. The movement columns
+    must match the Vehicle attributes, and the queue operations the store staged
+    must match the ones QueuesManager staged -- same operations, same order,
+    since batch_update() pops queues front to back and would otherwise assert.
+    """
+    columns = ruthlib.advance_store_movement_columns()
+    by_id = {int(v): i for i, v in enumerate(columns["vehicle_id"])}
+
+    for vehicle in vehicles:
+        i = by_id.get(vehicle.id)
+        if i is None:
+            raise AssertionError(
+                f"store shadow check (deltas): vehicle {vehicle.id} is not in the store")
+
+        expected = (vehicle.start_index, vehicle.start_distance_offset,
+                    vehicle.time_offset // _ONE_US, 1 if vehicle.active else 0)
+        got = (int(columns["start_index"][i]), float(columns["start_offset_m"][i]),
+               int(columns["time_offset_us"][i]), int(columns["active"][i]))
+        if got != expected:
+            names = ("start_index", "start_offset_m", "time_offset_us", "active")
+            detail = ", ".join(f"{name}: store={g!r} python={e!r}"
+                               for name, g, e in zip(names, got, expected) if g != e)
+            raise AssertionError(
+                f"store shadow check (deltas): vehicle {vehicle.id} -> {detail}")
+
+    _compare_queue_events("removals", queue_events["removals"], python_removals)
+    _compare_queue_events("additions", queue_events["additions"], python_additions)
+
+
+def _compare_queue_events(kind: str, store_events: dict, python_events) -> None:
+    """Compare one kind of staged queue operation, in order."""
+    store_rows = list(zip((int(x) for x in store_events["vehicle_id"]),
+                          (int(x) for x in store_events["node_from"]),
+                          (int(x) for x in store_events["node_to"])))
+    python_rows = [(int(vid), int(node_from), int(node_to))
+                   for (vid, node_from, node_to) in python_events]
+
+    if store_rows == python_rows:
+        return
+
+    if len(store_rows) != len(python_rows):
+        raise AssertionError(
+            f"store shadow check (queue {kind}): store staged {len(store_rows)} "
+            f"operations, Python staged {len(python_rows)}")
+    for i, (got, expected) in enumerate(zip(store_rows, python_rows)):
+        if got != expected:
+            raise AssertionError(
+                f"store shadow check (queue {kind}): operation {i} is "
+                f"{got} in the store, {expected} in Python")

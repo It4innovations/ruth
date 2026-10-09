@@ -404,15 +404,37 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
         "reached_end": deltas["reached_end"][i],
     } for i in range(len(deltas["vehicle_id"]))}
 
-    vehicles_moved = False
-    for vehicle in free:
-        vehicles_moved |= _apply_delta(vehicle, delta_by_id[vehicle.id], routing_map, queues_manager)
+    # Canonical replay order: free vehicles, then each queue group front to
+    # back. The queue operations staged here are consumed in this order by
+    # batch_update(), so it is part of the semantics, not just tidiness.
+    replay_order = list(free)
     for group in queue_groups:
-        for vehicle in group:
-            vehicles_moved |= _apply_delta(vehicle, delta_by_id[vehicle.id], routing_map, queues_manager)
+        replay_order.extend(group)
+
+    # Snapshot the staged queue operations so the shadow check can tell which
+    # ones this step added, rather than the whole backlog.
+    removals_before = len(queues_manager.to_be_removed)
+    additions_before = len(queues_manager.to_be_added)
+
+    vehicles_moved = False
+    for vehicle in replay_order:
+        vehicles_moved |= _apply_delta(vehicle, delta_by_id[vehicle.id], routing_map, queues_manager)
     # After-gap waiting: advance time only, no movement, no queue op.
     for vehicle in waiting:
         vehicle.time_offset += vehicle.frequency
+
+    # Shadow mode: the store replays the same deltas and must land on the same
+    # state. Runs BEFORE batch_update, while the staged operations are still
+    # comparable; the store does not consume them, it only reports what it would
+    # have staged.
+    if store_shadow_check:
+        from . import store_bridge
+        queue_events = store_bridge.apply_deltas(replay_order, delta_by_id)
+        store_bridge.advance_waiting(waiting)
+        store_bridge.shadow_check_deltas(
+            replay_order + list(waiting), queue_events,
+            queues_manager.to_be_removed[removals_before:],
+            queues_manager.to_be_added[additions_before:])
 
     queues_manager.batch_update()
 
