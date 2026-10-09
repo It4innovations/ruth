@@ -38,6 +38,41 @@ find_package(OpenMP REQUIRED)
 add_subdirectory(RoutingAlg)
 add_subdirectory(ace)
 
+# Reproducing route.py's arithmetic exactly, or running the fastest kernel.
+#
+# route.py evaluates the per-step move as two statements and therefore two
+# roundings:
+#     elapsed_m    = frequency_s * speed_mps
+#     end_position = start_position + elapsed_m
+# advance_kernel.cpp writes the same thing as one expression. Wherever FMA is
+# available -- any -march that implies it, which the Cray wrappers set from the
+# node -- GCC and Clang contract the pair into a single fused multiply-add that
+# rounds once, and the result sits up to 1 ULP from Python's. Measured at 4-7%
+# of moving vehicles per step for 5-10 s frequencies.
+#
+# Contraction is the ONLY -O3 transform permitted to change a floating point
+# result without -ffast-math (reassociation and vectorised reductions are not),
+# so turning it off is enough: optimisation stays at the build type's level and
+# nothing else about the build changes.
+#
+#   ON  (default) -- positions match the serial Python run bit for bit.
+#   OFF           -- the fused kernel, up to 1 ULP from serial per move.
+#
+# Switch with -DRUTH_REPRODUCIBLE_FP=OFF at configure time; no source changes.
+option(RUTH_REPRODUCIBLE_FP
+    "Match route.py's floating point exactly (disables FMA contraction)" ON)
+
+if(RUTH_REPRODUCIBLE_FP)
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-ffp-contract=off" HAVE_FFP_CONTRACT_OFF)
+    if(NOT HAVE_FFP_CONTRACT_OFF)
+        message(WARNING
+            "RUTH_REPRODUCIBLE_FP is ON but this compiler rejects "
+            "-ffp-contract=off. Vehicle positions may differ from the serial "
+            "run by 1 ULP per move.")
+    endif()
+endif()
+
 set(ADVANCE_SOURCES
     src/advance_state.cpp
     src/advance_kernel.cpp
@@ -101,4 +136,19 @@ target_link_libraries(globalview_cpp PRIVATE OpenMP::OpenMP_CXX)
 set_target_properties(globalview_cpp PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
 )
+
+# Applied after the targets exist. globalview_cpp is included because the serial
+# path reaches the LoS through it and the distributed path through ruthlib's
+# copy of the same header -- compiling them differently would stop them being
+# the same function.
+if(RUTH_REPRODUCIBLE_FP AND HAVE_FFP_CONTRACT_OFF)
+    foreach(_ruth_fp_target ruth ruthlib globalview_cpp)
+        target_compile_options(${_ruth_fp_target} PRIVATE -ffp-contract=off)
+    endforeach()
+endif()
+
+# Printed because the whole point is to A/B the two builds: this line says which
+# one produced the trajectory digests in the log beside it.
+message(STATUS "ruth: RUTH_REPRODUCIBLE_FP=${RUTH_REPRODUCIBLE_FP} "
+               "(ON = positions match serial Python bit for bit)")
 
