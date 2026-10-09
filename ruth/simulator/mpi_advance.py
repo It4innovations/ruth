@@ -14,6 +14,7 @@ route.advance_vehicles_with_queues exactly; only the kinematics run in C++.
 """
 
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 
@@ -432,7 +433,8 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
                          store_shadow_check: bool = False,
                          store_tasks: bool = True,
                          fcd_columns: bool = True,
-                         fast_replay: bool = True
+                         fast_replay: bool = True,
+                         phase_times: dict = None
                          ) -> Tuple[object, bool]:
     """Distributed equivalent of route.advance_vehicles_with_queues.
 
@@ -455,6 +457,10 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
         per-vehicle _apply_delta path, for an A/B of the replay phase. Both
         produce the same state; ace.store-shadow-check verifies that against the
         store's independent replay either way.
+    :param phase_times: when given, filled with this step's per-phase wall times
+        in milliseconds. The step loop merges them into step_timers, so a slow
+        advance can be attributed without guessing. Always on -- a few
+        perf_counter calls per step, not per vehicle.
 
     Returns (fcds, vehicles_moved), where fcds is an FCDColumns or, with
     fcd_columns off, a list of FCDRecord. Simulation.update and
@@ -463,7 +469,13 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     departure_epoch_us = _datetime_to_epoch_us(departure_time)
     los_tolerance_s = los_vehicles_tolerance.total_seconds()
 
+    times = {} if phase_times is None else phase_times
+    clock = time.perf_counter
+    mark = clock()
+
     free, queue_groups, waiting = _split_vehicles(vehicles_to_be_moved, queues_manager)
+    times["adv_split_ms"] = (clock() - mark) * 1000.0
+    mark = clock()
 
     if store_shadow_check:
         from . import store_bridge
@@ -510,6 +522,9 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
         shadow_check(flat_queue_vehicles, routing_map, reference_queue,
                      ADVANCE_TASK_DTYPE, "queues")
 
+    times["adv_build_tasks_ms"] = (clock() - mark) * 1000.0
+    mark = clock()
+
     # Prune every GV replica BEFORE do_advance reads it, at the current offset —
     # this reproduces serial's read-time GV (serial prunes at the end of the
     # previous step with the current offset). Doing this in the sync (after the
@@ -528,8 +543,14 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     # Phase 2: all-gather the step's FCDs into every GV replica (no pruning here).
     ruthlib.sync_advance()
 
+    # do_advance and sync_advance time themselves internally (dispatch vs
+    # barrier vs gather); those come back through advance_phase_times().
+    mark = clock()
+
     deltas = ruthlib.get_advance_deltas()
     fcd_arrays = ruthlib.get_advance_fcds()
+    times["adv_readback_ms"] = (clock() - mark) * 1000.0
+    mark = clock()
 
     # The store's shadow replay and the reference path both want the deltas keyed
     # by id; the fast path does not, and building this for it would reintroduce
@@ -584,6 +605,8 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
         store_bridge.queues_stage(queue_events)
 
     queues_manager.batch_update()
+    times["adv_replay_ms"] = (clock() - mark) * 1000.0
+    mark = clock()
 
     # The registry applies the same staged operations and must reach the same
     # state. Checked after Python's batch_update so both have been applied.
@@ -602,6 +625,9 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
             _shadow_check_fcd_columns(fcds, fcd_arrays, moved_by_id, routing_map)
     else:
         fcds = _build_history(fcd_arrays, moved_by_id, routing_map)
+
+    times["adv_build_fcds_ms"] = (clock() - mark) * 1000.0
+    times.update(ruthlib.advance_phase_times())
 
     return fcds, vehicles_moved
 

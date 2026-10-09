@@ -190,6 +190,7 @@ class Simulator:
 
                 parts = timer_set.collect()
                 parts.update(self.sim.history.collect_step_metrics(reset=True))
+                parts.update(getattr(self, "advance_phase_times", None) or {})
 
                 logger.info(
                     "step_timers: step=%s %s",
@@ -342,6 +343,10 @@ class Simulator:
 
     def advance_vehicles(self, vehicles: List[Vehicle]) -> Tuple[List[FCDRecord], bool]:
         """Move the vehicles on its route and generate FCD records"""
+        # Per-phase times of the distributed advance, merged into step_timers by
+        # the step loop. advance_vehicle is one timer over nine phases, and which
+        # of them is slow decides what to fix.
+        self.advance_phase_times = {}
 
         if self._use_mpi_advance():
             # LoS is evaluated against the C++ GlobalView replicas (kept in sync
@@ -366,7 +371,8 @@ class Simulator:
                                         fcd_columns=getattr(
                                             self.sim.setting, "fcd_columns", True),
                                         fast_replay=getattr(
-                                            self.sim.setting, "fast_replay", True))
+                                            self.sim.setting, "fast_replay", True),
+                                        phase_times=self.advance_phase_times)
 
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             self.sim.global_view,

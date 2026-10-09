@@ -51,6 +51,26 @@ void sync_advance();
 /// reproduce serial's read-time GV contents. Passing -inf prunes nothing.
 void advance_drop_old(double threshold_epoch_s);
 
+/// Wall time, in milliseconds, of the master-side phases of one step.
+///
+/// Instrumentation only. `advance_vehicle` is one timer wrapping nine things and
+/// the interesting question -- is a slow step spent MARSHALLING work into ACE
+/// messages, WAITING at the barrier for a straggler rank, or in the two
+/// all-gathers -- cannot be answered without separating them. Those three have
+/// nothing in common as fixes.
+struct AdvancePhaseTimes {
+  double drop_old_ms = 0.0;      ///< broadcast + wait for the GV prune
+  double dispatch_ms = 0.0;      ///< building and async_send-ing the workloads
+  double barrier_ms = 0.0;       ///< drain_until_quiescent: the actual makespan
+  double sync_ms = 0.0;          ///< broadcast + wait for the FCD/delta gather
+  int32_t free_chunks = 0;       ///< workloads sent for free vehicles
+  int32_t queue_workloads = 0;   ///< workloads sent for queues (one per queue)
+  int32_t longest_queue = 0;     ///< vehicles in the largest single queue
+};
+
+/// Phase times recorded by the last do_advance / sync_advance / drop_old.
+AdvancePhaseTimes get_advance_phase_times();
+
 /// Append FCDs to THIS rank's local accumulator before sync_advance, so they
 /// are included in the gather. Used by the master to inject the stationary FCDs
 /// of "after-gap" waiting vehicles (queued+selected behind a non-selected

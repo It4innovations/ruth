@@ -350,6 +350,21 @@ PYBIND11_MODULE(ruthlib, m) {
         "AdvanceTasks built from the store, as raw bytes to view through "
         "ADVANCE_TASK_DTYPE");
 
+    m.def("advance_phase_times",
+        []() {
+            const auto t = ruthlib::get_advance_phase_times();
+            py::dict d;
+            d["adv_drop_old_ms"] = t.drop_old_ms;
+            d["adv_dispatch_ms"] = t.dispatch_ms;
+            d["adv_barrier_ms"] = t.barrier_ms;
+            d["adv_sync_ms"] = t.sync_ms;
+            d["adv_free_chunks"] = static_cast<double>(t.free_chunks);
+            d["adv_queue_workloads"] = static_cast<double>(t.queue_workloads);
+            d["adv_longest_queue"] = static_cast<double>(t.longest_queue);
+            return d;
+        },
+        "master-side phase times of the last step, in milliseconds");
+
     m.def("advance_store_size",
         []() { return ruthlib::VehicleStore::instance().size(); },
         "number of vehicles currently in the store");

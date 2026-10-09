@@ -1,6 +1,7 @@
 #include "advance_orchestration.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <memory>
 
 #include "comm/comm_interface.hpp"
@@ -21,6 +22,22 @@ static constexpr size_t ADVANCE_WORK_MULTIPLIER = 16;
 // kSortFcdsForDeterminism constant and advance_debug_sort_enabled() are gone;
 // reordering is still entirely master-side and the workloads are untouched.
 
+namespace {
+
+// Phase times for the step in progress. Master-only, written from the master
+// thread between collectives, so no synchronisation is needed.
+AdvancePhaseTimes g_phase_times;
+
+using Clock = std::chrono::steady_clock;
+
+double elapsed_ms(const Clock::time_point& since) {
+  return std::chrono::duration<double, std::milli>(Clock::now() - since).count();
+}
+
+}  // namespace
+
+AdvancePhaseTimes get_advance_phase_times() { return g_phase_times; }
+
 void register_advance_workloads() {
   auto comm = ace::CommInterface::instance();
   comm->register_workload<FreeVehicleWorkload>();
@@ -30,18 +47,26 @@ void register_advance_workloads() {
 }
 
 void advance_drop_old(double threshold_epoch_s) {
+  const auto started = Clock::now();
+
   auto comm = ace::CommInterface::instance();
   auto wl = std::make_shared<DropOldWorkload>(threshold_epoch_s);
   // Prune every rank's GV replica before do_advance reads it, so the read-time
   // contents match serial's (which prunes at the end of the previous step).
   comm->async_broadcast(wl);
   wl->wait();
+
+  // First phase of a step, so this is where the counters reset.
+  g_phase_times = AdvancePhaseTimes{};
+  g_phase_times.drop_old_ms = elapsed_ms(started);
 }
 
 void do_advance(const std::vector<AdvanceTask>& free_tasks,
                 const std::vector<std::vector<AdvanceTask>>& queues,
                 int64_t departure_epoch_us,
                 double los_tolerance_s) {
+  const auto dispatch_started = Clock::now();
+
   auto comm = ace::CommInterface::instance();
   const int num_ranks = comm->get_size();
 
@@ -61,13 +86,26 @@ void do_advance(const std::vector<AdvanceTask>& free_tasks,
     comm->async_send(wl, dispatch_index % num_ranks);
   }
 
+  g_phase_times.free_chunks = static_cast<int32_t>(dispatch_index);
+
   // Queues: one whole queue per workload (never split across ranks).
   for (const auto& queue : queues) {
     if (queue.empty()) continue;
     auto wl = std::make_shared<QueueWorkload>(queue, departure_epoch_us, los_tolerance_s);
     ++dispatch_index;
     comm->async_send(wl, dispatch_index % num_ranks);
+
+    // A QueueWorkload is evaluated sequentially and cannot be split, so the
+    // longest queue is a lower bound on any rank's serial work this step. If
+    // barrier_ms tracks this rather than the total, the makespan is set by one
+    // queue and rebalancing alone will not help.
+    g_phase_times.longest_queue =
+        std::max(g_phase_times.longest_queue, static_cast<int32_t>(queue.size()));
+    ++g_phase_times.queue_workloads;
   }
+
+  g_phase_times.dispatch_ms = elapsed_ms(dispatch_started);
+  const auto barrier_started = Clock::now();
 
   // No local handles kept: async_send() marshals each workload into its own send
   // buffer and registers the shared_ptr in the scheduler's waiting map, which owns
@@ -81,15 +119,20 @@ void do_advance(const std::vector<AdvanceTask>& free_tasks,
   // QueueWorkload::execute() (those run on scheduler threads and must not call a
   // collective).
   comm->barrier();
+  g_phase_times.barrier_ms = elapsed_ms(barrier_started);
 }
 
 void sync_advance() {
+  const auto started = Clock::now();
+
   auto comm = ace::CommInterface::instance();
   auto wl = std::make_shared<SyncFCDsWorkload>();
   // Broadcast reaches every rank (including the master), so all ranks enter the
   // sync_allgatherv collective inside SyncFCDsWorkload::execute().
   comm->async_broadcast(wl);
   wl->wait();
+
+  g_phase_times.sync_ms = elapsed_ms(started);
 }
 
 void advance_add_local_fcds(const double* datetime_s, const int32_t* vehicle_id,
