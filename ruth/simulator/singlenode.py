@@ -302,16 +302,20 @@ class Simulator:
         """Check the C++ VehicleStore reproduces this step's selection.
 
         Verification only (ace.store-shadow-check); nothing here feeds the
-        simulation. Unlike the task check in mpi_advance, this runs on the serial
-        path too, because the selection it verifies is not specific to the
-        distributed advance.
+        simulation.
+
+        Gated on _use_store(), so it does nothing at all when ace.mpi-advance is
+        off. The serial path must behave exactly as it always has: it never
+        populates the store, so it must never read or push to it either. An
+        earlier version guarded only on store_shadow_check and pushed into an
+        empty store on a serial run, which aborted.
 
         It populates the store separately from the task check rather than
         sharing one population: update_followup_route rewrites routes between
         this point and task construction, so a population made here would be
         stale by then.
         """
-        if not getattr(self.sim.setting, "store_shadow_check", False):
+        if not self._use_store():
             return
 
         from .store_bridge import push_movement, shadow_check_selection
