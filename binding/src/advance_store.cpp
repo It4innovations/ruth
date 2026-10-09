@@ -87,14 +87,38 @@ void VehicleStore::set_route(int32_t slot,
   start_index_[slot] = start_index;
 
   route_nodes_.insert(route_nodes_.end(), route_nodes, route_nodes + route_len);
-  if (route_len > 1) {
+
+  // Keep the two CSR buffers index-aligned: segment i of a route lives at the
+  // same offset as node i, so each route contributes route_len entries to both
+  // -- its route_len - 1 real segment ids plus one padding slot that is never
+  // read (there is no segment leaving the destination).
+  //
+  // The guard is on route_len > 0, NOT > 1. An EMPTY route must contribute
+  // nothing to either buffer. Vehicles with osm_route == [] are real:
+  // change_baseline_alternatives empties the route of any vehicle it cannot
+  // find a plateau route for, and they stay in sim.vehicles because pruning
+  // only happens on the streaming path. Padding those pushed one entry into
+  // route_segment_ids_ while route_nodes_ stood still, so every vehicle stored
+  // after one of them read a different vehicle's segment ids -- with the right
+  // nodes, which is what made it look like a stale route rather than a drift.
+  if (route_len > 0) {
     route_segment_ids_.insert(route_segment_ids_.end(),
                               route_segment_ids, route_segment_ids + (route_len - 1));
+    route_segment_ids_.push_back(-1);
   }
-  // Keep the two CSR buffers index-aligned: segment i of a route lives at the
-  // same offset as node i, so the last node's slot is padding that is never
-  // read (there is no segment leaving the destination).
-  route_segment_ids_.push_back(-1);
+
+  // The invariant the whole CSR rests on, checked where it can be broken.
+  // O(1), so it stays in release: a drift here is silent and corrupts every
+  // later vehicle's task rather than failing near its cause.
+  if (route_segment_ids_.size() != route_nodes_.size()) {
+    std::fprintf(stderr,
+                 "[ruth] VehicleStore::set_route: CSR buffers drifted apart "
+                 "(%zu segment ids vs %zu nodes) writing vehicle %d with route_len %d.\n",
+                 route_segment_ids_.size(), route_nodes_.size(),
+                 vehicle_id_[slot], route_len);
+    std::fflush(stderr);
+    std::abort();
+  }
 }
 
 void VehicleStore::resize_segments(size_t max_routing_id) {

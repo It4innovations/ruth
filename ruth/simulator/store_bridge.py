@@ -87,13 +87,11 @@ def initialize(vehicles: Sequence, routing_map) -> None:
         route = vehicle.osm_route
         route_offsets[i] = acc
         route_nodes.extend(route)
-        # One segment id per node slot keeps the two CSR buffers aligned; the
-        # last node has no outgoing segment, so it gets a -1 that is never read.
-        for k in range(len(route) - 1):
-            route_segment_ids.append(_routing_id(routing_map, route[k], route[k + 1]))
-        route_segment_ids.append(-1)
+        _append_segment_ids(route_segment_ids, route, routing_map)
         acc += len(route)
     route_offsets[n] = acc
+
+    _assert_csr_aligned(route_nodes, route_segment_ids, acc)
 
     max_routing_id = max(route_segment_ids) if route_segment_ids else 0
 
@@ -178,11 +176,11 @@ def push_routes(vehicles: Sequence, routing_map) -> int:
         route = vehicle.osm_route
         route_offsets[i] = acc
         route_nodes.extend(route)
-        for k in range(len(route) - 1):
-            route_segment_ids.append(_routing_id(routing_map, route[k], route[k + 1]))
-        route_segment_ids.append(-1)
+        _append_segment_ids(route_segment_ids, route, routing_map)
         acc += len(route)
     route_offsets[n] = acc
+
+    _assert_csr_aligned(route_nodes, route_segment_ids, acc)
 
     # A rewritten route may run over segments no route touched before, so their
     # geometry has to reach the table before a task can be built from it.
@@ -223,6 +221,37 @@ def build_tasks(vehicles: Sequence, task_dtype) -> np.ndarray:
     ids = np.fromiter((v.id for v in vehicles), dtype=np.int32, count=len(vehicles))
     raw = ruthlib.advance_store_build_tasks(ids)
     return raw.view(task_dtype)
+
+
+def _append_segment_ids(route_segment_ids: List[int], route, routing_map) -> None:
+    """Append one segment id per node slot of `route`, keeping the CSR aligned.
+
+    A route of N nodes contributes exactly N entries: its N-1 segment ids plus
+    one padding slot for the destination node, which has no outgoing segment and
+    is never read.
+
+    An EMPTY route contributes NOTHING. That is the whole point of the guard:
+    vehicles with osm_route == [] are real (change_baseline_alternatives empties
+    the route of any vehicle it cannot route, and they stay in sim.vehicles
+    because pruning only happens when streaming), and padding them pushed an
+    entry here while the node offset stood still. Every vehicle after one of
+    them then read another vehicle's segment ids -- alongside its own correct
+    nodes, which is exactly what made the symptom look like a stale route.
+    """
+    if not route:
+        return
+    for k in range(len(route) - 1):
+        route_segment_ids.append(_routing_id(routing_map, route[k], route[k + 1]))
+    route_segment_ids.append(-1)
+
+
+def _assert_csr_aligned(route_nodes: List[int], route_segment_ids: List[int],
+                        expected: int) -> None:
+    """Both CSR buffers must be indexed by the same offsets."""
+    if len(route_nodes) != expected or len(route_segment_ids) != expected:
+        raise AssertionError(
+            f"store CSR drifted: {len(route_nodes)} nodes, "
+            f"{len(route_segment_ids)} segment ids, offsets expect {expected}")
 
 
 def _push_segment_geometry(routing_map, route_segment_ids) -> None:
