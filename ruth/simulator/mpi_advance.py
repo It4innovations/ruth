@@ -444,23 +444,57 @@ def _build_history(fcd_arrays: dict, moved_by_id: Dict[int, Vehicle],
     return fcds
 
 
-def _reorder_fcds_to_serial(fcd_arrays: dict, free: List[Vehicle],
-                            queue_groups: List[List[Vehicle]], waiting: List[Vehicle]) -> dict:
-    """Reorder the gathered FCDs into serial's exact write order: free vehicles
-    (in split order), then each queue group FIFO, then waiting — and by datetime
-    within each vehicle. Validation aid (ace.deterministic-order); makes the
-    history byte-identical to serial so the HDF5 files can be diffed directly.
-    The workloads and the serial path are untouched — this is pure master-side
-    reordering, valid because the per-step FCD *set* is identical to serial's."""
+def _reorder_fcds_to_serial(fcd_arrays: dict, vehicles_to_be_moved: List[Vehicle],
+                            free: List[Vehicle], queue_groups: List[List[Vehicle]],
+                            moved_by_vid: Dict[int, bool]) -> dict:
+    """Reorder the gathered FCDs into serial's exact write order.
+
+    Validation aid (ace.deterministic-order); makes the history byte-identical
+    to serial so the HDF5 files can be diffed directly. The workloads and the
+    serial path are untouched — this is pure master-side reordering, valid
+    because the per-step FCD *set* is identical to serial's.
+
+    route.advance_vehicles_with_queues writes in three passes, and the second
+    one is not simply "each queue in FIFO order":
+
+      1. free vehicles, in selection order (route.py:291);
+      2. each queue front to back -- but the loop BREAKS at the first vehicle
+         that did not move, after writing that vehicle's FCDs (route.py:321).
+         Everything behind the blocker is never reached;
+      3. every queued vehicle the second pass did not reach, in
+         vehicles_in_queues insertion order, i.e. SELECTION order rather than
+         queue order (route.py:324).
+
+    An earlier version ranked whole queue groups consecutively, with no notion
+    of a blocker. A blocked queue head is the normal case -- that is what a
+    queue is -- so everything behind it was ranked mid-step instead of at the
+    end, and 54% of the file's rows landed in the wrong place. `moved_by_vid`
+    is what makes pass 2 reproducible: the kernel's `moved` flag is exactly
+    serial's `prev_pos != vehicle.segment_position` (stalled() sets moved = 0),
+    and the deltas are already back by the time this runs.
+    """
     order: Dict[int, int] = {}
     k = 0
     for vehicle in free:
         order[vehicle.id] = k; k += 1
+
     for group in queue_groups:
+        blocked = False
         for vehicle in group:
+            if blocked:
+                continue      # serial never reaches it here; pass 3 ranks it
             order[vehicle.id] = k; k += 1
-    for vehicle in waiting:
-        order[vehicle.id] = k; k += 1
+            # Ranked first, THEN the break tested: serial writes the blocker's
+            # own FCDs before stopping.
+            blocked = not moved_by_vid.get(vehicle.id, False)
+
+    # Pass 3. Whatever is still unranked is exactly the queued vehicles the
+    # second pass did not reach -- those behind a blocker, plus the `waiting`
+    # ones that sat behind a selection gap. Walking vehicles_to_be_moved puts
+    # them in selection order, which is the order serial's dict iteration gives.
+    for vehicle in vehicles_to_be_moved:
+        if vehicle.id not in order:
+            order[vehicle.id] = k; k += 1
 
     vids = fcd_arrays["vehicle_id"]
     times = fcd_arrays["datetime_seconds"]
@@ -697,7 +731,11 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     # Validation only: reorder gathered FCDs into serial's write order so the FCD
     # history is byte-identical (content is already identical either way).
     if deterministic_order:
-        fcd_arrays = _reorder_fcds_to_serial(fcd_arrays, free, queue_groups, waiting)
+        # moved is the kernel's own flag, so this is serial's was_moved exactly.
+        moved_by_vid = dict(zip((int(v) for v in deltas["vehicle_id"]),
+                                (bool(m) for m in deltas["moved"])))
+        fcd_arrays = _reorder_fcds_to_serial(fcd_arrays, vehicles_to_be_moved,
+                                             free, queue_groups, moved_by_vid)
 
     moved_by_id = {v.id: v for v in vehicles_to_be_moved}
     if fcd_columns:
