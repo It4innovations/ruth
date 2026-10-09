@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, TYPE_CHECKING
 
 import numpy as np
 
-from .data.hdf_stream_writer import HDF5Writer, fcd_records_to_array
+from .data.hdf_stream_writer import HDF5Writer, fcd_columns_to_array, fcd_records_to_array
 
 if TYPE_CHECKING:
     from .simulator.simulation import FCDRecord
@@ -177,6 +177,13 @@ class FCDHistory:
         self.base_path = h5_path_base
         self.buffer_size = int(buffer_size)
         self.buffer: List["FCDRecord"] = []
+        # The columnar path buffers already-converted compound arrays instead of
+        # records; buffered_rows counts them against buffer_size the same way.
+        self.array_buffer: List["np.ndarray"] = []
+        self.buffered_rows = 0
+        # Needed to resolve routing ids to (node_from, node_to, length) on the
+        # columnar path. Set by Simulation, which owns the map.
+        self.routing_map = None
         self.fcd_history: List["FCDRecord"] = []  # kept for pickle compatibility; no longer populated
         self.start_time = None
         self.max_records_per_file = int(max_records_per_file)
@@ -350,7 +357,18 @@ class FCDHistory:
         else:
             self._sync_writer.save_computational_time(float(computational_time))
 
-    def extend(self, fcd: List["FCDRecord"]):
+    def extend(self, fcd):
+        """Buffer a step's FCDs.
+
+        Takes a list of FCDRecord (serial path, unchanged) or an FCDColumns
+        (distributed path). Columns are converted to the compound array straight
+        away, vectorised, and buffered as arrays -- the record path's per-record
+        conversion at flush time is what this avoids.
+        """
+        if fcd.__class__.__name__ == "FCDColumns":
+            self.extend_columns(fcd)
+            return
+
         if not fcd:
             return
 
@@ -360,16 +378,49 @@ class FCDHistory:
         if len(self.buffer) >= self.buffer_size:
             self.flush_to_disk()
 
+    def extend_columns(self, columns):
+        """Buffer a step's FCDs given as columns."""
+        n = len(columns)
+        if n == 0:
+            return
+
+        if self.routing_map is None:
+            raise RuntimeError(
+                "FCDHistory.extend_columns needs a routing map to resolve segment "
+                "ids; Simulation sets history.routing_map when it builds the map.")
+
+        self._add_metric("fcd_records_seen", n)
+        t0 = time.perf_counter()
+        self.array_buffer.append(fcd_columns_to_array(
+            columns.datetime_seconds, columns.vehicle_id, columns.segment_id,
+            columns.offset_from_start, columns.vehicle_speed_mps, columns.active,
+            self.routing_map))
+        self._add_metric("fcd_convert_ms", (time.perf_counter() - t0) * 1000.0)
+        self.buffered_rows += n
+
+        if self.buffered_rows >= self.buffer_size:
+            self.flush_to_disk()
+
     def flush_to_disk(self):
-        if not self.buffer:
+        if not self.buffer and not self.array_buffer:
             return
 
         self._ensure_started()
-        n_records = len(self.buffer)
 
-        t0 = time.perf_counter()
-        data = fcd_records_to_array(self.buffer)
-        self._add_metric("fcd_convert_ms", (time.perf_counter() - t0) * 1000.0)
+        if self.array_buffer:
+            # Columns were converted as they arrived, so there is nothing to do
+            # here but join them. A run uses one path or the other, so these two
+            # sources never actually interleave.
+            data = (self.array_buffer[0] if len(self.array_buffer) == 1
+                    else np.concatenate(self.array_buffer))
+            self.array_buffer.clear()
+            self.buffered_rows = 0
+        else:
+            t0 = time.perf_counter()
+            data = fcd_records_to_array(self.buffer)
+            self._add_metric("fcd_convert_ms", (time.perf_counter() - t0) * 1000.0)
+
+        n_records = len(data)
 
         # Release FCDRecord object references as early as possible. The async
         # writer receives the compact structured array, not Vehicle/Segment objects.

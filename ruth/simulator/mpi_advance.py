@@ -25,7 +25,7 @@ from ..data.segment import LengthMeters, Segment, SpeedMps
 from ..data.map import Map
 from ..vehicle import Vehicle
 from .queues import QueuesManager
-from .simulation import FCDRecord
+from .simulation import FCDColumns, FCDRecord
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +232,47 @@ def _apply_delta(vehicle: Vehicle, d, routing_map: Map, queues_manager: QueuesMa
     return moved
 
 
+def _build_fcd_columns(fcd_arrays: dict, moved_by_id: Dict[int, Vehicle]) -> FCDColumns:
+    """The step's FCDs as columns, with `active` resolved per record.
+
+    Replaces _build_history on the production path. The only thing the records
+    added was `active` (and `status`, which nothing reads): per vehicle the
+    latest sample carries that vehicle's final active flag and the rest are
+    active, matching route.generate_fcds.
+
+    The per-vehicle work here is O(distinct vehicles), not O(records): one
+    lexsort finds each vehicle's last sample, and only those are looked up.
+    """
+    vehicle_id = np.asarray(fcd_arrays["vehicle_id"])
+    n = len(vehicle_id)
+
+    active = np.ones(n, dtype=np.bool_)
+    if n:
+        times = np.asarray(fcd_arrays["datetime_seconds"])
+        # Sort by vehicle then time; the last row of each vehicle's run is its
+        # latest sample. _build_history used a strict > when scanning, so on an
+        # exact tie it kept the first -- generate_fcds emits strictly increasing
+        # timestamps per vehicle, so no tie can arise either way.
+        order = np.lexsort((times, vehicle_id))
+        sorted_vehicles = vehicle_id[order]
+        is_last = np.empty(n, dtype=bool)
+        is_last[:-1] = sorted_vehicles[:-1] != sorted_vehicles[1:]
+        is_last[-1] = True
+        last_index = order[is_last]
+        active[last_index] = np.fromiter(
+            (moved_by_id[int(vehicle_id[i])].active for i in last_index),
+            dtype=np.bool_, count=len(last_index))
+
+    return FCDColumns(
+        datetime_seconds=np.asarray(fcd_arrays["datetime_seconds"]),
+        vehicle_id=vehicle_id,
+        segment_id=np.asarray(fcd_arrays["segment_id"]),
+        offset_from_start=np.asarray(fcd_arrays["offset_from_start"]),
+        vehicle_speed_mps=np.asarray(fcd_arrays["vehicle_speed_mps"]),
+        active=active,
+    )
+
+
 def _build_history(fcd_arrays: dict, moved_by_id: Dict[int, Vehicle],
                    routing_map: Map) -> List[FCDRecord]:
     """Materialize FCDRecords from the gathered numeric FCDs, annotating status
@@ -313,8 +354,9 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
                          los_vehicles_tolerance, drop_before_time=None,
                          deterministic_order: bool = False,
                          store_shadow_check: bool = False,
-                         store_tasks: bool = True
-                         ) -> Tuple[List[FCDRecord], bool]:
+                         store_tasks: bool = True,
+                         fcd_columns: bool = True
+                         ) -> Tuple[object, bool]:
     """Distributed equivalent of route.advance_vehicles_with_queues.
 
     Note: LoS is evaluated against the C++ GlobalView replicas (kept in sync by
@@ -328,6 +370,13 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     :param store_tasks: build the AdvanceTasks from the C++ VehicleStore rather
         than row by row in Python (config.json ace.store-tasks). False restores
         the Python builder, for an A/B measurement of the marshal phase.
+    :param fcd_columns: return the step's FCDs as columns instead of FCDRecord
+        objects (config.json ace.fcd-columns). False restores the record path,
+        for an A/B measurement of the history phase.
+
+    Returns (fcds, vehicles_moved), where fcds is an FCDColumns or, with
+    fcd_columns off, a list of FCDRecord. Simulation.update and
+    FCDHistory.extend both accept either.
     """
     departure_epoch_us = _datetime_to_epoch_us(departure_time)
     los_tolerance_s = los_vehicles_tolerance.total_seconds()
@@ -457,6 +506,40 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
         fcd_arrays = _reorder_fcds_to_serial(fcd_arrays, free, queue_groups, waiting)
 
     moved_by_id = {v.id: v for v in vehicles_to_be_moved}
-    fcds = _build_history(fcd_arrays, moved_by_id, routing_map)
+    if fcd_columns:
+        fcds = _build_fcd_columns(fcd_arrays, moved_by_id)
+        if store_shadow_check:
+            _shadow_check_fcd_columns(fcds, fcd_arrays, moved_by_id, routing_map)
+    else:
+        fcds = _build_history(fcd_arrays, moved_by_id, routing_map)
 
     return fcds, vehicles_moved
+
+
+def _shadow_check_fcd_columns(columns: FCDColumns, fcd_arrays: dict,
+                              moved_by_id: Dict[int, Vehicle], routing_map: Map):
+    """Require the columns to carry exactly what the record path would have.
+
+    The columns feed the global view and the history file, so a wrong `active`
+    or a misaligned column changes the output without changing the trajectory --
+    which the trajectory digest would not catch.
+    """
+    records = _build_history(fcd_arrays, moved_by_id, routing_map)
+    if len(records) != len(columns):
+        raise AssertionError(
+            f"fcd columns check: {len(columns)} rows vs {len(records)} records")
+
+    for i, record in enumerate(records):
+        expected = (record.vehicle_id,
+                    routing_map.segment_id_to_int(record.segment.id),
+                    float(record.offset_from_start), float(record.vehicle_speed_mps),
+                    bool(record.active))
+        got = (int(columns.vehicle_id[i]), int(columns.segment_id[i]),
+               float(columns.offset_from_start[i]),
+               float(columns.vehicle_speed_mps[i]), bool(columns.active[i]))
+        if got != expected:
+            names = ("vehicle_id", "segment_id", "offset_from_start",
+                     "vehicle_speed_mps", "active")
+            detail = ", ".join(f"{name}: columns={g!r} records={e!r}"
+                               for name, g, e in zip(names, got, expected) if g != e)
+            raise AssertionError(f"fcd columns check: row {i} -> {detail}")

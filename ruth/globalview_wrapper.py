@@ -108,6 +108,61 @@ class GlobalView:
             else:
                 self._car_to_segment[fcd.vehicle_id] = fcd.segment.id
 
+    def add_batch_columns(self, columns):
+        """Batch-add FCDs already held as numeric columns (FCDColumns).
+
+        Same effect as add_batch, without building a CppFCDRecord or an
+        FCDRecord per sample. Two things add_batch does per record have to be
+        preserved, and both reduce to work per DISTINCT segment or vehicle:
+
+          * every segment touched is marked modified; and
+          * when a vehicle's segment CHANGES, the segment it left is marked
+            modified too -- otherwise its speed never gets recomputed after the
+            last car leaves it.
+
+        `columns.segment_id` already holds routing ids, so no conversion is
+        needed on the way into C++.
+        """
+        n = len(columns)
+        if n == 0:
+            return
+
+        # Field names come from PYBIND11_NUMPY_DTYPE in globalview_bindings.cpp;
+        # assigning by name means a rename there fails here rather than silently
+        # writing the wrong column.
+        arr = np.empty(n, dtype=FCD_DTYPE)
+        arr["datetime_seconds"] = columns.datetime_seconds
+        arr["vehicle_id"] = columns.vehicle_id
+        arr["segment_id"] = columns.segment_id
+        arr["offset_from_start"] = columns.offset_from_start
+        arr["vehicle_speed_mps"] = columns.vehicle_speed_mps
+        self._cpp_view.add_batch_array(arr)
+
+        # Every segment in the batch is modified. One conversion per distinct
+        # routing id rather than one per record.
+        for routing_id in np.unique(columns.segment_id):
+            self._modified_segments.add(self._routing_map.int_to_segment_id(int(routing_id)))
+
+        # A vehicle's last sample in this batch is the segment it ends on; that
+        # is what add_batch would have left in _car_to_segment, since it applies
+        # the records in order.
+        vehicle_id = np.asarray(columns.vehicle_id)
+        segment_id = np.asarray(columns.segment_id)
+        order = np.lexsort((np.arange(n), vehicle_id))
+        sorted_vehicles = vehicle_id[order]
+        is_last = np.empty(n, dtype=bool)
+        is_last[:-1] = sorted_vehicles[:-1] != sorted_vehicles[1:]
+        is_last[-1] = True
+        last_index = order[is_last]
+
+        for i in last_index:
+            vid = int(vehicle_id[i])
+            new_segment = self._routing_map.int_to_segment_id(int(segment_id[i]))
+            old_segment = self._car_to_segment.get(vid)
+            if old_segment is not None and old_segment != new_segment:
+                self._modified_segments.add(old_segment)
+            self._car_to_segment[vid] = new_segment
+
     def number_of_vehicles_ahead(self, datetime, segment_id, tolerance=None, vehicle_id=-1, vehicle_offset_m=0) -> int:
         tolerance = tolerance if tolerance is not None else timedelta(seconds=0)
         tolerance_seconds = tolerance.total_seconds() if isinstance(tolerance, timedelta) else tolerance

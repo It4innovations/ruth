@@ -362,7 +362,9 @@ class Simulator:
                                         store_shadow_check=getattr(
                                             self.sim.setting, "store_shadow_check", False),
                                         store_tasks=getattr(
-                                            self.sim.setting, "store_tasks", True))
+                                            self.sim.setting, "store_tasks", True),
+                                        fcd_columns=getattr(
+                                            self.sim.setting, "fcd_columns", True))
 
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             self.sim.global_view,

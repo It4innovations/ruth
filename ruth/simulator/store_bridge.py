@@ -36,18 +36,25 @@ import ruthlib
 
 _ONE_US = timedelta(microseconds=1)
 
-# (node_from, node_to) -> routing_id. Map.segment_id_to_int goes through
-# networkx's dict-of-dict edge lookup, which is exactly the cost the store
-# exists to remove; memoizing keeps the shadow check from dominating the step.
-_routing_id_cache: Dict[Tuple[int, int], int] = {}
-
-
 def _routing_id(routing_map, node_from: int, node_to: int) -> int:
+    """(node_from, node_to) -> routing_id, memoised on the map.
+
+    Map.segment_id_to_int goes through networkx's dict-of-dict edge lookup,
+    which is exactly the cost the store exists to remove. The cache hangs off
+    the map rather than this module because routing ids belong to the map that
+    assigned them: a module-global would survive a map swap and hand back ids
+    for the wrong graph.
+    """
+    cache = getattr(routing_map, "_store_routing_ids", None)
+    if cache is None:
+        cache = {}
+        routing_map._store_routing_ids = cache
+
     key = (node_from, node_to)
-    rid = _routing_id_cache.get(key)
+    rid = cache.get(key)
     if rid is None:
         rid = routing_map.segment_id_to_int(key)
-        _routing_id_cache[key] = rid
+        cache[key] = rid
     return rid
 
 

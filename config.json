@@ -42,7 +42,8 @@
     "trajectory-digest": false,
     "trajectory-dump-step": -1,
     "store-shadow-check": false,
-    "store-tasks": true
+    "store-tasks": true,
+    "fcd-columns": true
   },
   "console": {
     "enabled": false,

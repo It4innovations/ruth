@@ -73,6 +73,9 @@ class AceArgs:
     # Build the per-step AdvanceTasks from the C++ VehicleStore instead of row by
     # row in Python. On by default; false restores the Python builder for an A/B.
     store_tasks: bool = True
+    # Hand the step's FCDs to the global view and the history writer as columns
+    # instead of FCDRecord objects. On by default.
+    fcd_columns: bool = True
 
 
 @dataclass
@@ -166,7 +169,8 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                     trajectory_digest=ace_args.trajectory_digest,
                     trajectory_dump_step=ace_args.trajectory_dump_step,
                     store_shadow_check=ace_args.store_shadow_check,
-                    store_tasks=ace_args.store_tasks)
+                    store_tasks=ace_args.store_tasks,
+                    fcd_columns=ace_args.fcd_columns)
 
     simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 
