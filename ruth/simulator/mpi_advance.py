@@ -128,8 +128,14 @@ def _fill_task(row, vehicle: Vehicle, routing_map: Map):
 
 
 def _build_task_array(vehicles: List[Vehicle], routing_map: Map) -> np.ndarray:
-    # TODO(perf): this per-vehicle Python loop mirrors the serial get_vehicle_speeds
-    # cost; vectorize the segment lookups if it shows up in profiling.
+    """Reference task builder: one Python row per vehicle.
+
+    Superseded as the production path by the C++ VehicleStore (see
+    store_bridge.build_tasks); this measured ~8.4 us/vehicle, dominated by the
+    networkx edge lookups in _fill_task. It is kept, not deleted, because it is
+    what `ace.store-shadow-check` compares the store against, and what
+    `ace.store-tasks: false` falls back to for an A/B measurement.
+    """
     arr = np.zeros(len(vehicles), dtype=ADVANCE_TASK_DTYPE)
     for i, vehicle in enumerate(vehicles):
         _fill_task(arr[i], vehicle, routing_map)
@@ -306,7 +312,8 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
                          routing_map: Map, queues_manager: QueuesManager,
                          los_vehicles_tolerance, drop_before_time=None,
                          deterministic_order: bool = False,
-                         store_shadow_check: bool = False
+                         store_shadow_check: bool = False,
+                         store_tasks: bool = True
                          ) -> Tuple[List[FCDRecord], bool]:
     """Distributed equivalent of route.advance_vehicles_with_queues.
 
@@ -316,19 +323,33 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     :param deterministic_order: reorder the returned FCDs into serial's write
         order (config.json ace.deterministic-order). Row order only; the records
         themselves and the resulting vehicle positions are identical either way.
-    :param store_shadow_check: verify the C++ VehicleStore builds byte-identical
-        AdvanceTasks to the ones built here (config.json ace.store-shadow-check).
-        Verification only; the store's output is discarded. Slow.
+    :param store_shadow_check: also build the tasks the old way and require the
+        two to be byte-identical (config.json ace.store-shadow-check). Slow.
+    :param store_tasks: build the AdvanceTasks from the C++ VehicleStore rather
+        than row by row in Python (config.json ace.store-tasks). False restores
+        the Python builder, for an A/B measurement of the marshal phase.
     """
     departure_epoch_us = _datetime_to_epoch_us(departure_time)
     los_tolerance_s = los_vehicles_tolerance.total_seconds()
 
     free, queue_groups, waiting = _split_vehicles(vehicles_to_be_moved, queues_manager)
 
-    # Build task buffers (structured dtype) + queue CSR offsets.
-    free_arr = _build_task_array(free, routing_map)
     flat_queue_vehicles = [v for group in queue_groups for v in group]
-    queue_arr = _build_task_array(flat_queue_vehicles, routing_map)
+
+    # Build task buffers (structured dtype) + queue CSR offsets.
+    if store_tasks:
+        from . import store_bridge
+
+        # The store holds last step's movement state until this push; routes and
+        # closures were pushed by the caller when they changed. Only the vehicles
+        # moving this step need refreshing -- the rest are not asked for a task.
+        store_bridge.push_movement(free)
+        store_bridge.push_movement(flat_queue_vehicles)
+        free_arr = store_bridge.build_tasks(free, ADVANCE_TASK_DTYPE)
+        queue_arr = store_bridge.build_tasks(flat_queue_vehicles, ADVANCE_TASK_DTYPE)
+    else:
+        free_arr = _build_task_array(free, routing_map)
+        queue_arr = _build_task_array(flat_queue_vehicles, routing_map)
     queue_offsets = np.zeros(len(queue_groups) + 1, dtype=np.int32)
     acc = 0
     for i, group in enumerate(queue_groups):
@@ -336,14 +357,19 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
         acc += len(group)
     queue_offsets[len(queue_groups)] = acc
 
-    # Shadow mode: the store must build exactly these tasks before any later
-    # patch lets it build them for real. Checked on both task families, since
-    # the queue path exercises vehicles sitting at a segment end and the free
-    # path exercises the rest.
+    # Shadow mode: the store's tasks and the Python builder's must agree. Which
+    # one is under test depends on store_tasks -- with it on, the Python builder
+    # is the reference and the store is what shipped; with it off, the reverse.
+    # Either way a disagreement is a bug in one of them and stops the run.
     if store_shadow_check:
         from .store_bridge import shadow_check
-        shadow_check(free, routing_map, free_arr, ADVANCE_TASK_DTYPE, "free")
-        shadow_check(flat_queue_vehicles, routing_map, queue_arr,
+        # shadow_check builds the store's side itself; this is the other side.
+        reference_free = (_build_task_array(free, routing_map) if store_tasks
+                          else free_arr)
+        reference_queue = (_build_task_array(flat_queue_vehicles, routing_map)
+                           if store_tasks else queue_arr)
+        shadow_check(free, routing_map, reference_free, ADVANCE_TASK_DTYPE, "free")
+        shadow_check(flat_queue_vehicles, routing_map, reference_queue,
                      ADVANCE_TASK_DTYPE, "queues")
 
     # Prune every GV replica BEFORE do_advance reads it, at the current offset —

@@ -380,6 +380,84 @@ PYBIND11_MODULE(ruthlib, m) {
         []() { return ruthlib::VehicleStore::instance().count_active(); },
         "number of active vehicles in the store");
 
+    // --- persistent-store maintenance (production path, patch 4) ------------
+
+    m.def("advance_store_update_movement",
+        [](py::array_t<int32_t, py::array::c_style | py::array::forcecast> vehicle_id,
+           py::array_t<int32_t, py::array::c_style | py::array::forcecast> start_index,
+           py::array_t<double,  py::array::c_style | py::array::forcecast> start_offset_m,
+           py::array_t<int64_t, py::array::c_style | py::array::forcecast> time_offset_us,
+           py::array_t<int32_t, py::array::c_style | py::array::forcecast> active) {
+            const py::ssize_t n = vehicle_id.shape(0);
+            if (start_index.shape(0) != n || start_offset_m.shape(0) != n ||
+                time_offset_us.shape(0) != n || active.shape(0) != n) {
+                throw std::runtime_error("advance_store_update_movement: array lengths differ");
+            }
+            return ruthlib::VehicleStore::instance().update_movement(
+                vehicle_id.data(), start_index.data(), start_offset_m.data(),
+                time_offset_us.data(), active.data(), static_cast<size_t>(n));
+        },
+        py::arg("vehicle_id"), py::arg("start_index"), py::arg("start_offset_m"),
+        py::arg("time_offset_us"), py::arg("active"),
+        "refresh the movement columns of the named vehicles");
+
+    m.def("advance_store_set_closures",
+        [](py::array_t<int64_t, py::array::c_style | py::array::forcecast> routing_id,
+           py::array_t<int32_t, py::array::c_style | py::array::forcecast> is_closed) {
+            const py::ssize_t n = routing_id.shape(0);
+            if (is_closed.shape(0) != n) {
+                throw std::runtime_error("advance_store_set_closures: array lengths differ");
+            }
+            ruthlib::VehicleStore::instance().set_segments_closed(
+                routing_id.data(), is_closed.data(), static_cast<size_t>(n));
+        },
+        py::arg("routing_id"), py::arg("is_closed"),
+        "update the closure flag of the named segments");
+
+    m.def("advance_store_set_routes",
+        [](py::array_t<int32_t, py::array::c_style | py::array::forcecast> vehicle_id,
+           py::array_t<int32_t, py::array::c_style | py::array::forcecast> start_index,
+           py::array_t<int64_t, py::array::c_style | py::array::forcecast> route_nodes,
+           py::array_t<int64_t, py::array::c_style | py::array::forcecast> route_segment_ids,
+           py::array_t<int32_t, py::array::c_style | py::array::forcecast> route_offsets) {
+            const py::ssize_t n = vehicle_id.shape(0);
+            if (route_offsets.shape(0) != n + 1) {
+                throw std::runtime_error(
+                    "advance_store_set_routes: route_offsets must have n+1 entries");
+            }
+            ruthlib::VehicleStore::instance().set_routes(
+                vehicle_id.data(), start_index.data(), route_nodes.data(),
+                route_segment_ids.data(), route_offsets.data(), static_cast<size_t>(n));
+        },
+        py::arg("vehicle_id"), py::arg("start_index"), py::arg("route_nodes"),
+        py::arg("route_segment_ids"), py::arg("route_offsets"),
+        "replace the routes of the named vehicles");
+
+    m.def("advance_store_build_tasks",
+        [](py::array_t<int32_t, py::array::c_style | py::array::forcecast> vehicle_ids) {
+            auto* tasks = new std::vector<ruthlib::AdvanceTask>(
+                ruthlib::VehicleStore::instance().make_tasks(
+                    vehicle_ids.data(), static_cast<size_t>(vehicle_ids.shape(0))));
+            auto capsule = py::capsule(tasks, [](void* p) {
+                delete reinterpret_cast<std::vector<ruthlib::AdvanceTask>*>(p);
+            });
+            const py::ssize_t n_bytes =
+                static_cast<py::ssize_t>(tasks->size() * sizeof(ruthlib::AdvanceTask));
+            return py::array_t<uint8_t>({n_bytes}, {sizeof(uint8_t)},
+                                        reinterpret_cast<uint8_t*>(tasks->data()), capsule);
+        },
+        py::arg("vehicle_ids"),
+        "AdvanceTasks for the named vehicles, as raw bytes to view through "
+        "ADVANCE_TASK_DTYPE");
+
+    m.def("advance_store_route_buffer_stats",
+        []() {
+            size_t used = 0, live = 0;
+            ruthlib::VehicleStore::instance().route_buffer_stats(used, live);
+            return py::make_tuple(used, live);
+        },
+        "(slots allocated to routes, slots still referenced)");
+
     m.def("advance_store_at_segment_end",
         [](py::array_t<int32_t, py::array::c_style | py::array::forcecast> vehicle_ids) {
             std::vector<int32_t> ids(vehicle_ids.data(),

@@ -92,6 +92,29 @@ public:
                    int32_t lanes, int32_t is_closed);
   /// Update just the closure flag, as update_current_speeds does per step.
   void set_segment_closed(int64_t routing_id, int32_t is_closed);
+
+  /// Bulk form of set_segment_closed. Only `speed_kph` in the current network
+  /// decides a closure, and only Map.update_temporary_max_speeds writes it, so
+  /// the caller passes exactly the segments that call reported as changed.
+  void set_segments_closed(const int64_t* routing_id, const int32_t* is_closed, size_t n);
+
+  /// Replace the routes of `n` vehicles addressed by id, from a CSR block.
+  /// Used when route selection rewrites a route mid-run.
+  void set_routes(const int32_t* vehicle_id,
+                  const int32_t* start_index,
+                  const int64_t* route_nodes,
+                  const int64_t* route_segment_ids,
+                  const int32_t* route_offsets,
+                  size_t n);
+
+  /// Build tasks for `n` vehicles addressed by id, in the order given.
+  std::vector<AdvanceTask> make_tasks(const int32_t* vehicle_id, size_t n) const;
+
+  /// Total slots ever allocated to route storage, and how many are still
+  /// referenced. set_route appends rather than compacting, so a long run with
+  /// frequent rerouting grows route_nodes_; this exposes the growth so it can be
+  /// watched rather than discovered as memory pressure.
+  void route_buffer_stats(size_t& used_slots, size_t& live_slots) const;
   const SegmentGeom& segment(int64_t routing_id) const;
 
   // --- movement columns ----------------------------------------------------
@@ -113,6 +136,20 @@ public:
   void set_position(int32_t slot, int32_t start_index, double start_offset_m);
   void set_time_offset_us(int32_t slot, int64_t time_offset_us);
   void set_active(int32_t slot, int32_t active);
+
+  /// Bulk-refresh the movement columns of `n` vehicles addressed by id.
+  ///
+  /// This is what keeps a persistent store in step with the Python Vehicle
+  /// objects while they are still authoritative: four columns per vehicle, no
+  /// route or geometry work. Returns the number updated; an id the store does
+  /// not know is a caller error and aborts rather than being skipped, because
+  /// silently not updating a vehicle would produce a stale task for it.
+  size_t update_movement(const int32_t* vehicle_id,
+                         const int32_t* start_index,
+                         const double*  start_offset_m,
+                         const int64_t* time_offset_us,
+                         const int32_t* active,
+                         size_t n);
 
   // --- derived (one array read each, mirroring the Vehicle properties) ------
 

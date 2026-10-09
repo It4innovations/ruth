@@ -41,7 +41,8 @@
     "deterministic-order": false,
     "trajectory-digest": false,
     "trajectory-dump-step": -1,
-    "store-shadow-check": false
+    "store-shadow-check": false,
+    "store-tasks": true
   },
   "console": {
     "enabled": false,

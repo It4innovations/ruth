@@ -146,7 +146,7 @@ class RouteSelectionRatio(RouteSelectionRatioInner):
 class AceArgs(AceArgsInner):
     # kebab-case JSON keys: "threads", "mpi-advance", "queue",
     # "deterministic-order", "trajectory-digest", "trajectory-dump-step",
-    # "store-shadow-check". threads=None -> all cores.
+    # "store-shadow-check", "store-tasks". threads=None -> all cores.
     threads: Optional[int] = None
     mpi_advance: bool = False
     queue: str = "prioritized"
@@ -154,6 +154,7 @@ class AceArgs(AceArgsInner):
     trajectory_digest: bool = False
     trajectory_dump_step: int = -1
     store_shadow_check: bool = False
+    store_tasks: bool = True
 
 
 @serde(rename_all="kebabcase")

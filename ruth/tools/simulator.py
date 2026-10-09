@@ -70,6 +70,9 @@ class AceArgs:
     # Verify the C++ VehicleStore builds the same AdvanceTasks as Python.
     # Verification only and slow; see ruth/simulator/store_bridge.py.
     store_shadow_check: bool = False
+    # Build the per-step AdvanceTasks from the C++ VehicleStore instead of row by
+    # row in Python. On by default; false restores the Python builder for an A/B.
+    store_tasks: bool = True
 
 
 @dataclass
@@ -162,7 +165,8 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                     deterministic_order=ace_args.deterministic_order,
                     trajectory_digest=ace_args.trajectory_digest,
                     trajectory_dump_step=ace_args.trajectory_dump_step,
-                    store_shadow_check=ace_args.store_shadow_check)
+                    store_shadow_check=ace_args.store_shadow_check,
+                    store_tasks=ace_args.store_tasks)
 
     simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 

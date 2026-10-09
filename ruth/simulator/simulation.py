@@ -101,6 +101,11 @@ class SimSetting:
     # builds byte-identical AdvanceTasks. Verification only -- the store's output
     # is discarded -- and slow, so off by default. See store_bridge.py.
     store_shadow_check: bool = False
+    # Build the per-step AdvanceTasks in C++ from the VehicleStore rather than
+    # row by row in Python (_build_task_array). On by default -- this is the
+    # point of the store; set it false to A/B the marshal phase against the old
+    # builder, which is kept for exactly that and for the shadow check.
+    store_tasks: bool = True
     fcd_history_base_name: str = "fcd_history"
 
     def __post_init__(self, seed: Optional[int]):

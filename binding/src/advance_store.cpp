@@ -119,6 +119,87 @@ void VehicleStore::set_segment(int64_t routing_id, double length_m, double max_s
   geom.valid = 1;
 }
 
+size_t VehicleStore::update_movement(const int32_t* vehicle_id,
+                                     const int32_t* start_index,
+                                     const double*  start_offset_m,
+                                     const int64_t* time_offset_us,
+                                     const int32_t* active,
+                                     size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    const int32_t slot = slot_of(vehicle_id[i]);
+    if (slot < 0) {
+      std::fprintf(stderr,
+                   "[ruth] VehicleStore::update_movement: vehicle %d is not in the "
+                   "store. The store and the Python vehicle list have diverged; "
+                   "re-initialise the store after the population changes "
+                   "(streaming load or prune).\n",
+                   vehicle_id[i]);
+      std::fflush(stderr);
+      std::abort();
+    }
+    start_index_[slot] = start_index[i];
+    start_offset_m_[slot] = start_offset_m[i];
+    time_offset_us_[slot] = time_offset_us[i];
+    active_[slot] = active[i];
+  }
+  return n;
+}
+
+void VehicleStore::set_segments_closed(const int64_t* routing_id, const int32_t* is_closed,
+                                       size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    set_segment_closed(routing_id[i], is_closed[i]);
+  }
+}
+
+void VehicleStore::set_routes(const int32_t* vehicle_id,
+                              const int32_t* start_index,
+                              const int64_t* route_nodes,
+                              const int64_t* route_segment_ids,
+                              const int32_t* route_offsets,
+                              size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    const int32_t slot = slot_of(vehicle_id[i]);
+    if (slot < 0) {
+      std::fprintf(stderr,
+                   "[ruth] VehicleStore::set_routes: vehicle %d is not in the store.\n",
+                   vehicle_id[i]);
+      std::fflush(stderr);
+      std::abort();
+    }
+    const int32_t begin = route_offsets[i];
+    const int32_t len = route_offsets[i + 1] - begin;
+    set_route(slot, start_index[i], route_nodes + begin, route_segment_ids + begin, len);
+  }
+}
+
+std::vector<AdvanceTask> VehicleStore::make_tasks(const int32_t* vehicle_id,
+                                                  size_t n) const {
+  std::vector<AdvanceTask> tasks;
+  tasks.reserve(n);
+
+  for (size_t i = 0; i < n; ++i) {
+    const int32_t slot = slot_of(vehicle_id[i]);
+    if (slot < 0) {
+      std::fprintf(stderr,
+                   "[ruth] VehicleStore::make_tasks: vehicle %d is not in the store.\n",
+                   vehicle_id[i]);
+      std::fflush(stderr);
+      std::abort();
+    }
+    tasks.push_back(make_task(slot));
+  }
+  return tasks;
+}
+
+void VehicleStore::route_buffer_stats(size_t& used_slots, size_t& live_slots) const {
+  used_slots = route_nodes_.size();
+  live_slots = 0;
+  for (const int32_t len : route_len_) {
+    live_slots += static_cast<size_t>(len);
+  }
+}
+
 void VehicleStore::set_segment_closed(int64_t routing_id, int32_t is_closed) {
   if (routing_id < 0 || static_cast<size_t>(routing_id) >= segments_.size()) {
     return;  // a closure on a segment no vehicle routes over is not an error

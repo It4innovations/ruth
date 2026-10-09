@@ -107,6 +107,9 @@ class Simulator:
                             break
                 # END if self.sim.setting.stuck_detection
 
+                with timer_set.get("store_sync"):
+                    self.sync_store_population()
+
                 with timer_set.get("update_map_speeds"):
                     last_map_update, updated_speeds = self.update_map_speeds(updated_speeds, last_map_update,
                                                                              alternatives_providers)
@@ -143,6 +146,9 @@ class Simulator:
                     for (vehicle, route) in selected_plans:
                         vehicle.update_followup_route(route, self.sim.routing_map,
                                                       self.sim.setting.travel_time_limit_perc)
+
+                    # The store holds each vehicle's route; these just changed.
+                    self.push_store_routes([v for (v, _) in selected_plans])
 
                 with timer_set.get("advance_vehicle"):
                     fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy())
@@ -241,6 +247,57 @@ class Simulator:
             logger.info("trajectory_digest: wrote %s rows of step %s state to %s",
                         rows, step, path)
 
+    def _use_store(self) -> bool:
+        """Whether the C++ VehicleStore is in use this run.
+
+        True when it is producing the tasks, and also when only the shadow check
+        is on -- the check reads the live store, so the store has to be kept
+        current either way.
+        """
+        setting = self.sim.setting
+        if not getattr(setting, "mpi_advance", False):
+            return False
+        return (getattr(setting, "store_tasks", True)
+                or getattr(setting, "store_shadow_check", False))
+
+    def sync_store_population(self):
+        """Re-initialise the store if the vehicle population changed.
+
+        Streaming adds vehicles and pruning removes them, and the store is keyed
+        by vehicle id, so a population change has to be noticed before anything
+        asks it for a task. Comparing the id vectors is cheap and, unlike a
+        dirty flag maintained at every call site that mutates the list, cannot
+        be forgotten.
+        """
+        if not self._use_store():
+            return
+
+        from .store_bridge import ensure_population
+        if ensure_population(self.sim.vehicles, self.sim.routing_map):
+            logger.info("store: re-initialised for %d vehicles", len(self.sim.vehicles))
+
+    def push_store_routes(self, vehicles: List[Vehicle]):
+        """Push rewritten routes into the store."""
+        if not self._use_store() or not vehicles:
+            return
+
+        from .store_bridge import push_routes
+        push_routes(vehicles, self.sim.routing_map)
+
+    def push_store_closures(self, segment_keys):
+        """Push changed segment closures into the store.
+
+        `is_closed` in a task mirrors `get_current_max_speed(...) == 0`, and only
+        Map.update_temporary_max_speeds writes the field behind it. Missing an
+        update here would leave a vehicle driving through a closed segment, so
+        it is fed straight from that call's return value.
+        """
+        if not self._use_store() or not segment_keys:
+            return
+
+        from .store_bridge import push_closures
+        push_closures(segment_keys, self.sim.routing_map)
+
     def shadow_check_selection(self, offset_seconds: int, selected: List[Vehicle]):
         """Check the C++ VehicleStore reproduces this step's selection.
 
@@ -257,7 +314,12 @@ class Simulator:
         if not getattr(self.sim.setting, "store_shadow_check", False):
             return
 
-        from .store_bridge import shadow_check_selection
+        from .store_bridge import push_movement, shadow_check_selection
+
+        # Selection looks at every vehicle, not just the moving ones, so the
+        # whole population's movement state has to be current. In production only
+        # the moving subset is pushed (in mpi_advance), which is all a task needs.
+        push_movement(self.sim.vehicles)
 
         # The geometric half of need_new_route on its own; the alternatives mode
         # is a Python-only attribute the store does not carry.
@@ -294,7 +356,9 @@ class Simulator:
                                         deterministic_order=getattr(
                                             self.sim.setting, "deterministic_order", False),
                                         store_shadow_check=getattr(
-                                            self.sim.setting, "store_shadow_check", False))
+                                            self.sim.setting, "store_shadow_check", False),
+                                        store_tasks=getattr(
+                                            self.sim.setting, "store_tasks", True))
 
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             self.sim.global_view,
@@ -374,8 +438,12 @@ class Simulator:
     def update_map_speeds(self, updated_speeds: dict, last_map_update: timedelta,
                           alternatives_providers: List[AlternativesProvider]) -> Tuple[timedelta, dict]:
         # Get segments where max speeds changed
-        updated_speeds.update(self.sim.routing_map.update_temporary_max_speeds(
-            self.sim.setting.departure_time + self.current_offset))
+        # The return value is exactly the segments whose speed_kph was rewritten,
+        # which is the only thing that can change a closure.
+        temporary_changed = self.sim.routing_map.update_temporary_max_speeds(
+            self.sim.setting.departure_time + self.current_offset)
+        updated_speeds.update(temporary_changed)
+        self.push_store_closures(list(temporary_changed.keys()))
 
         if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
             # Update speeds based on the global view

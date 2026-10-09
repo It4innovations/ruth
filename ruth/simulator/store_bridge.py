@@ -1,22 +1,30 @@
 """
-Shadow mode for the C++ VehicleStore.
+The C++ VehicleStore as seen from Python: population, upkeep, and verification.
 
-The store is going to take over task construction from `_build_task_array` and
-delta replay from `_apply_delta`. Before anything depends on it, this module
-runs it *alongside* the Python Vehicle objects and checks, every step, that the
-AdvanceTask array the store produces is byte-identical to the one Python
-produces. When that holds over a real run, switching the producer over is a
-mechanical change rather than a leap.
+The store is now the PRODUCER of the per-step AdvanceTask array (config.json
+`ace.store-tasks`, on by default). That is the point of the whole exercise:
+`_build_task_array` cost about 8.4 us per vehicle, most of it networkx
+dict-of-dict lookups (`segment_id_to_int`, `get_current_max_speed`) and eighteen
+boxed field stores per row. Against a persistent store that work disappears --
+the per-step Python cost becomes four column pushes per moving vehicle, and the
+task itself is built in C++ from data already resident on every rank.
 
-Enabled by config.json `ace.store-shadow-check`. It is a verification tool, not
-a production path: it rebuilds the store from scratch each step, which costs
-roughly what `_build_task_array` costs plus a routing-id lookup per route
-segment. Use it on short runs, not on the full input.
+Keeping it correct means keeping it in step with the Python objects, which are
+still authoritative until the store takes over delta replay. Three things can
+change under it, and each has an explicit push:
 
-Rebuilding from scratch rather than incrementally updating is deliberate. An
-incremental shadow would need staleness tracking to notice that
-`update_followup_route` rewrote a route, and a verifier whose own bookkeeping
-can be wrong verifies nothing. Rebuilding cannot go stale.
+  * movement state, every step          -> push_movement()
+  * a route, when route selection rewrites one -> push_routes()
+  * a segment closure, when the map changes    -> push_closures()
+
+and the population itself (streaming loads, pruning) is watched by
+ensure_population(), which re-initialises rather than trying to patch up the
+difference.
+
+`_build_task_array` is NOT deleted. It stays as the reference implementation the
+shadow check compares against (`ace.store-shadow-check`), and as the fallback
+when `ace.store-tasks` is off, which is how you A/B the two. A producer with no
+reference to check against is the thing this series has been avoiding.
 """
 
 from datetime import timedelta
@@ -43,8 +51,15 @@ def _routing_id(routing_map, node_from: int, node_to: int) -> int:
     return rid
 
 
-def populate(vehicles: Sequence, routing_map) -> None:
+# Vehicle ids the store was last initialised with, as an array, so
+# ensure_population() can spot a changed population with one vectorised compare
+# instead of trusting the caller to tell us.
+_population_ids: "np.ndarray | None" = None
+
+
+def initialize(vehicles: Sequence, routing_map) -> None:
     """Rebuild the store to hold exactly `vehicles`, with their current state."""
+    global _population_ids
     n = len(vehicles)
 
     vehicle_id = np.empty(n, dtype=np.int32)
@@ -84,22 +99,7 @@ def populate(vehicles: Sequence, routing_map) -> None:
 
     ruthlib.advance_store_reset(n, acc, int(max_routing_id))
 
-    # Only the segments these routes actually touch, deduplicated.
-    seen = sorted({rid for rid in route_segment_ids if rid >= 0})
-    if seen:
-        rid_arr = np.asarray(seen, dtype=np.int64)
-        length_m = np.empty(len(seen), dtype=np.float64)
-        max_kph = np.empty(len(seen), dtype=np.float64)
-        lanes = np.empty(len(seen), dtype=np.int32)
-        closed = np.empty(len(seen), dtype=np.int32)
-        for j, rid in enumerate(seen):
-            node_from, node_to = routing_map.int_to_segment_id(rid)
-            segment = routing_map.get_osm_segment(node_from, node_to)
-            length_m[j] = segment.length
-            max_kph[j] = segment.max_allowed_speed_kph
-            lanes[j] = segment.lanes
-            closed[j] = 1 if routing_map.get_current_max_speed(node_from, node_to) == 0 else 0
-        ruthlib.advance_store_set_segments(rid_arr, length_m, max_kph, lanes, closed)
+    _push_segment_geometry(routing_map, route_segment_ids)
 
     ruthlib.advance_store_add_vehicles(
         vehicle_id, start_index, start_offset_m, time_offset_us, frequency_us,
@@ -107,6 +107,143 @@ def populate(vehicles: Sequence, routing_map) -> None:
         np.asarray(route_nodes, dtype=np.int64),
         np.asarray(route_segment_ids, dtype=np.int64),
         route_offsets)
+
+    _population_ids = vehicle_id.copy()
+
+
+def ensure_population(vehicles: Sequence, routing_map) -> bool:
+    """Re-initialise the store if the vehicle population changed. True if it did.
+
+    Streaming loads vehicles mid-run and pruning drops them, so the store cannot
+    assume the list it was built from still holds. Comparing the id vectors is
+    O(N) of vectorised work per step, which is cheap next to the per-vehicle
+    Python the store exists to remove, and it cannot get out of step the way a
+    caller-maintained dirty flag could.
+    """
+    ids = np.fromiter((v.id for v in vehicles), dtype=np.int32, count=len(vehicles))
+    if _population_ids is not None and np.array_equal(ids, _population_ids):
+        return False
+    initialize(vehicles, routing_map)
+    return True
+
+
+def push_movement(vehicles: Sequence) -> int:
+    """Refresh the store's movement columns for `vehicles`. Returns the count.
+
+    This is the per-step cost of the persistent store: four attribute reads and
+    four array stores per vehicle, and no map lookups at all.
+    """
+    n = len(vehicles)
+    if n == 0:
+        return 0
+
+    vehicle_id = np.empty(n, dtype=np.int32)
+    start_index = np.empty(n, dtype=np.int32)
+    start_offset_m = np.empty(n, dtype=np.float64)
+    time_offset_us = np.empty(n, dtype=np.int64)
+    active = np.empty(n, dtype=np.int32)
+
+    for i, vehicle in enumerate(vehicles):
+        vehicle_id[i] = vehicle.id
+        start_index[i] = vehicle.start_index
+        start_offset_m[i] = vehicle.start_distance_offset
+        time_offset_us[i] = vehicle.time_offset // _ONE_US
+        active[i] = 1 if vehicle.active else 0
+
+    ruthlib.advance_store_update_movement(
+        vehicle_id, start_index, start_offset_m, time_offset_us, active)
+    return n
+
+
+def push_routes(vehicles: Sequence, routing_map) -> int:
+    """Replace the store's routes for `vehicles`. Returns the count.
+
+    Called for the vehicles whose route selection rewrote this step -- a few
+    percent of the active set, not all of it.
+    """
+    n = len(vehicles)
+    if n == 0:
+        return 0
+
+    vehicle_id = np.empty(n, dtype=np.int32)
+    start_index = np.empty(n, dtype=np.int32)
+    route_offsets = np.empty(n + 1, dtype=np.int32)
+    route_nodes: List[int] = []
+    route_segment_ids: List[int] = []
+
+    acc = 0
+    for i, vehicle in enumerate(vehicles):
+        vehicle_id[i] = vehicle.id
+        start_index[i] = vehicle.start_index
+        route = vehicle.osm_route
+        route_offsets[i] = acc
+        route_nodes.extend(route)
+        for k in range(len(route) - 1):
+            route_segment_ids.append(_routing_id(routing_map, route[k], route[k + 1]))
+        route_segment_ids.append(-1)
+        acc += len(route)
+    route_offsets[n] = acc
+
+    # A rewritten route may run over segments no route touched before, so their
+    # geometry has to reach the table before a task can be built from it.
+    _push_segment_geometry(routing_map, route_segment_ids)
+
+    ruthlib.advance_store_set_routes(
+        vehicle_id, start_index,
+        np.asarray(route_nodes, dtype=np.int64),
+        np.asarray(route_segment_ids, dtype=np.int64),
+        route_offsets)
+    return n
+
+
+def push_closures(segment_keys, routing_map) -> int:
+    """Update the store's closure flags for the given (node_from, node_to) keys.
+
+    `is_closed` mirrors `get_current_max_speed(...) == 0`, and the only thing
+    that writes that field is Map.update_temporary_max_speeds -- which returns
+    exactly the segments it touched, so this is fed from its return value rather
+    than by rescanning the network.
+    """
+    keys = list(segment_keys)
+    if not keys:
+        return 0
+
+    routing_id = np.empty(len(keys), dtype=np.int64)
+    is_closed = np.empty(len(keys), dtype=np.int32)
+    for i, (node_from, node_to) in enumerate(keys):
+        routing_id[i] = _routing_id(routing_map, node_from, node_to)
+        is_closed[i] = 1 if routing_map.get_current_max_speed(node_from, node_to) == 0 else 0
+
+    ruthlib.advance_store_set_closures(routing_id, is_closed)
+    return len(keys)
+
+
+def build_tasks(vehicles: Sequence, task_dtype) -> np.ndarray:
+    """The production AdvanceTask array, built in C++ from the store."""
+    ids = np.fromiter((v.id for v in vehicles), dtype=np.int32, count=len(vehicles))
+    raw = ruthlib.advance_store_build_tasks(ids)
+    return raw.view(task_dtype)
+
+
+def _push_segment_geometry(routing_map, route_segment_ids) -> None:
+    """Fill the segment table for every routing id in `route_segment_ids`."""
+    seen = sorted({int(rid) for rid in route_segment_ids if rid >= 0})
+    if not seen:
+        return
+
+    rid_arr = np.asarray(seen, dtype=np.int64)
+    length_m = np.empty(len(seen), dtype=np.float64)
+    max_kph = np.empty(len(seen), dtype=np.float64)
+    lanes = np.empty(len(seen), dtype=np.int32)
+    closed = np.empty(len(seen), dtype=np.int32)
+    for j, rid in enumerate(seen):
+        node_from, node_to = routing_map.int_to_segment_id(rid)
+        segment = routing_map.get_osm_segment(node_from, node_to)
+        length_m[j] = segment.length
+        max_kph[j] = segment.max_allowed_speed_kph
+        lanes[j] = segment.lanes
+        closed[j] = 1 if routing_map.get_current_max_speed(node_from, node_to) == 0 else 0
+    ruthlib.advance_store_set_segments(rid_arr, length_m, max_kph, lanes, closed)
 
 
 def tasks_for(vehicles: Sequence, task_dtype) -> np.ndarray:
@@ -128,7 +265,9 @@ def shadow_check(vehicles: Sequence, routing_map, python_tasks: np.ndarray,
     if len(vehicles) == 0:
         return
 
-    populate(vehicles, routing_map)
+    # No repopulation: the store is live and the caller has already pushed this
+    # step's movement into it. Rebuilding here would verify a store that the
+    # simulation is not the one using, which is worse than not checking.
     store_tasks = tasks_for(vehicles, task_dtype)
 
     if store_tasks.shape != python_tasks.shape:
@@ -174,10 +313,9 @@ def shadow_check_selection(all_vehicles: Sequence, routing_map,
       * `compute_current_offset`'s `filter(None, ...)` drops a time offset of
         exactly zero, not just None.
 
-    Raises on any disagreement, for the reason `shadow_check` does.
+    Raises on any disagreement, for the reason `shadow_check` does. The caller
+    keeps the store current; this only reads it.
     """
-    populate(all_vehicles, routing_map)
-
     store_selected = ruthlib.advance_store_select_within_offset(
         int(offset_seconds), int(freq_seconds))
     expected = np.fromiter((v.id for v in python_selected),
