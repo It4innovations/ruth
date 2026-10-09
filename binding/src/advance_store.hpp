@@ -110,6 +110,13 @@ public:
   /// Build tasks for `n` vehicles addressed by id, in the order given.
   std::vector<AdvanceTask> make_tasks(const int32_t* vehicle_id, size_t n) const;
 
+  /// This vehicle's route as the store holds it: the node span and the
+  /// routing_id of each of its segments. For diagnosing a task mismatch, where
+  /// the question is almost always "is the store's route the current one".
+  void route_view(int32_t slot,
+                  std::vector<int64_t>& out_nodes,
+                  std::vector<int64_t>& out_segment_ids) const;
+
   /// Total slots ever allocated to route storage, and how many are still
   /// referenced. set_route appends rather than compacting, so a long run with
   /// frequent rerouting grows route_nodes_; this exposes the growth so it can be

@@ -192,6 +192,19 @@ std::vector<AdvanceTask> VehicleStore::make_tasks(const int32_t* vehicle_id,
   return tasks;
 }
 
+void VehicleStore::route_view(int32_t slot,
+                              std::vector<int64_t>& out_nodes,
+                              std::vector<int64_t>& out_segment_ids) const {
+  const int32_t base = route_offset_[slot];
+  const int32_t len = route_len_[slot];
+
+  out_nodes.assign(route_nodes_.begin() + base, route_nodes_.begin() + base + len);
+  // len - 1 real segment ids; the trailing slot is the alignment padding.
+  const int32_t n_segments = len > 0 ? len - 1 : 0;
+  out_segment_ids.assign(route_segment_ids_.begin() + base,
+                         route_segment_ids_.begin() + base + n_segments);
+}
+
 void VehicleStore::route_buffer_stats(size_t& used_slots, size_t& live_slots) const {
   used_slots = route_nodes_.size();
   live_slots = 0;

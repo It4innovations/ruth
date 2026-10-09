@@ -450,6 +450,31 @@ PYBIND11_MODULE(ruthlib, m) {
         "AdvanceTasks for the named vehicles, as raw bytes to view through "
         "ADVANCE_TASK_DTYPE");
 
+    m.def("advance_store_debug_vehicle",
+        [](int32_t vehicle_id) {
+            auto& store = ruthlib::VehicleStore::instance();
+            const int32_t slot = store.slot_of(vehicle_id);
+            py::dict d;
+            if (slot < 0) {
+                d["found"] = false;
+                return d;
+            }
+            std::vector<int64_t> nodes, segs;
+            store.route_view(slot, nodes, segs);
+            d["found"] = true;
+            d["slot"] = slot;
+            d["start_index"] = store.start_index(slot);
+            d["start_offset_m"] = store.start_offset_m(slot);
+            d["time_offset_us"] = store.time_offset_us(slot);
+            d["active"] = store.active(slot);
+            d["dest_node"] = store.dest_node(slot);
+            d["route_nodes"] = vec_to_numpy(std::move(nodes));
+            d["route_segment_ids"] = vec_to_numpy(std::move(segs));
+            return d;
+        },
+        py::arg("vehicle_id"),
+        "everything the store holds for one vehicle, for diagnosing a mismatch");
+
     m.def("advance_store_route_buffer_stats",
         []() {
             size_t used = 0, live = 0;

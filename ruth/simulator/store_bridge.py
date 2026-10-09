@@ -287,9 +287,11 @@ def shadow_check(vehicles: Sequence, routing_map, python_tasks: np.ndarray,
         detail = ", ".join(
             f"{name}: store={store_tasks[i][name]!r} python={python_tasks[i][name]!r}"
             for name in fields)
+        vehicle_id = int(python_tasks[i]["vehicle_id"])
         raise AssertionError(
-            f"store shadow check ({label}): row {i}, vehicle "
-            f"{python_tasks[i]['vehicle_id']} differs -> {detail}")
+            f"store shadow check ({label}): row {i}, vehicle {vehicle_id} "
+            f"differs -> {detail}\n"
+            + describe_vehicle(vehicle_id, vehicles[i], routing_map))
 
     raise AssertionError(
         f"store shadow check ({label}): arrays differ but no row does; "
@@ -348,6 +350,51 @@ def shadow_check_selection(all_vehicles: Sequence, routing_map,
             f"python={expected_active}")
 
     return len(all_vehicles)
+
+
+def describe_vehicle(vehicle_id: int, vehicle, routing_map) -> str:
+    """Side-by-side of what the store holds for a vehicle and what Python holds.
+
+    A task mismatch on the segment fields is nearly always one of two things:
+    the store's route is not the current one (a push was missed), or its
+    start_index is. Both show up immediately here, which beats reasoning about
+    which push should have fired.
+    """
+    info = ruthlib.advance_store_debug_vehicle(int(vehicle_id))
+    if not info.get("found"):
+        return f"    store: vehicle {vehicle_id} is NOT in the store"
+
+    store_nodes = [int(x) for x in info["route_nodes"]]
+    python_nodes = [int(x) for x in vehicle.osm_route]
+    store_index = int(info["start_index"])
+    python_index = int(vehicle.start_index)
+
+    lines = [
+        f"    start_index   store={store_index} python={python_index}",
+        f"    start_offset  store={float(info['start_offset_m'])!r} "
+        f"python={float(vehicle.start_distance_offset)!r}",
+        f"    route_len     store={len(store_nodes)} python={len(python_nodes)}",
+        f"    dest_node     store={int(info['dest_node'])} python={vehicle.dest_node}",
+    ]
+
+    if store_nodes != python_nodes:
+        first = next((k for k, (a, b) in enumerate(zip(store_nodes, python_nodes))
+                      if a != b), min(len(store_nodes), len(python_nodes)))
+        lines.append(f"    ROUTES DIFFER from node {first}: "
+                     f"store={store_nodes[first:first + 4]} "
+                     f"python={python_nodes[first:first + 4]}")
+        lines.append("    -> the store's route is stale; a push_routes was missed "
+                     "for this vehicle")
+    else:
+        lines.append("    routes are identical; the mismatch is in the index or "
+                     "the segment table")
+        window = python_nodes[python_index:python_index + 3]
+        lines.append(f"    python window at index {python_index}: {window}")
+        lines.append(f"    their routing ids: "
+                     f"{[_routing_id(routing_map, a, b) for a, b in zip(window, window[1:])]}")
+        lines.append(f"    store segment ids at that index: "
+                     f"{[int(x) for x in info['route_segment_ids'][store_index:store_index + 2]]}")
+    return "\n".join(lines)
 
 
 def _first_difference(label: str, store_ids: np.ndarray, python_ids: np.ndarray) -> str:
