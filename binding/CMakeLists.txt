@@ -64,6 +64,10 @@ add_library(ruth src/lib.cpp ${ADVANCE_SOURCES})
 if(GV_CHECK_FCD_ORDER)
   target_compile_definitions(ruth PRIVATE RUTH_GV_CHECK_FCD_ORDER)
 endif()
+# This target links ace, so a fatal check in globalview.hpp can tear the job down
+# through CommInterface::abort() instead of aborting one rank. NOT set for
+# globalview_cpp, which must stay free of MPI (see the note in globalview.hpp).
+target_compile_definitions(ruth PRIVATE RUTH_WITH_ACE)
 
 # Link libraries to your main program
 target_link_libraries(ruth PUBLIC routing inih ace MPI::MPI_CXX pthread)
@@ -76,6 +80,10 @@ pybind11_add_module(ruthlib src/bindings.cpp ${ADVANCE_SOURCES})
 if(GV_CHECK_FCD_ORDER)
   target_compile_definitions(ruthlib PRIVATE RUTH_GV_CHECK_FCD_ORDER)
 endif()
+# This target links ace, so a fatal check in globalview.hpp can tear the job down
+# through CommInterface::abort() instead of aborting one rank. NOT set for
+# globalview_cpp, which must stay free of MPI (see the note in globalview.hpp).
+target_compile_definitions(ruthlib PRIVATE RUTH_WITH_ACE)
 target_link_libraries(ruthlib PRIVATE routing inih ace MPI::MPI_CXX pthread)
 target_include_directories(ruthlib PRIVATE RoutingAlg)
 target_include_directories(ruthlib PRIVATE RoutingAlg/include)
@@ -88,10 +96,7 @@ if(GV_CHECK_FCD_ORDER)
   target_compile_definitions(globalview_cpp PRIVATE RUTH_GV_CHECK_FCD_ORDER)
 endif()
 target_include_directories(globalview_cpp PRIVATE src)
-# globalview.hpp fails a check through CommInterface::abort() so one rank cannot
-# abort alone and strand the rest; ace exports its includes PUBLIC, so linking it
-# supplies both the header and the symbol.
-target_link_libraries(globalview_cpp PRIVATE ace OpenMP::OpenMP_CXX)
+target_link_libraries(globalview_cpp PRIVATE OpenMP::OpenMP_CXX)
 set_target_properties(globalview_cpp PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib
 )

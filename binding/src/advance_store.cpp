@@ -19,10 +19,14 @@ namespace {
 // is overridden by MPIComm to MPI_Abort, which tears the whole job down; it is
 // what ACE's own scheduler calls when a workload throws (scheduler.cpp).
 //
-// instance() is null until ACE is initialised, so a failure during setup, or in
-// a build that never brings ACE up, still terminates instead of dereferencing
-// null. comm->abort() is [[noreturn]], so the fallback below is reached only in
-// that case.
+// No #ifdef: this file is only ever compiled into ruth and ruthlib, which both
+// link ace.
+//
+// instance() is null until CommInterface::init() runs, and fatal() can fire
+// before that (a bad argument during setup_ace) or after finalize(). The
+// fallback keeps those cases terminating with the message already printed
+// instead of dereferencing null and losing it. comm->abort() is [[noreturn]],
+// so the fallback is reached only when ACE is genuinely not up.
 [[noreturn]] void fatal() {
   std::fflush(stderr);
   if (auto comm = ace::CommInterface::instance()) {
