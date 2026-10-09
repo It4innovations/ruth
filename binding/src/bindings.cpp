@@ -136,7 +136,7 @@ PYBIND11_MODULE(ruthlib, m) {
     m.def("do_advance",
         [](const py::array& free_tasks, const py::array& queue_tasks,
            py::array_t<int32_t, py::array::c_style | py::array::forcecast> queue_offsets,
-           int64_t departure_epoch_us, double los_tolerance_s) {
+           int64_t departure_epoch_us, double los_tolerance_s, bool batch_workloads) {
             std::vector<ruthlib::AdvanceTask> free_vec = buffer_to_advance_tasks(free_tasks);
             std::vector<ruthlib::AdvanceTask> queue_vec = buffer_to_advance_tasks(queue_tasks);
 
@@ -153,10 +153,12 @@ PYBIND11_MODULE(ruthlib, m) {
             }
 
             py::gil_scoped_release release;  // blocks on MPI sends + waits
-            ruthlib::do_advance(free_vec, queues, departure_epoch_us, los_tolerance_s);
+            ruthlib::do_advance(free_vec, queues, departure_epoch_us, los_tolerance_s,
+                                batch_workloads);
         },
         py::arg("free_tasks"), py::arg("queue_tasks"), py::arg("queue_offsets"),
         py::arg("departure_epoch_us"), py::arg("los_tolerance_s"),
+        py::arg("batch_workloads") = true,
         "phase 1: evaluate free vehicles and queues across ranks");
 
     // Prune every rank's GV replica to datetime >= threshold_epoch_s. Call at
@@ -360,6 +362,7 @@ PYBIND11_MODULE(ruthlib, m) {
             d["adv_sync_ms"] = t.sync_ms;
             d["adv_free_chunks"] = static_cast<double>(t.free_chunks);
             d["adv_queue_workloads"] = static_cast<double>(t.queue_workloads);
+            d["adv_queue_count"] = static_cast<double>(t.queue_count);
             d["adv_longest_queue"] = static_cast<double>(t.longest_queue);
             return d;
         },

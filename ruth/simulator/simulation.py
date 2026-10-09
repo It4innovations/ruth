@@ -141,6 +141,12 @@ class SimSetting:
     # default; false restores the per-vehicle path for an A/B of replay. Only the
     # distributed path is affected -- serial never builds deltas.
     fast_replay: bool = True
+    # Pack many queues into one ACE workload instead of sending one per queue,
+    # and cap the free-vehicle chunk COUNT rather than its size. Queues are 1-3
+    # vehicles, so one workload each meant thousands of messages per step and a
+    # barrier that tracked workload count rather than work. On by default; false
+    # restores the old dispatch for an A/B.
+    advance_batch: bool = True
     fcd_history_base_name: str = "fcd_history"
 
     def __post_init__(self, seed: Optional[int]):

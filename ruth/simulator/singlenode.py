@@ -372,6 +372,8 @@ class Simulator:
                                             self.sim.setting, "fcd_columns", True),
                                         fast_replay=getattr(
                                             self.sim.setting, "fast_replay", True),
+                                        batch_workloads=getattr(
+                                            self.sim.setting, "advance_batch", True),
                                         phase_times=self.advance_phase_times)
 
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,

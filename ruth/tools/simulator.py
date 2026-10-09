@@ -78,6 +78,8 @@ class AceArgs:
     fcd_columns: bool = True
     # Apply movement deltas without a dict and a function call per vehicle.
     fast_replay: bool = True
+    # Cap the number of ACE workloads per step instead of one per queue.
+    advance_batch: bool = True
 
 
 @dataclass
@@ -173,7 +175,8 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                     store_shadow_check=ace_args.store_shadow_check,
                     store_tasks=ace_args.store_tasks,
                     fcd_columns=ace_args.fcd_columns,
-                    fast_replay=ace_args.fast_replay)
+                    fast_replay=ace_args.fast_replay,
+                    advance_batch=ace_args.advance_batch)
 
     simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 

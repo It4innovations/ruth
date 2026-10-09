@@ -434,6 +434,7 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
                          store_tasks: bool = True,
                          fcd_columns: bool = True,
                          fast_replay: bool = True,
+                         batch_workloads: bool = True,
                          phase_times: dict = None
                          ) -> Tuple[object, bool]:
     """Distributed equivalent of route.advance_vehicles_with_queues.
@@ -457,6 +458,10 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
         per-vehicle _apply_delta path, for an A/B of the replay phase. Both
         produce the same state; ace.store-shadow-check verifies that against the
         store's independent replay either way.
+    :param batch_workloads: cap the number of ACE workloads per step instead of
+        sending one per queue (config.json ace.advance-batch). The queues are
+        tiny -- 1-3 vehicles -- so one workload each made the barrier 93-97% of
+        the phase. False restores the old dispatch, for an A/B.
     :param phase_times: when given, filled with this step's per-phase wall times
         in milliseconds. The step loop merges them into step_timers, so a slow
         advance can be attributed without guessing. Always on -- a few
@@ -535,7 +540,8 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     ruthlib.advance_drop_old(drop_before)
 
     # Phase 1: scatter + evaluate across ranks (reads the just-pruned GV).
-    ruthlib.do_advance(free_arr, queue_arr, queue_offsets, departure_epoch_us, los_tolerance_s)
+    ruthlib.do_advance(free_arr, queue_arr, queue_offsets, departure_epoch_us,
+                       los_tolerance_s, batch_workloads)
 
     # After-gap waiting vehicles: inject their stationary FCDs before the sync.
     _inject_waiting_fcds(waiting, routing_map, departure_epoch_us)

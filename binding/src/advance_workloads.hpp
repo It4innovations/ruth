@@ -49,7 +49,64 @@ public:
   char* marshal() const override;
 };
 
+/// Walk ONE queue: tasks[begin .. end), front to back, stopping at the first
+/// vehicle that does not move; everything behind it waits. Writes each delta at
+/// its flat index and appends that queue's FCDs to `out_fcds`.
+///
+/// Split out so it can be exercised directly, and so the parallel and the
+/// sequential paths cannot drift apart.
+void evaluate_one_queue(const std::vector<AdvanceTask>& tasks,
+                        int32_t begin, int32_t end,
+                        const GlobalView& gv,
+                        int64_t departure_epoch_us,
+                        double los_tolerance_s,
+                        std::vector<AdvanceDelta>& deltas,
+                        std::vector<FCDRecord>& out_fcds);
+
+/// Evaluate MANY queues in one go. `offsets` is a CSR over `tasks`: queue q is
+/// tasks[offsets[q] .. offsets[q+1]). Queues run in PARALLEL across the rank's
+/// worker threads; each queue is walked sequentially, because the FIFO rule is
+/// a property of one queue and queues are independent of each other.
+void evaluate_queue_batch(const std::vector<AdvanceTask>& tasks,
+                          const std::vector<int32_t>& offsets,
+                          int64_t departure_epoch_us,
+                          double los_tolerance_s);
+
+// --- Many queues in one workload -------------------------------------------
+//
+// WHY THIS EXISTS. do_advance used to send one QueueWorkload per queue, and the
+// queues are tiny -- measured at 1.2 to 2.7 vehicles each, with up to 14,010 of
+// them per step. Every one cost its own make_shared, marshalled send buffer,
+// MPI message, scheduler waiting-map entry and notify_workload ack: about
+// 0.4 ms of overhead around roughly 24-60 us of kinematics. The barrier was
+// 93-97% of the advance phase, and it tracked the WORKLOAD COUNT, not the
+// vehicle count.
+//
+// Batching changes nothing about semantics. Queues are independent of one
+// another -- the FIFO rule and its blocked prefix apply within a queue -- so
+// packing several into one message only changes how they are shipped. Each
+// vehicle still appears in exactly one queue, so its FCD subsequence is
+// unaffected too.
+class QueueBatchWorkload : public ace::workload {
+public:
+  std::vector<AdvanceTask> tasks;    // every queue's vehicles, concatenated
+  std::vector<int32_t> offsets;      // CSR delimiters, n_queues + 1
+  int64_t departure_epoch_us = 0;
+  double los_tolerance_s = 0.0;
+
+  QueueBatchWorkload();
+  QueueBatchWorkload(std::vector<AdvanceTask> tasks, std::vector<int32_t> offsets,
+                     int64_t departure_epoch_us, double los_tolerance_s);
+  QueueBatchWorkload(const std::shared_ptr<char> data, size_t size);
+
+  void execute() override;
+  size_t size() const override;
+  char* marshal() const override;
+};
+
 // --- Queue vehicles: one whole queue, FIFO, sequential ---------------------
+// Retained for ace.advance-batch=false, which restores one workload per queue
+// for an A/B of the batching.
 class QueueWorkload : public ace::workload {
 public:
   std::vector<AdvanceTask> tasks;   // one queue, front-to-back order

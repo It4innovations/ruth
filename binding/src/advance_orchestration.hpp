@@ -36,10 +36,15 @@ void register_advance_workloads();
 ///                            dispatched as a single QueueWorkload and never split
 /// @param departure_epoch_us  simulation departure time, epoch MICROSECONDS
 /// @param los_tolerance_s     LoS time tolerance, seconds
+/// @param batch_workloads  cap the number of dispatched workloads at
+///                         ranks * ADVANCE_WORK_MULTIPLIER for BOTH families.
+///                         False restores one workload per queue and the old
+///                         free-chunk sizing, for an A/B.
 void do_advance(const std::vector<AdvanceTask>& free_tasks,
                 const std::vector<std::vector<AdvanceTask>>& queues,
                 int64_t departure_epoch_us,
-                double los_tolerance_s);
+                double los_tolerance_s,
+                bool batch_workloads = true);
 
 /// Phase 2: broadcast SyncFCDsWorkload so every rank enters the sync_allgatherv
 /// collective, merges the step's FCDs into its GV replica, and (on the master)
@@ -64,7 +69,8 @@ struct AdvancePhaseTimes {
   double barrier_ms = 0.0;       ///< drain_until_quiescent: the actual makespan
   double sync_ms = 0.0;          ///< broadcast + wait for the FCD/delta gather
   int32_t free_chunks = 0;       ///< workloads sent for free vehicles
-  int32_t queue_workloads = 0;   ///< workloads sent for queues (one per queue)
+  int32_t queue_workloads = 0;   ///< MESSAGES sent for queues (batched or not)
+  int32_t queue_count = 0;       ///< queues in the step, however they were packed
   int32_t longest_queue = 0;     ///< vehicles in the largest single queue
 };
 

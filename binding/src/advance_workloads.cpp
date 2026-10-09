@@ -86,6 +86,138 @@ void evaluate_batch(const std::vector<AdvanceTask>& tasks,
 }
 
 // ---------------------------------------------------------------------------
+// evaluate_one_queue
+// ---------------------------------------------------------------------------
+void evaluate_one_queue(const std::vector<AdvanceTask>& tasks,
+                        int32_t begin, int32_t end,
+                        const GlobalView& gv,
+                        int64_t departure_epoch_us,
+                        double los_tolerance_s,
+                        std::vector<AdvanceDelta>& deltas,
+                        std::vector<FCDRecord>& out_fcds) {
+  bool blocked = false;
+  for (int32_t i = begin; i < end; ++i) {
+    const AdvanceTask& t = tasks[static_cast<size_t>(i)];
+    if (!blocked) {
+      AdvanceDelta d =
+          advance_one_vehicle(t, gv, departure_epoch_us, los_tolerance_s, out_fcds);
+      deltas[static_cast<size_t>(i)] = d;
+      if (!d.moved) {
+        blocked = true;  // this vehicle blocks the rest of ITS queue only
+      }
+    } else {
+      const int64_t current_epoch_us = departure_epoch_us + t.time_offset_us;
+      const int64_t end_epoch_us = current_epoch_us + t.frequency_us;
+      out_fcds.emplace_back(static_cast<double>(end_epoch_us) / 1e6,
+                            t.vehicle_id, t.seg0.segment_id, t.start_offset_m, 0.0);
+      AdvanceDelta d{};
+      d.vehicle_id = t.vehicle_id;
+      d.new_start_index = t.start_index;
+      d.new_offset_m = t.start_offset_m;
+      d.new_time_offset_us = t.time_offset_us + t.frequency_us;
+      d.moved = 0;
+      d.changed_segment = 0;
+      d.reached_end = 0;
+      deltas[static_cast<size_t>(i)] = d;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// evaluate_queue_batch
+// ---------------------------------------------------------------------------
+void evaluate_queue_batch(const std::vector<AdvanceTask>& tasks,
+                          const std::vector<int32_t>& offsets,
+                          int64_t departure_epoch_us,
+                          double los_tolerance_s) {
+  auto& st = AdvanceState::instance();
+  const GlobalView& gv = st.gv();
+
+  const size_t n_queues = offsets.empty() ? 0 : offsets.size() - 1;
+  if (n_queues == 0) return;
+
+  // Fan the QUEUES out across the rank's worker threads, exactly as
+  // FreeVehicleWorkload fans out its vehicles. Batching queues into one message
+  // is about send overhead; it must not cost the parallelism, or one thread
+  // would walk the whole batch while the rest of the pool idles.
+  //
+  // Parallel ACROSS queues, sequential WITHIN one: the FIFO rule and its blocked
+  // prefix are properties of a single queue, and queues are independent of each
+  // other. advance_one_vehicle is a pure function of (task, frozen GlobalView),
+  // so the only shared state is written below.
+  //
+  // Deltas are written at their FLAT index, so each queue owns the disjoint
+  // range [offsets[q], offsets[q+1]) and no two threads touch the same slot.
+  // FCDs go to a per-queue buffer and are merged in queue order afterwards, so
+  // the output is identical to walking the batch serially -- the concatenation
+  // order does not depend on which thread finished first.
+  std::vector<AdvanceDelta> deltas(tasks.size());
+  std::vector<std::vector<FCDRecord>> per_queue(n_queues);
+
+  const size_t workers = std::max<size_t>(1, std::thread::hardware_concurrency());
+  const size_t chunk = std::max<size_t>(1, n_queues / (workers * 16));
+  ace::parallelfor(
+      ace::Range<size_t>(0, n_queues, chunk),
+      [&](const size_t& q) {
+        std::vector<FCDRecord> local;
+        evaluate_one_queue(tasks, offsets[q], offsets[q + 1], gv,
+                           departure_epoch_us, los_tolerance_s, deltas, local);
+        per_queue[q] = std::move(local);
+      },
+      true);
+
+  std::vector<FCDRecord> fcds;
+  size_t total = 0;
+  for (const auto& v : per_queue) total += v.size();
+  fcds.reserve(total);
+  for (auto& v : per_queue) fcds.insert(fcds.end(), v.begin(), v.end());
+
+  // One append for the whole batch rather than one per queue: append_fcds and
+  // append_delta each take the AdvanceState mutex, and with thousands of queues
+  // that lock traffic was itself part of the cost.
+  st.append_fcds(fcds);
+  for (const auto& d : deltas) st.append_delta(d);
+}
+
+// ---------------------------------------------------------------------------
+// QueueBatchWorkload
+// ---------------------------------------------------------------------------
+QueueBatchWorkload::QueueBatchWorkload() : workload() {}
+
+QueueBatchWorkload::QueueBatchWorkload(std::vector<AdvanceTask> tasks,
+                                       std::vector<int32_t> offsets,
+                                       int64_t departure_epoch_us, double los_tolerance_s)
+    : workload(), tasks(std::move(tasks)), offsets(std::move(offsets)),
+      departure_epoch_us(departure_epoch_us), los_tolerance_s(los_tolerance_s) {}
+
+QueueBatchWorkload::QueueBatchWorkload(const std::shared_ptr<char> data, size_t size)
+    : workload(data, size) {
+  const char* p = data.get();
+  std::memcpy(&departure_epoch_us, p, sizeof(int64_t)); p += sizeof(int64_t);
+  std::memcpy(&los_tolerance_s, p, sizeof(double)); p += sizeof(double);
+  tasks = get_pod_vec<AdvanceTask>(p);
+  offsets = get_pod_vec<int32_t>(p);
+}
+
+void QueueBatchWorkload::execute() {
+  evaluate_queue_batch(tasks, offsets, departure_epoch_us, los_tolerance_s);
+}
+
+size_t QueueBatchWorkload::size() const {
+  return sizeof(int64_t) + sizeof(double) + pod_vec_size(tasks) + pod_vec_size(offsets);
+}
+
+char* QueueBatchWorkload::marshal() const {
+  char* data = workload::marshal();
+  char* p = data;
+  std::memcpy(p, &departure_epoch_us, sizeof(int64_t)); p += sizeof(int64_t);
+  std::memcpy(p, &los_tolerance_s, sizeof(double)); p += sizeof(double);
+  put_pod_vec(p, tasks);
+  put_pod_vec(p, offsets);
+  return data;
+}
+
+// ---------------------------------------------------------------------------
 // FreeVehicleWorkload
 // ---------------------------------------------------------------------------
 FreeVehicleWorkload::FreeVehicleWorkload() : workload() {}
