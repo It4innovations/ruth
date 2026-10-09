@@ -67,6 +67,9 @@ class AceArgs:
     trajectory_digest: bool = False
     # When >= 0, dump the full per-vehicle state for that step to CSV.
     trajectory_dump_step: int = -1
+    # Verify the C++ VehicleStore builds the same AdvanceTasks as Python.
+    # Verification only and slow; see ruth/simulator/store_bridge.py.
+    store_shadow_check: bool = False
 
 
 @dataclass
@@ -158,7 +161,8 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                     mpi_advance=ace_args.mpi_advance,
                     deterministic_order=ace_args.deterministic_order,
                     trajectory_digest=ace_args.trajectory_digest,
-                    trajectory_dump_step=ace_args.trajectory_dump_step)
+                    trajectory_dump_step=ace_args.trajectory_dump_step,
+                    store_shadow_check=ace_args.store_shadow_check)
 
     simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 

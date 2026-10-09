@@ -97,6 +97,10 @@ class SimSetting:
     # When >= 0, also dump the full per-vehicle state for that step to CSV. Set
     # it to the first step whose digest differs to find the diverging vehicle.
     trajectory_dump_step: int = -1
+    # Run the C++ VehicleStore alongside the Python Vehicle objects and check it
+    # builds byte-identical AdvanceTasks. Verification only -- the store's output
+    # is discarded -- and slow, so off by default. See store_bridge.py.
+    store_shadow_check: bool = False
     fcd_history_base_name: str = "fcd_history"
 
     def __post_init__(self, seed: Optional[int]):

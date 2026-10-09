@@ -305,7 +305,8 @@ def _reorder_fcds_to_serial(fcd_arrays: dict, free: List[Vehicle],
 def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
                          routing_map: Map, queues_manager: QueuesManager,
                          los_vehicles_tolerance, drop_before_time=None,
-                         deterministic_order: bool = False
+                         deterministic_order: bool = False,
+                         store_shadow_check: bool = False
                          ) -> Tuple[List[FCDRecord], bool]:
     """Distributed equivalent of route.advance_vehicles_with_queues.
 
@@ -315,6 +316,9 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     :param deterministic_order: reorder the returned FCDs into serial's write
         order (config.json ace.deterministic-order). Row order only; the records
         themselves and the resulting vehicle positions are identical either way.
+    :param store_shadow_check: verify the C++ VehicleStore builds byte-identical
+        AdvanceTasks to the ones built here (config.json ace.store-shadow-check).
+        Verification only; the store's output is discarded. Slow.
     """
     departure_epoch_us = _datetime_to_epoch_us(departure_time)
     los_tolerance_s = los_vehicles_tolerance.total_seconds()
@@ -331,6 +335,16 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
         queue_offsets[i] = acc
         acc += len(group)
     queue_offsets[len(queue_groups)] = acc
+
+    # Shadow mode: the store must build exactly these tasks before any later
+    # patch lets it build them for real. Checked on both task families, since
+    # the queue path exercises vehicles sitting at a segment end and the free
+    # path exercises the rest.
+    if store_shadow_check:
+        from .store_bridge import shadow_check
+        shadow_check(free, routing_map, free_arr, ADVANCE_TASK_DTYPE, "free")
+        shadow_check(flat_queue_vehicles, routing_map, queue_arr,
+                     ADVANCE_TASK_DTYPE, "queues")
 
     # Prune every GV replica BEFORE do_advance reads it, at the current offset —
     # this reproduces serial's read-time GV (serial prunes at the end of the

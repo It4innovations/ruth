@@ -262,7 +262,9 @@ class Simulator:
                                         self.sim.setting.los_vehicles_tolerance,
                                         drop_before_time=drop_before,
                                         deterministic_order=getattr(
-                                            self.sim.setting, "deterministic_order", False))
+                                            self.sim.setting, "deterministic_order", False),
+                                        store_shadow_check=getattr(
+                                            self.sim.setting, "store_shadow_check", False))
 
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             self.sim.global_view,

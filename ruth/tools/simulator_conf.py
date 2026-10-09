@@ -145,14 +145,15 @@ class RouteSelectionRatio(RouteSelectionRatioInner):
 @dataclass
 class AceArgs(AceArgsInner):
     # kebab-case JSON keys: "threads", "mpi-advance", "queue",
-    # "deterministic-order", "trajectory-digest", "trajectory-dump-step".
-    # threads=None -> all cores.
+    # "deterministic-order", "trajectory-digest", "trajectory-dump-step",
+    # "store-shadow-check". threads=None -> all cores.
     threads: Optional[int] = None
     mpi_advance: bool = False
     queue: str = "prioritized"
     deterministic_order: bool = False
     trajectory_digest: bool = False
     trajectory_dump_step: int = -1
+    store_shadow_check: bool = False
 
 
 @serde(rename_all="kebabcase")

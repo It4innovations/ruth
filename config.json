@@ -40,7 +40,8 @@
     "queue": "prioritized",
     "deterministic-order": false,
     "trajectory-digest": false,
-    "trajectory-dump-step": -1
+    "trajectory-dump-step": -1,
+    "store-shadow-check": false
   },
   "console": {
     "enabled": false,
