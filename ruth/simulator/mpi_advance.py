@@ -16,7 +16,7 @@ route.advance_vehicles_with_queues exactly; only the kinematics run in C++.
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -276,8 +276,14 @@ def _build_fcd_columns(fcd_arrays: dict, moved_by_id: Dict[int, Vehicle]) -> FCD
 
 def _replay_deltas(replay_order: List[Vehicle], deltas: dict,
                    queues_manager: QueuesManager,
-                   store_apply_deltas: bool = False) -> bool:
-    """Apply the step's deltas to `replay_order`, in that order. Returns moved.
+                   store_apply_deltas: bool = False) -> Tuple[bool, Optional[dict]]:
+    """Apply the step's deltas to `replay_order`, in that order.
+
+    Returns (vehicles_moved, store_queue_events). The second is the queue
+    operations the store staged while applying the same deltas, or None when the
+    store was not asked to apply them. It has to come back out: applying the
+    deltas is NOT idempotent, so whoever wants those events must take these
+    rather than call the store a second time.
 
     Same effect as calling _apply_delta per vehicle, with the per-vehicle
     intermediates removed. Three of them mattered:
@@ -297,7 +303,7 @@ def _replay_deltas(replay_order: List[Vehicle], deltas: dict,
     """
     n = len(replay_order)
     if n == 0:
-        return False
+        return False, None
 
     # Put the columns in replay order. searchsorted over the sorted gather order
     # is O(n log n) of vectorised work, against O(n) dict inserts before.
@@ -325,9 +331,10 @@ def _replay_deltas(replay_order: List[Vehicle], deltas: dict,
     # reads these columns, and refreshing them with a Python pass over every
     # vehicle would cost more than the selection saves. Same arrays the loop
     # below uses, so this adds one C++ call per step and no per-vehicle work.
+    store_queue_events = None
     if store_apply_deltas:
         from . import store_select
-        store_select.apply_delta_columns(
+        store_queue_events = store_select.apply_delta_columns(
             wanted_ids, new_start_index, new_offset_m, new_time_offset_us,
             moved_flags, changed_segment, reached_end)
 
@@ -359,7 +366,7 @@ def _replay_deltas(replay_order: List[Vehicle], deltas: dict,
             else:
                 add_to_queue(vehicle)
 
-    return vehicles_moved
+    return vehicles_moved, store_queue_events
 
 
 def _build_history(fcd_arrays: dict, moved_by_id: Dict[int, Vehicle],
@@ -600,15 +607,29 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     removals_before = len(queues_manager.to_be_removed)
     additions_before = len(queues_manager.to_be_added)
 
+    # Applying deltas to the store must happen EXACTLY ONCE per step. The
+    # movement columns are assigned absolutely, so a second pass leaves them
+    # unchanged -- but the queue events are derived from the index the vehicle is
+    # leaving, which the first pass has already advanced, and advance_waiting ADDS
+    # a frequency rather than assigning one. So the second pass reports removals
+    # keyed one segment too far and pushes waiting vehicles a step into the
+    # future. Whoever applies them keeps the events; nobody re-applies to get
+    # their own copy.
+    store_queue_events = None
     if fast_replay:
-        vehicles_moved = _replay_deltas(replay_order, deltas, queues_manager,
-                                        store_apply_deltas=store_selection)
+        vehicles_moved, store_queue_events = _replay_deltas(
+            replay_order, deltas, queues_manager, store_apply_deltas=store_selection)
     else:
         delta_by_id = _delta_by_id()
         vehicles_moved = False
         for vehicle in replay_order:
             vehicles_moved |= _apply_delta(vehicle, delta_by_id[vehicle.id], routing_map,
                                            queues_manager)
+        if store_selection:
+            # The slow path updates the Vehicles only, so the store still needs
+            # its own pass -- selection reads those columns next step.
+            from . import store_bridge
+            store_queue_events = store_bridge.apply_deltas(replay_order, delta_by_id)
 
     # After-gap waiting: advance time only, no movement, no queue op.
     for vehicle in waiting:
@@ -623,13 +644,17 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     # have staged.
     if store_shadow_check:
         from . import store_bridge
-        queue_events = store_bridge.apply_deltas(replay_order, _delta_by_id())
-        store_bridge.advance_waiting(waiting)
+        if store_queue_events is None:
+            # store_selection off: production never touched the store, so the
+            # check applies the deltas itself, as it did before selection moved
+            # them onto the hot path.
+            store_queue_events = store_bridge.apply_deltas(replay_order, _delta_by_id())
+            store_bridge.advance_waiting(waiting)
         store_bridge.shadow_check_deltas(
-            replay_order + list(waiting), queue_events,
+            replay_order + list(waiting), store_queue_events,
             queues_manager.to_be_removed[removals_before:],
             queues_manager.to_be_added[additions_before:])
-        store_bridge.queues_stage(queue_events)
+        store_bridge.queues_stage(store_queue_events)
 
     queues_manager.batch_update()
     times["adv_replay_ms"] = (clock() - mark) * 1000.0
