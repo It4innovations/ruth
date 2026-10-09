@@ -141,12 +141,24 @@ class Simulator:
 
                     check_travel_times(self.sim.routing_map, alternatives_providers, selected_plans)
 
+                    # update_followup_route only assigns a new osm_route when it
+                    # ACCEPTS the suggestion: with travel_time_limit_perc set it
+                    # keeps the old route whenever the alternative is not enough
+                    # faster. Pushing the whole selected set re-sent routes that
+                    # had not moved, and a route push is proportional to route
+                    # LENGTH, so the waste was the expensive kind. Comparing list
+                    # identity is O(1) and exact -- an accepted suggestion builds
+                    # a new list, a rejected one leaves the attribute untouched.
+                    routes_before = [v.osm_route for (v, _) in selected_plans]
                     for (vehicle, route) in selected_plans:
                         vehicle.update_followup_route(route, self.sim.routing_map,
                                                       self.sim.setting.travel_time_limit_perc)
 
                     # The store holds each vehicle's route; these just changed.
-                    self.push_store_routes([v for (v, _) in selected_plans])
+                    self.push_store_routes([
+                        vehicle for (vehicle, _), previous
+                        in zip(selected_plans, routes_before)
+                        if vehicle.osm_route is not previous])
 
                 with timer_set.get("advance_vehicle"):
                     # advance_vehicles arms the task digest, which needs the step

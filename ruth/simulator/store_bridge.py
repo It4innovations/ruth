@@ -264,10 +264,34 @@ def _assert_csr_aligned(route_nodes: List[int], route_segment_ids: List[int],
 
 
 def _push_segment_geometry(routing_map, route_segment_ids) -> None:
-    """Fill the segment table for every routing id in `route_segment_ids`."""
-    seen = sorted({int(rid) for rid in route_segment_ids if rid >= 0})
+    """Fill the segment table for routing ids it does not already hold.
+
+    length, max_speed_kph and lanes come from Map.original_network and never
+    change, so a routing id only has to be pushed once. Re-pushing every id on
+    every route rewrite cost a networkx dict-of-dict lookup
+    (get_current_max_speed) per segment per step, over a set that is almost
+    entirely segments the table already had.
+
+    `is_closed` is the one field that does change, and it is NOT maintained
+    here: Map.update_temporary_max_speeds returns exactly the segments it
+    touched and push_closures feeds the table from that. A segment first seen
+    while closed still gets closed=1 from this function, so skipping a known id
+    cannot lose a closure.
+
+    The memo hangs off the map, like _routing_id's, because routing ids belong
+    to the map that assigned them -- a module-global would survive a map swap
+    and silently suppress pushes for a different graph.
+    """
+    pushed = getattr(routing_map, "_store_pushed_segments", None)
+    if pushed is None:
+        pushed = set()
+        routing_map._store_pushed_segments = pushed
+
+    seen = sorted({int(rid) for rid in route_segment_ids
+                   if rid >= 0 and rid not in pushed})
     if not seen:
         return
+    pushed.update(seen)
 
     rid_arr = np.asarray(seen, dtype=np.int64)
     length_m = np.empty(len(seen), dtype=np.float64)
