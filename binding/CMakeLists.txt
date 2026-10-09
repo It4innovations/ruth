@@ -43,7 +43,8 @@ set(ADVANCE_SOURCES
     src/advance_kernel.cpp
     src/advance_workloads.cpp
     src/advance_orchestration.cpp
-    src/advance_store.cpp)
+    src/advance_store.cpp
+    src/advance_queues.cpp)
 
 # In Debug / RelWithDebInfo builds, check the ordering invariant
 # GlobalView::get_segment_speed relies on: a vehicle's records never go backwards

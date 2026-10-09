@@ -334,6 +334,13 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
 
     free, queue_groups, waiting = _split_vehicles(vehicles_to_be_moved, queues_manager)
 
+    if store_shadow_check:
+        from . import store_bridge
+        # Must run right after _split_vehicles and before anything stages a queue
+        # operation: it replays that function's defaultdict reads, which is what
+        # fixes the registry's key order.
+        store_bridge.queues_touch(vehicles_to_be_moved)
+
     flat_queue_vehicles = [v for group in queue_groups for v in group]
 
     # Build task buffers (structured dtype) + queue CSR offsets.
@@ -435,8 +442,14 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
             replay_order + list(waiting), queue_events,
             queues_manager.to_be_removed[removals_before:],
             queues_manager.to_be_added[additions_before:])
+        store_bridge.queues_stage(queue_events)
 
     queues_manager.batch_update()
+
+    # The registry applies the same staged operations and must reach the same
+    # state. Checked after Python's batch_update so both have been applied.
+    if store_shadow_check:
+        store_bridge.shadow_check_queues(queues_manager)
 
     # Validation only: reorder gathered FCDs into serial's write order so the FCD
     # history is byte-identical (content is already identical either way).

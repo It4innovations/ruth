@@ -10,6 +10,7 @@
 #include "advance_types.hpp"
 #include "advance_orchestration.hpp"
 #include "advance_store.hpp"
+#include "advance_queues.hpp"
 
 namespace py = pybind11;
 
@@ -559,6 +560,65 @@ PYBIND11_MODULE(ruthlib, m) {
         },
         py::arg("vehicle_id"),
         "everything the store holds for one vehicle, for diagnosing a mismatch");
+
+    // --- queue registry (shadow mode) ---------------------------------------
+
+    m.def("advance_queues_touch",
+        [](py::array_t<int64_t, py::array::c_style | py::array::forcecast> node_from,
+           py::array_t<int64_t, py::array::c_style | py::array::forcecast> node_to) {
+            const py::ssize_t n = node_from.shape(0);
+            if (node_to.shape(0) != n) {
+                throw std::runtime_error("advance_queues_touch: array lengths differ");
+            }
+            auto& queues = ruthlib::QueueRegistry::instance();
+            for (py::ssize_t i = 0; i < n; ++i) {
+                queues.touch(node_from.at(i), node_to.at(i));
+            }
+        },
+        py::arg("node_from"), py::arg("node_to"),
+        "read (and so create) these queues, in order -- defaultdict parity");
+
+    m.def("advance_queues_stage",
+        [](py::array_t<int32_t, py::array::c_style | py::array::forcecast> removal_id,
+           py::array_t<int64_t, py::array::c_style | py::array::forcecast> removal_from,
+           py::array_t<int64_t, py::array::c_style | py::array::forcecast> removal_to,
+           py::array_t<int32_t, py::array::c_style | py::array::forcecast> addition_id,
+           py::array_t<int64_t, py::array::c_style | py::array::forcecast> addition_from,
+           py::array_t<int64_t, py::array::c_style | py::array::forcecast> addition_to) {
+            auto& queues = ruthlib::QueueRegistry::instance();
+            for (py::ssize_t i = 0; i < removal_id.shape(0); ++i) {
+                queues.stage_remove(removal_id.at(i), removal_from.at(i), removal_to.at(i));
+            }
+            for (py::ssize_t i = 0; i < addition_id.shape(0); ++i) {
+                queues.stage_add(addition_id.at(i), addition_from.at(i), addition_to.at(i));
+            }
+        },
+        py::arg("removal_id"), py::arg("removal_from"), py::arg("removal_to"),
+        py::arg("addition_id"), py::arg("addition_from"), py::arg("addition_to"),
+        "stage this step's queue operations");
+
+    m.def("advance_queues_batch_update",
+        []() { ruthlib::QueueRegistry::instance().batch_update(); },
+        "apply the staged queue operations");
+
+    m.def("advance_queues_snapshot",
+        []() {
+            std::vector<int64_t> node_from, node_to;
+            std::vector<int32_t> offsets, vehicle_ids;
+            ruthlib::QueueRegistry::instance().snapshot(node_from, node_to, offsets,
+                                                        vehicle_ids);
+            py::dict d;
+            d["node_from"] = vec_to_numpy(std::move(node_from));
+            d["node_to"] = vec_to_numpy(std::move(node_to));
+            d["offsets"] = vec_to_numpy(std::move(offsets));
+            d["vehicle_id"] = vec_to_numpy(std::move(vehicle_ids));
+            return d;
+        },
+        "queues in key-creation order, as a CSR of the ids in each");
+
+    m.def("advance_queues_reset",
+        []() { ruthlib::QueueRegistry::instance().clear(); },
+        "empty the queue registry");
 
     m.def("advance_store_route_buffer_stats",
         []() {

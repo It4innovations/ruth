@@ -535,3 +535,72 @@ def _compare_queue_events(kind: str, store_events: dict, python_events) -> None:
             raise AssertionError(
                 f"store shadow check (queue {kind}): operation {i} is "
                 f"{got} in the store, {expected} in Python")
+
+
+def queues_touch(vehicles: Sequence) -> None:
+    """Mirror _split_vehicles' queue lookups into the C++ registry, in order.
+
+    QueuesManager.queues is a defaultdict, so _split_vehicles' read of
+    queues[(current_node, next_node)] CREATES the key when it is absent -- and
+    the order keys are created in is observable, because _split_vehicles later
+    iterates queues.items() to build the queue groups. Replaying the same reads
+    in the same order is what keeps the registry's key order identical.
+    """
+    n = len(vehicles)
+    if n == 0:
+        return
+    node_from = np.empty(n, dtype=np.int64)
+    node_to = np.empty(n, dtype=np.int64)
+    for i, vehicle in enumerate(vehicles):
+        node_from[i] = vehicle.current_node
+        # next_node is None at the end of a route; -1 is what the store uses.
+        nxt = vehicle.next_node
+        node_to[i] = -1 if nxt is None else nxt
+    ruthlib.advance_queues_touch(node_from, node_to)
+
+
+def queues_stage(queue_events: dict) -> None:
+    """Stage the queue operations apply_deltas reported, removals then additions."""
+    removals, additions = queue_events["removals"], queue_events["additions"]
+    ruthlib.advance_queues_stage(
+        removals["vehicle_id"], removals["node_from"], removals["node_to"],
+        additions["vehicle_id"], additions["node_from"], additions["node_to"])
+
+
+def shadow_check_queues(queues_manager) -> int:
+    """Apply the staged ops in C++ and require the result to match Python's.
+
+    Compares the whole structure, not just membership: the keys in creation
+    order, and the ids in each queue front to back. Both matter -- key order
+    decides how queue groups are built and dispatched, and position within a
+    queue decides which vehicle blocks which.
+
+    Returns the number of queues compared.
+    """
+    ruthlib.advance_queues_batch_update()
+    snap = ruthlib.advance_queues_snapshot()
+
+    store_keys = [(int(a), int(b))
+                  for a, b in zip(snap["node_from"], snap["node_to"])]
+    python_keys = [(int(a), int(b)) for (a, b) in queues_manager.queues.keys()]
+
+    if store_keys != python_keys:
+        for i, (got, expected) in enumerate(zip(store_keys, python_keys)):
+            if got != expected:
+                raise AssertionError(
+                    f"store shadow check (queue keys): position {i} is {got} in the "
+                    f"registry, {expected} in Python "
+                    f"({len(store_keys)} keys vs {len(python_keys)})")
+        raise AssertionError(
+            f"store shadow check (queue keys): {len(store_keys)} keys in the registry, "
+            f"{len(python_keys)} in Python; the shorter is a prefix of the longer")
+
+    offsets, ids = snap["offsets"], snap["vehicle_id"]
+    for i, key in enumerate(store_keys):
+        store_queue = [int(x) for x in ids[offsets[i]:offsets[i + 1]]]
+        python_queue = [int(x) for x in queues_manager.queues[key]]
+        if store_queue != python_queue:
+            raise AssertionError(
+                f"store shadow check (queue {key}): registry has {store_queue}, "
+                f"Python has {python_queue}")
+    return len(store_keys)
