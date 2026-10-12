@@ -401,12 +401,14 @@ class Map:
         passed in `segments_to_update`.
         """
         self.map_id = self.map_id + 1
-        max_speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')
 
         new_current_speeds = {}
         for ((node_from, node_to), speed) in segments_to_update.items():
             edge = self.current_network[node_from][node_to]
-            max_speed = max_speeds[(node_from, node_to)]
+            # Read the limit from the edge dict already in hand: building the
+            # whole-graph attribute dict (nx.get_edge_attributes) here cost
+            # ~10% of the step wall time to look up a handful of segments.
+            max_speed = edge['speed_kph']
             speed = max_speed if speed is None else speed
             speed = min(speed, max_speed)
             speed = round_speed(speed)

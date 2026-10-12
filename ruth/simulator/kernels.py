@@ -225,17 +225,34 @@ class MPIDistributedAlternatives(AlternativesProvider):
             for v in vehicles
         ]
 
-        # 2. Convert to a NumPy array with the correct type
-        # C++ 'int' usually maps to np.int32
-        OD_matrix = np.array(OD_list, dtype=np.int32)
+        # Deduplicate identical (origin, destination) pairs: vehicles sharing an
+        # OD get the same Plateau result, so each unique pair is computed once
+        # and fanned out afterwards. Profiling showed the routing query is the
+        # dominant per-step cost, so every duplicate skipped is a full query
+        # saved.
+        unique_pairs = list(dict.fromkeys(OD_list))
+        pair_to_slot = {od: i for i, od in enumerate(unique_pairs)}
+        if len(unique_pairs) < len(OD_list):
+            logger.debug("OD dedupe: %d vehicles -> %d unique pairs",
+                         len(OD_list), len(unique_pairs))
+
+        OD_matrix = np.array(unique_pairs, dtype=np.int32)
 
         self.ru.do_alternatives(OD_matrix, k, use_origin_speeds)
 
         li = self.ru.get_routes()
 
-        # li[0] is a list of vehicle IDs, li[1] is a list of routes, and li[2] is a list of travel times
-        # remapped_routes = self.postprocess(li, vehicles)
-        remapped_routes = self.postprocess_flat(li, vehicles)
+        # Routes come back per unique pair (slots 0..U-1); postprocess only
+        # needs the slot count from its second argument.
+        unique_routes = self.postprocess_flat(li, unique_pairs)
+
+        # Fan out to vehicles. Node lists are copied per vehicle so no two
+        # vehicles share a mutable route object.
+        remapped_routes = []
+        for od in OD_list:
+            slot_routes = unique_routes[pair_to_slot[od]]
+            remapped_routes.append([(list(nodes), travel_time)
+                                    for nodes, travel_time in slot_routes])
         return remapped_routes
 
     def get_routes_travel_times(self, routes: List[Route]) -> List[Optional[float]]:
