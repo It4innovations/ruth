@@ -146,8 +146,15 @@ class RouteSelectionRatio(RouteSelectionRatioInner):
 class AceArgs(AceArgsInner):
     # kebab-case JSON keys: "threads", "mpi-advance", "queue",
     # "deterministic-order", "trajectory-digest", "trajectory-dump-step",
-    # "store-shadow-check", "store-tasks", "fcd-columns", "fast-replay",
-    # "advance-batch", "store-selection". threads=None -> all cores.
+    # "store-shadow-check". threads=None -> all cores.
+    #
+    # mpi-advance is the only functional switch: it selects the distributed
+    # advance or the original Python one. How that advance builds its tasks,
+    # returns its FCDs, replays its deltas, packs its workloads and selects its
+    # vehicles are not options -- each was a flag only so the new implementation
+    # could be measured against the old one during development, and each is now
+    # the only implementation. The remaining four keys are validation aids and
+    # stay gated, because they all cost real time.
     threads: Optional[int] = None
     mpi_advance: bool = False
     queue: str = "prioritized"
@@ -155,11 +162,6 @@ class AceArgs(AceArgsInner):
     trajectory_digest: bool = False
     trajectory_dump_step: int = -1
     store_shadow_check: bool = False
-    store_tasks: bool = True
-    fcd_columns: bool = True
-    fast_replay: bool = True
-    advance_batch: bool = True
-    store_selection: bool = True
 
 
 @serde(rename_all="kebabcase")

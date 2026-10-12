@@ -125,34 +125,13 @@ class SimSetting:
     # builds byte-identical AdvanceTasks. Verification only -- the store's output
     # is discarded -- and slow, so off by default. See store_bridge.py.
     store_shadow_check: bool = False
-    # Build the per-step AdvanceTasks in C++ from the VehicleStore rather than
-    # row by row in Python (_build_task_array). On by default -- this is the
-    # point of the store; set it false to A/B the marshal phase against the old
-    # builder, which is kept for exactly that and for the shadow check.
-    store_tasks: bool = True
-    # Return each step's FCDs as numeric columns instead of FCDRecord objects.
-    # On by default -- the records were a pure intermediate, built and then taken
-    # apart again by the only two things that consume them. False restores the
-    # record path for an A/B of the history phase; the serial path is unaffected
-    # either way, it always produces records.
-    fcd_columns: bool = True
-    # Apply the step's movement deltas with vectorised unpacking and direct
-    # __dict__ writes instead of a dict and a function call per vehicle. On by
-    # default; false restores the per-vehicle path for an A/B of replay. Only the
-    # distributed path is affected -- serial never builds deltas.
-    fast_replay: bool = True
-    # Pack many queues into one ACE workload instead of sending one per queue,
-    # and cap the free-vehicle chunk COUNT rather than its size. Queues are 1-3
-    # vehicles, so one workload each meant thousands of messages per step and a
-    # barrier that tracked workload count rather than work. On by default; false
-    # restores the old dispatch for an A/B.
-    advance_batch: bool = True
-    # Select each step's vehicles, and the next current offset, from the C++
-    # VehicleStore instead of walking every Vehicle in Python. The store then
-    # maintains its own movement columns each step (it has to, to answer the
-    # question). On by default; false restores the Python comprehensions, which
-    # is also what the serial path always uses.
-    store_selection: bool = True
+    # NOTE: how the distributed advance builds its tasks, returns its FCDs,
+    # replays its deltas, packs its workloads and selects its vehicles used to be
+    # five more flags here. Each existed only so the new implementation could be
+    # measured against the old one while the series was being built; each is now
+    # the only implementation, and mpi_advance alone decides whether it runs.
+    # _build_task_array and _build_history survive as the references
+    # store_shadow_check holds the production path to, nothing else.
     fcd_history_base_name: str = "fcd_history"
 
     def __post_init__(self, seed: Optional[int]):

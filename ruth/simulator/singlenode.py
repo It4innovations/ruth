@@ -299,10 +299,10 @@ class Simulator:
         store answers both from its own columns, so the Python work is
         proportional to the ANSWER rather than to the population.
 
-        Falls back to the original comprehensions when the store is not in use,
-        so the serial path and ace.store-selection=false are unchanged.
+        Falls back to the original comprehensions when the store is not in
+        use, which is how the serial path keeps behaving exactly as it did.
         """
-        if not self._use_store_selection():
+        if not self._use_store():
             vehicles_to_be_moved = [v for v in self.sim.vehicles
                                     if self.sim.is_vehicle_within_offset(v, offset_seconds)]
             need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
@@ -328,7 +328,7 @@ class Simulator:
 
     def current_offset_from_store(self):
         """compute_current_offset() answered from the store's columns."""
-        if not self._use_store_selection():
+        if not self._use_store():
             return self.sim.compute_current_offset()
 
         from . import store_select
@@ -343,22 +343,15 @@ class Simulator:
             self._vehicle_index = index
         return index
 
-    def _use_store_selection(self) -> bool:
-        return (self._use_store()
-                and getattr(self.sim.setting, "store_selection", True))
-
     def _use_store(self) -> bool:
         """Whether the C++ VehicleStore is in use this run.
 
-        True when it is producing the tasks, and also when only the shadow check
-        is on -- the check reads the live store, so the store has to be kept
-        current either way.
+        Exactly ace.mpi-advance. The store is not an option within the
+        distributed advance -- it is how the distributed advance builds its
+        tasks, selects its vehicles and replays its deltas. The serial path
+        never populates it and must therefore never read or push to it.
         """
-        setting = self.sim.setting
-        if not getattr(setting, "mpi_advance", False):
-            return False
-        return (getattr(setting, "store_tasks", True)
-                or getattr(setting, "store_shadow_check", False))
+        return bool(getattr(self.sim.setting, "mpi_advance", False))
 
     def sync_store_population(self):
         """Re-initialise the store if the vehicle population changed.
@@ -419,7 +412,7 @@ class Simulator:
             pushes all ~936k vehicles into the store, walks the selected set in
             Python for `is_at_the_end_of_segment`, and calls
             compute_current_offset() over the whole population -- the three
-            costs ace.store-selection exists to remove. Measured at ~605 ms per
+            costs the C++ selection exists to remove. Measured at ~605 ms per
             step, and invisible, because the call site had no timer on it.
           * _use_store(), because the serial path must behave exactly as it
             always has: it never populates the store, so it must never read or
@@ -485,15 +478,6 @@ class Simulator:
                                             self.sim.setting, "deterministic_order", False),
                                         store_shadow_check=getattr(
                                             self.sim.setting, "store_shadow_check", False),
-                                        store_tasks=getattr(
-                                            self.sim.setting, "store_tasks", True),
-                                        fcd_columns=getattr(
-                                            self.sim.setting, "fcd_columns", True),
-                                        fast_replay=getattr(
-                                            self.sim.setting, "fast_replay", True),
-                                        batch_workloads=getattr(
-                                            self.sim.setting, "advance_batch", True),
-                                        store_selection=self._use_store_selection(),
                                         phase_times=self.advance_phase_times)
 
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,

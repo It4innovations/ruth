@@ -70,19 +70,6 @@ class AceArgs:
     # Verify the C++ VehicleStore builds the same AdvanceTasks as Python.
     # Verification only and slow; see ruth/simulator/store_bridge.py.
     store_shadow_check: bool = False
-    # Build the per-step AdvanceTasks from the C++ VehicleStore instead of row by
-    # row in Python. On by default; false restores the Python builder for an A/B.
-    store_tasks: bool = True
-    # Hand the step's FCDs to the global view and the history writer as columns
-    # instead of FCDRecord objects. On by default.
-    fcd_columns: bool = True
-    # Apply movement deltas without a dict and a function call per vehicle.
-    fast_replay: bool = True
-    # Cap the number of ACE workloads per step instead of one per queue.
-    advance_batch: bool = True
-    # Select the step's vehicles and the next offset from the C++ store instead
-    # of walking every Vehicle in Python.
-    store_selection: bool = True
 
 
 @dataclass
@@ -175,12 +162,7 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
                     deterministic_order=ace_args.deterministic_order,
                     trajectory_digest=ace_args.trajectory_digest,
                     trajectory_dump_step=ace_args.trajectory_dump_step,
-                    store_shadow_check=ace_args.store_shadow_check,
-                    store_tasks=ace_args.store_tasks,
-                    fcd_columns=ace_args.fcd_columns,
-                    fast_replay=ace_args.fast_replay,
-                    advance_batch=ace_args.advance_batch,
-                    store_selection=ace_args.store_selection)
+                    store_shadow_check=ace_args.store_shadow_check)
 
     simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 

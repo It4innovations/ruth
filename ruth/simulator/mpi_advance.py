@@ -159,8 +159,8 @@ def _build_task_array(vehicles: List[Vehicle], routing_map: Map) -> np.ndarray:
     Superseded as the production path by the C++ VehicleStore (see
     store_bridge.build_tasks); this measured ~8.4 us/vehicle, dominated by the
     networkx edge lookups in _fill_task. It is kept, not deleted, because it is
-    what `ace.store-shadow-check` compares the store against, and what
-    `ace.store-tasks: false` falls back to for an A/B measurement.
+    what `ace.store-shadow-check` compares the store against. Nothing else calls
+    it -- it is a reference implementation, not a fallback.
     """
     arr = np.zeros(len(vehicles), dtype=ADVANCE_TASK_DTYPE)
     for i, vehicle in enumerate(vehicles):
@@ -229,35 +229,6 @@ def _inject_waiting_fcds(waiting: List[Vehicle], routing_map: Map, departure_epo
     ruthlib.advance_add_local_fcds(dt, vid, sid, off, spd)
 
 
-def _apply_delta(vehicle: Vehicle, d, routing_map: Map, queues_manager: QueuesManager) -> bool:
-    """Apply one movement delta and replay route.advance_vehicle's queue bookkeeping.
-    Returns whether the vehicle moved."""
-    old_index = vehicle.start_index
-
-    vehicle.start_index = int(d["new_start_index"])
-    vehicle.start_distance_offset = LengthMeters(float(d["new_offset_m"]))
-    vehicle.time_offset = timedelta(microseconds=int(d["new_time_offset_us"]))
-
-    moved = bool(d["moved"])
-
-    # Left the previous segment's queue (was at its end, index advanced).
-    if d["changed_segment"]:
-        node_from = vehicle.osm_route[old_index]
-        node_to = vehicle.osm_route[old_index + 1]
-        queues_manager.remove_vehicle(vehicle, node_from, node_to)
-
-    # Reached the end of the current segment on a moving step: either arrive or
-    # queue up. (Gating on `moved` keeps blockers/waiters no-ops, matching
-    # route.py's `segment_pos_old != vehicle.segment_position`.)
-    if d["reached_end"] and moved:
-        if vehicle.next_node == vehicle.dest_node:
-            vehicle.active = False
-        else:
-            queues_manager.add_to_queue(vehicle)
-
-    return moved
-
-
 def _build_fcd_columns(fcd_arrays: dict, moved_by_id: Dict[int, Vehicle]) -> FCDColumns:
     """The step's FCDs as columns, with `active` resolved per record.
 
@@ -300,24 +271,22 @@ def _build_fcd_columns(fcd_arrays: dict, moved_by_id: Dict[int, Vehicle]) -> FCD
 
 
 def _replay_deltas(replay_order: List[Vehicle], deltas: dict,
-                   queues_manager: QueuesManager,
-                   store_apply_deltas: bool = False) -> Tuple[bool, Optional[dict]]:
+                   queues_manager: QueuesManager) -> Tuple[bool, Optional[dict]]:
     """Apply the step's deltas to `replay_order`, in that order.
 
     Returns (vehicles_moved, store_queue_events). The second is the queue
-    operations the store staged while applying the same deltas, or None when the
-    store was not asked to apply them. It has to come back out: applying the
-    deltas is NOT idempotent, so whoever wants those events must take these
-    rather than call the store a second time.
+    operations the store staged while applying the same deltas, always a valid
+    (possibly empty) event set. It has to come back out: applying the deltas is NOT idempotent, so whoever wants those
+    events must take these rather than call the store a second time.
 
-    Same effect as calling _apply_delta per vehicle, with the per-vehicle
+    Replaces a per-vehicle _apply_delta loop, with the per-vehicle
     intermediates removed. Three of them mattered:
 
       * the deltas arrive in gather order, so the old code built a dict of dicts
         keyed by vehicle id -- N dicts and seven numpy scalar reads each. One
         vectorised permutation puts the columns in replay order instead, and
         .tolist() hands the loop native scalars;
-      * _apply_delta was a function call per vehicle; and
+      * it was a function call per vehicle; and
       * Vehicle overrides __setattr__ to cache _frequency_seconds whenever
         `frequency` is written. Replay never writes `frequency`, so every
         movement write paid a Python-level dispatch and a string compare for
@@ -326,9 +295,18 @@ def _replay_deltas(replay_order: List[Vehicle], deltas: dict,
 
     Queue bookkeeping is unchanged and still goes through QueuesManager.
     """
+    from . import store_select
+
     n = len(replay_order)
     if n == 0:
-        return False, None
+        # Still go through the store, so the caller gets a properly shaped empty
+        # event set instead of None. The shadow check indexes into it without
+        # checking, and a step where every selected vehicle is waiting reaches
+        # here with nothing to replay.
+        empty_i32 = np.empty(0, dtype=np.int32)
+        return False, store_select.apply_delta_columns(
+            empty_i32, empty_i32, np.empty(0, dtype=np.float64),
+            np.empty(0, dtype=np.int64), empty_i32, empty_i32, empty_i32)
 
     # Put the columns in replay order. searchsorted over the sorted gather order
     # is O(n log n) of vectorised work, against O(n) dict inserts before.
@@ -356,12 +334,9 @@ def _replay_deltas(replay_order: List[Vehicle], deltas: dict,
     # reads these columns, and refreshing them with a Python pass over every
     # vehicle would cost more than the selection saves. Same arrays the loop
     # below uses, so this adds one C++ call per step and no per-vehicle work.
-    store_queue_events = None
-    if store_apply_deltas:
-        from . import store_select
-        store_queue_events = store_select.apply_delta_columns(
-            wanted_ids, new_start_index, new_offset_m, new_time_offset_us,
-            moved_flags, changed_segment, reached_end)
+    store_queue_events = store_select.apply_delta_columns(
+        wanted_ids, new_start_index, new_offset_m, new_time_offset_us,
+        moved_flags, changed_segment, reached_end)
 
     vehicles_moved = False
     remove_vehicle = queues_manager.remove_vehicle
@@ -509,11 +484,6 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
                          los_vehicles_tolerance, drop_before_time=None,
                          deterministic_order: bool = False,
                          store_shadow_check: bool = False,
-                         store_tasks: bool = True,
-                         fcd_columns: bool = True,
-                         fast_replay: bool = True,
-                         batch_workloads: bool = True,
-                         store_selection: bool = True,
                          phase_times: dict = None
                          ) -> Tuple[object, bool]:
     """Distributed equivalent of route.advance_vehicles_with_queues.
@@ -526,33 +496,20 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
         themselves and the resulting vehicle positions are identical either way.
     :param store_shadow_check: also build the tasks the old way and require the
         two to be byte-identical (config.json ace.store-shadow-check). Slow.
-    :param store_tasks: build the AdvanceTasks from the C++ VehicleStore rather
-        than row by row in Python (config.json ace.store-tasks). False restores
-        the Python builder, for an A/B measurement of the marshal phase.
-    :param fcd_columns: return the step's FCDs as columns instead of FCDRecord
-        objects (config.json ace.fcd-columns). False restores the record path,
-        for an A/B measurement of the history phase.
-    :param fast_replay: apply the deltas with vectorised unpacking and direct
-        __dict__ writes (config.json ace.fast-replay). False restores the
-        per-vehicle _apply_delta path, for an A/B of the replay phase. Both
-        produce the same state; ace.store-shadow-check verifies that against the
-        store's independent replay either way.
-    :param batch_workloads: cap the number of ACE workloads per step instead of
-        sending one per queue (config.json ace.advance-batch). The queues are
-        tiny -- 1-3 vehicles -- so one workload each made the barrier 93-97% of
-        the phase. False restores the old dispatch, for an A/B.
-    :param store_selection: keep the store's movement columns current in C++ so
-        the step loop can select from them (config.json ace.store-selection).
-        Without it the store is only refreshed for the vehicles that move, which
-        is enough to build their tasks but not to choose them.
     :param phase_times: when given, filled with this step's per-phase wall times
         in milliseconds. The step loop merges them into step_timers, so a slow
         advance can be attributed without guessing. Always on -- a few
         perf_counter calls per step, not per vehicle.
 
-    Returns (fcds, vehicles_moved), where fcds is an FCDColumns or, with
-    fcd_columns off, a list of FCDRecord. Simulation.update and
-    FCDHistory.extend both accept either.
+    How the tasks are built, how the FCDs come back, how the deltas are
+    replayed and how the workloads are packed are NOT options: each was once a
+    flag so the new implementation could be measured against the old one, and
+    each is now the only implementation. The old task builder (_build_task_array)
+    and the old record path (_build_history) survive as the references
+    ace.store-shadow-check holds the production path to; nothing else calls them.
+
+    Returns (fcds, vehicles_moved), where fcds is an FCDColumns. Simulation.update
+    and FCDHistory.extend both accept it.
     """
     departure_epoch_us = _datetime_to_epoch_us(departure_time)
     los_tolerance_s = los_vehicles_tolerance.total_seconds()
@@ -575,19 +532,15 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     flat_queue_vehicles = [v for group in queue_groups for v in group]
 
     # Build task buffers (structured dtype) + queue CSR offsets.
-    if store_tasks:
-        from . import store_bridge
+    from . import store_bridge
 
-        # The store holds last step's movement state until this push; routes and
-        # closures were pushed by the caller when they changed. Only the vehicles
-        # moving this step need refreshing -- the rest are not asked for a task.
-        store_bridge.push_movement(free)
-        store_bridge.push_movement(flat_queue_vehicles)
-        free_arr = store_bridge.build_tasks(free, ADVANCE_TASK_DTYPE)
-        queue_arr = store_bridge.build_tasks(flat_queue_vehicles, ADVANCE_TASK_DTYPE)
-    else:
-        free_arr = _build_task_array(free, routing_map)
-        queue_arr = _build_task_array(flat_queue_vehicles, routing_map)
+    # The store holds last step's movement state until this push; routes and
+    # closures were pushed by the caller when they changed. Only the vehicles
+    # moving this step need refreshing -- the rest are not asked for a task.
+    store_bridge.push_movement(free)
+    store_bridge.push_movement(flat_queue_vehicles)
+    free_arr = store_bridge.build_tasks(free, ADVANCE_TASK_DTYPE)
+    queue_arr = store_bridge.build_tasks(flat_queue_vehicles, ADVANCE_TASK_DTYPE)
     queue_offsets = np.zeros(len(queue_groups) + 1, dtype=np.int32)
     acc = 0
     for i, group in enumerate(queue_groups):
@@ -595,17 +548,15 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
         acc += len(group)
     queue_offsets[len(queue_groups)] = acc
 
-    # Shadow mode: the store's tasks and the Python builder's must agree. Which
-    # one is under test depends on store_tasks -- with it on, the Python builder
-    # is the reference and the store is what shipped; with it off, the reverse.
-    # Either way a disagreement is a bug in one of them and stops the run.
+    # Shadow mode: the store's tasks and the Python builder's must agree. The
+    # store is what shipped; _build_task_array is the reference it is held to,
+    # which is the only thing that function is still for. A disagreement is a
+    # bug in one of them and stops the run.
     if store_shadow_check:
         from .store_bridge import shadow_check
         # shadow_check builds the store's side itself; this is the other side.
-        reference_free = (_build_task_array(free, routing_map) if store_tasks
-                          else free_arr)
-        reference_queue = (_build_task_array(flat_queue_vehicles, routing_map)
-                           if store_tasks else queue_arr)
+        reference_free = _build_task_array(free, routing_map)
+        reference_queue = _build_task_array(flat_queue_vehicles, routing_map)
         shadow_check(free, routing_map, reference_free, ADVANCE_TASK_DTYPE, "free")
         shadow_check(flat_queue_vehicles, routing_map, reference_queue,
                      ADVANCE_TASK_DTYPE, "queues")
@@ -628,7 +579,7 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
 
     # Phase 1: scatter + evaluate across ranks (reads the just-pruned GV).
     ruthlib.do_advance(free_arr, queue_arr, queue_offsets, departure_epoch_us,
-                       los_tolerance_s, batch_workloads)
+                       los_tolerance_s)
 
     # After-gap waiting vehicles: inject their stationary FCDs before the sync.
     _inject_waiting_fcds(waiting, routing_map, departure_epoch_us)
@@ -644,19 +595,6 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     fcd_arrays = ruthlib.get_advance_fcds()
     times["adv_readback_ms"] = (clock() - mark) * 1000.0
     mark = clock()
-
-    # The store's shadow replay and the reference path both want the deltas keyed
-    # by id; the fast path does not, and building this for it would reintroduce
-    # the per-vehicle dict it exists to avoid.
-    def _delta_by_id():
-        return {int(deltas["vehicle_id"][i]): {
-            "new_start_index": deltas["new_start_index"][i],
-            "new_offset_m": deltas["new_offset_m"][i],
-            "new_time_offset_us": deltas["new_time_offset_us"][i],
-            "moved": deltas["moved"][i],
-            "changed_segment": deltas["changed_segment"][i],
-            "reached_end": deltas["reached_end"][i],
-        } for i in range(len(deltas["vehicle_id"]))}
 
     # Canonical replay order: free vehicles, then each queue group front to
     # back. The queue operations staged here are consumed in this order by
@@ -678,26 +616,13 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     # keyed one segment too far and pushes waiting vehicles a step into the
     # future. Whoever applies them keeps the events; nobody re-applies to get
     # their own copy.
-    store_queue_events = None
-    if fast_replay:
-        vehicles_moved, store_queue_events = _replay_deltas(
-            replay_order, deltas, queues_manager, store_apply_deltas=store_selection)
-    else:
-        delta_by_id = _delta_by_id()
-        vehicles_moved = False
-        for vehicle in replay_order:
-            vehicles_moved |= _apply_delta(vehicle, delta_by_id[vehicle.id], routing_map,
-                                           queues_manager)
-        if store_selection:
-            # The slow path updates the Vehicles only, so the store still needs
-            # its own pass -- selection reads those columns next step.
-            from . import store_bridge
-            store_queue_events = store_bridge.apply_deltas(replay_order, delta_by_id)
+    vehicles_moved, store_queue_events = _replay_deltas(
+        replay_order, deltas, queues_manager)
 
     # After-gap waiting: advance time only, no movement, no queue op.
     for vehicle in waiting:
         vehicle.__dict__["time_offset"] = vehicle.time_offset + vehicle.frequency
-    if store_selection and waiting:
+    if waiting:
         from . import store_select
         store_select.advance_waiting(waiting)
 
@@ -707,12 +632,6 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
     # have staged.
     if store_shadow_check:
         from . import store_bridge
-        if store_queue_events is None:
-            # store_selection off: production never touched the store, so the
-            # check applies the deltas itself, as it did before selection moved
-            # them onto the hot path.
-            store_queue_events = store_bridge.apply_deltas(replay_order, _delta_by_id())
-            store_bridge.advance_waiting(waiting)
         store_bridge.shadow_check_deltas(
             replay_order + list(waiting), store_queue_events,
             queues_manager.to_be_removed[removals_before:],
@@ -738,12 +657,9 @@ def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
                                              free, queue_groups, moved_by_vid)
 
     moved_by_id = {v.id: v for v in vehicles_to_be_moved}
-    if fcd_columns:
-        fcds = _build_fcd_columns(fcd_arrays, moved_by_id)
-        if store_shadow_check:
-            _shadow_check_fcd_columns(fcds, fcd_arrays, moved_by_id, routing_map)
-    else:
-        fcds = _build_history(fcd_arrays, moved_by_id, routing_map)
+    fcds = _build_fcd_columns(fcd_arrays, moved_by_id)
+    if store_shadow_check:
+        _shadow_check_fcd_columns(fcds, fcd_arrays, moved_by_id, routing_map)
 
     times["adv_build_fcds_ms"] = (clock() - mark) * 1000.0
     times.update(ruthlib.advance_phase_times())
