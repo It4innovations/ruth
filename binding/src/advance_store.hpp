@@ -157,15 +157,13 @@ public:
                   std::vector<int64_t>& out_nodes,
                   std::vector<int64_t>& out_segment_ids) const;
 
-  /// Total slots ever allocated to route storage, and how many are still
-  /// referenced. set_route appends rather than compacting, so a long run with
-  /// frequent rerouting grows route_nodes_; this exposes the growth so it can be
-  /// watched rather than discovered as memory pressure.
-  void route_buffer_stats(size_t& used_slots, size_t& live_slots) const;
   const SegmentGeom& segment(int64_t routing_id) const;
 
   // --- movement columns ----------------------------------------------------
 
+  /// Slot count. Used by advance_store_movement_columns to size its buffers;
+  /// it is NOT only an introspection helper, despite the binding of the same
+  /// name having been removed.
   size_t size() const { return vehicle_id_.size(); }
 
   /// Slot holding `vehicle_id`, or -1 if the store does not know it.

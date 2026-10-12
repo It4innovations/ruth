@@ -19,66 +19,32 @@ namespace ruthlib {
 // ---------------------------------------------------------------------------
 void evaluate_batch(const std::vector<AdvanceTask>& tasks,
                     int64_t departure_epoch_us,
-                    double los_tolerance_s,
-                    bool sequential) {
+                    double los_tolerance_s) {
   auto& st = AdvanceState::instance();
   const GlobalView& gv = st.gv();
 
-  std::vector<AdvanceDelta> deltas;
-  deltas.reserve(tasks.size());
+  // Independent vehicles: fully parallel. Per-index FCD buffers merged at the
+  // end to avoid contention; deltas indexed by position to keep order stable.
+  const size_t n = tasks.size();
+  std::vector<AdvanceDelta> deltas(n);
+  std::vector<std::vector<FCDRecord>> per_index(n);
+
+  const size_t workers = std::max<size_t>(1, std::thread::hardware_concurrency());
+  const size_t chunk = std::max<size_t>(1, n / (workers * 16));
+  ace::parallelfor(
+      ace::Range<size_t>(0, n, chunk),
+      [&](const size_t& i) {
+        std::vector<FCDRecord> local;
+        deltas[i] = advance_one_vehicle(tasks[i], gv, departure_epoch_us, los_tolerance_s, local);
+        per_index[i] = std::move(local);
+      },
+      true);
+
   std::vector<FCDRecord> fcds;
-
-  if (sequential) {
-    // Queue semantics: FIFO, stop at the first vehicle that does not move.
-    // Vehicles behind a non-mover simply wait (advance time, stationary FCD),
-    // matching route.py:advance_waiting_vehicle.
-    bool blocked = false;
-    for (const auto& t : tasks) {
-      if (!blocked) {
-        AdvanceDelta d = advance_one_vehicle(t, gv, departure_epoch_us, los_tolerance_s, fcds);
-        deltas.push_back(d);
-        if (!d.moved) {
-          blocked = true;  // this vehicle blocks the rest of the queue
-        }
-      } else {
-        const int64_t current_epoch_us = departure_epoch_us + t.time_offset_us;
-        const int64_t end_epoch_us = current_epoch_us + t.frequency_us;
-        fcds.emplace_back(static_cast<double>(end_epoch_us) / 1e6,
-                          t.vehicle_id, t.seg0.segment_id, t.start_offset_m, 0.0);
-        AdvanceDelta d{};
-        d.vehicle_id = t.vehicle_id;
-        d.new_start_index = t.start_index;
-        d.new_offset_m = t.start_offset_m;
-        d.new_time_offset_us = t.time_offset_us + t.frequency_us;
-        d.moved = 0;
-        d.changed_segment = 0;
-        d.reached_end = 0;
-        deltas.push_back(d);
-      }
-    }
-  } else {
-    // Free vehicles: fully parallel. Per-index FCD buffers merged at the end to
-    // avoid contention; deltas indexed by position to keep order stable.
-    const size_t n = tasks.size();
-    deltas.resize(n);
-    std::vector<std::vector<FCDRecord>> per_index(n);
-
-    const size_t workers = std::max<size_t>(1, std::thread::hardware_concurrency());
-    const size_t chunk = std::max<size_t>(1, n / (workers * 16));
-    ace::parallelfor(
-        ace::Range<size_t>(0, n, chunk),
-        [&](const size_t& i) {
-          std::vector<FCDRecord> local;
-          deltas[i] = advance_one_vehicle(tasks[i], gv, departure_epoch_us, los_tolerance_s, local);
-          per_index[i] = std::move(local);
-        },
-        true);
-
-    size_t total = 0;
-    for (const auto& v : per_index) total += v.size();
-    fcds.reserve(total);
-    for (auto& v : per_index) fcds.insert(fcds.end(), v.begin(), v.end());
-  }
+  size_t total = 0;
+  for (const auto& v : per_index) total += v.size();
+  fcds.reserve(total);
+  for (auto& v : per_index) fcds.insert(fcds.end(), v.begin(), v.end());
 
   // Accumulate rank-locally; both are exchanged later by the sync_allgatherv.
   st.append_fcds(fcds);
@@ -236,7 +202,7 @@ FreeVehicleWorkload::FreeVehicleWorkload(const std::shared_ptr<char> data, size_
 }
 
 void FreeVehicleWorkload::execute() {
-  evaluate_batch(tasks, departure_epoch_us, los_tolerance_s, /*sequential=*/false);
+  evaluate_batch(tasks, departure_epoch_us, los_tolerance_s);
 }
 
 size_t FreeVehicleWorkload::size() const {
@@ -244,41 +210,6 @@ size_t FreeVehicleWorkload::size() const {
 }
 
 char* FreeVehicleWorkload::marshal() const {
-  char* data = workload::marshal();
-  char* p = data;
-  std::memcpy(p, &departure_epoch_us, sizeof(int64_t)); p += sizeof(int64_t);
-  std::memcpy(p, &los_tolerance_s, sizeof(double)); p += sizeof(double);
-  put_pod_vec(p, tasks);
-  return data;
-}
-
-// ---------------------------------------------------------------------------
-// QueueWorkload
-// ---------------------------------------------------------------------------
-QueueWorkload::QueueWorkload() : workload() {}
-
-QueueWorkload::QueueWorkload(std::vector<AdvanceTask> tasks,
-                             int64_t departure_epoch_us, double los_tolerance_s)
-    : workload(), tasks(std::move(tasks)),
-      departure_epoch_us(departure_epoch_us), los_tolerance_s(los_tolerance_s) {}
-
-QueueWorkload::QueueWorkload(const std::shared_ptr<char> data, size_t size)
-    : workload(data, size) {
-  const char* p = data.get();
-  std::memcpy(&departure_epoch_us, p, sizeof(int64_t)); p += sizeof(int64_t);
-  std::memcpy(&los_tolerance_s, p, sizeof(double)); p += sizeof(double);
-  tasks = get_pod_vec<AdvanceTask>(p);
-}
-
-void QueueWorkload::execute() {
-  evaluate_batch(tasks, departure_epoch_us, los_tolerance_s, /*sequential=*/true);
-}
-
-size_t QueueWorkload::size() const {
-  return sizeof(int64_t) + sizeof(double) + pod_vec_size(tasks);
-}
-
-char* QueueWorkload::marshal() const {
   char* data = workload::marshal();
   char* p = data;
   std::memcpy(p, &departure_epoch_us, sizeof(int64_t)); p += sizeof(int64_t);

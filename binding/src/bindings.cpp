@@ -136,7 +136,7 @@ PYBIND11_MODULE(ruthlib, m) {
     m.def("do_advance",
         [](const py::array& free_tasks, const py::array& queue_tasks,
            py::array_t<int32_t, py::array::c_style | py::array::forcecast> queue_offsets,
-           int64_t departure_epoch_us, double los_tolerance_s, bool batch_workloads) {
+           int64_t departure_epoch_us, double los_tolerance_s) {
             std::vector<ruthlib::AdvanceTask> free_vec = buffer_to_advance_tasks(free_tasks);
             std::vector<ruthlib::AdvanceTask> queue_vec = buffer_to_advance_tasks(queue_tasks);
 
@@ -153,12 +153,10 @@ PYBIND11_MODULE(ruthlib, m) {
             }
 
             py::gil_scoped_release release;  // blocks on MPI sends + waits
-            ruthlib::do_advance(free_vec, queues, departure_epoch_us, los_tolerance_s,
-                                batch_workloads);
+            ruthlib::do_advance(free_vec, queues, departure_epoch_us, los_tolerance_s);
         },
         py::arg("free_tasks"), py::arg("queue_tasks"), py::arg("queue_offsets"),
         py::arg("departure_epoch_us"), py::arg("los_tolerance_s"),
-        py::arg("batch_workloads") = true,
         "phase 1: evaluate free vehicles and queues across ranks");
 
     // Prune every rank's GV replica to datetime >= threshold_epoch_s. Call at
@@ -367,10 +365,6 @@ PYBIND11_MODULE(ruthlib, m) {
             return d;
         },
         "master-side phase times of the last step, in milliseconds");
-
-    m.def("advance_store_size",
-        []() { return ruthlib::VehicleStore::instance().size(); },
-        "number of vehicles currently in the store");
 
     // --- step selection (shadow mode) ---------------------------------------
 
@@ -633,18 +627,6 @@ PYBIND11_MODULE(ruthlib, m) {
             return d;
         },
         "queues in key-creation order, as a CSR of the ids in each");
-
-    m.def("advance_queues_reset",
-        []() { ruthlib::QueueRegistry::instance().clear(); },
-        "empty the queue registry");
-
-    m.def("advance_store_route_buffer_stats",
-        []() {
-            size_t used = 0, live = 0;
-            ruthlib::VehicleStore::instance().route_buffer_stats(used, live);
-            return py::make_tuple(used, live);
-        },
-        "(slots allocated to routes, slots still referenced)");
 
     m.def("advance_store_at_segment_end",
         [](py::array_t<int32_t, py::array::c_style | py::array::forcecast> vehicle_ids) {

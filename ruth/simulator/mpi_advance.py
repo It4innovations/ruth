@@ -176,7 +176,8 @@ def _split_vehicles(vehicles: List[Vehicle], queues_manager: QueuesManager
       * free            - not in a queue; order-independent.
       * queue_groups    - per queue, the FIFO prefix of selected vehicles (the
                           loop stops at the first vehicle not selected this step,
-                          route.py:305). Each group is one whole QueueWorkload.
+                          route.py:305). Groups are packed into batched
+                          workloads but a group is never split across them.
       * waiting         - selected+queued vehicles that fall *after* such a gap;
                           they wait this step (route.py:324) and are handled by
                           the master (their stationary FCDs are injected).

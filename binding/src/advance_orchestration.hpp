@@ -32,19 +32,18 @@ void register_advance_workloads();
 /// FCDs + deltas locally; nothing is gathered yet.
 ///
 /// @param free_tasks          vehicles not in a queue (order-independent)
-/// @param queues              one inner vector per queue, front-to-back; each is
-///                            dispatched as a single QueueWorkload and never split
+/// @param queues              one inner vector per queue, front-to-back; queues
+///                            are packed into batches but never split
 /// @param departure_epoch_us  simulation departure time, epoch MICROSECONDS
 /// @param los_tolerance_s     LoS time tolerance, seconds
-/// @param batch_workloads  cap the number of dispatched workloads at
-///                         ranks * ADVANCE_WORK_MULTIPLIER for BOTH families.
-///                         False restores one workload per queue and the old
-///                         free-chunk sizing, for an A/B.
+///
+/// Both families are capped at ranks * ADVANCE_WORK_MULTIPLIER workloads. One
+/// workload per queue was the original dispatch and is gone: the queues are
+/// 1-3 vehicles, so it made the barrier track message count rather than work.
 void do_advance(const std::vector<AdvanceTask>& free_tasks,
                 const std::vector<std::vector<AdvanceTask>>& queues,
                 int64_t departure_epoch_us,
-                double los_tolerance_s,
-                bool batch_workloads = true);
+                double los_tolerance_s);
 
 /// Phase 2: broadcast SyncFCDsWorkload so every rank enters the sync_allgatherv
 /// collective, merges the step's FCDs into its GV replica, and (on the master)

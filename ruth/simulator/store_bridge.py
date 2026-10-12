@@ -28,7 +28,7 @@ reference to check against is the thing this series has been avoiding.
 """
 
 from datetime import timedelta
-from typing import Dict, List, Sequence, Tuple
+from typing import List, Sequence
 
 import numpy as np
 

@@ -39,7 +39,6 @@ public:
   QueueRegistry(const QueueRegistry&) = delete;
   QueueRegistry& operator=(const QueueRegistry&) = delete;
 
-  void clear();
 
   /// Get (creating if absent) the queue for one segment -- defaultdict
   /// semantics. Creation order is recorded; this is how key order is

@@ -334,14 +334,6 @@ void VehicleStore::route_view(int32_t slot,
                          route_segment_ids_.begin() + base + n_segments);
 }
 
-void VehicleStore::route_buffer_stats(size_t& used_slots, size_t& live_slots) const {
-  used_slots = route_nodes_.size();
-  live_slots = 0;
-  for (const int32_t len : route_len_) {
-    live_slots += static_cast<size_t>(len);
-  }
-}
-
 void VehicleStore::set_segment_closed(int64_t routing_id, int32_t is_closed) {
   if (routing_id < 0 || static_cast<size_t>(routing_id) >= segments_.size()) {
     return;  // a closure on a segment no vehicle routes over is not an error

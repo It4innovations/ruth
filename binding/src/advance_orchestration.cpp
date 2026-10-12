@@ -42,7 +42,6 @@ AdvancePhaseTimes get_advance_phase_times() { return g_phase_times; }
 void register_advance_workloads() {
   auto comm = ace::CommInterface::instance();
   comm->register_workload<FreeVehicleWorkload>();
-  comm->register_workload<QueueWorkload>();
   comm->register_workload<QueueBatchWorkload>();
   comm->register_workload<SyncFCDsWorkload>();
   comm->register_workload<DropOldWorkload>();
@@ -66,8 +65,7 @@ void advance_drop_old(double threshold_epoch_s) {
 void do_advance(const std::vector<AdvanceTask>& free_tasks,
                 const std::vector<std::vector<AdvanceTask>>& queues,
                 int64_t departure_epoch_us,
-                double los_tolerance_s,
-                bool batch_workloads) {
+                double los_tolerance_s) {
   const auto dispatch_started = Clock::now();
 
   auto comm = ace::CommInterface::instance();
@@ -89,9 +87,7 @@ void do_advance(const std::vector<AdvanceTask>& free_tasks,
   // size collapsed to 1 and every vehicle got its own workload. At 32 ranks
   // that is any step with fewer than 512 free vehicles -- i.e. most of them.
   const size_t work_size =
-      batch_workloads
-          ? std::max<size_t>(1, (free_tasks.size() + target_workloads - 1) / target_workloads)
-          : std::max<size_t>(1, free_tasks.size() / (num_ranks * ADVANCE_WORK_MULTIPLIER));
+      std::max<size_t>(1, (free_tasks.size() + target_workloads - 1) / target_workloads);
   for (size_t start = 0; start < free_tasks.size(); start += work_size) {
     const size_t end = std::min(start + work_size, free_tasks.size());
     std::vector<AdvanceTask> chunk(free_tasks.begin() + start, free_tasks.begin() + end);
@@ -112,53 +108,42 @@ void do_advance(const std::vector<AdvanceTask>& free_tasks,
         std::max(g_phase_times.longest_queue, static_cast<int32_t>(queue.size()));
   }
 
-  if (batch_workloads) {
-    // Pack whole queues into at most target_workloads messages. Queues are
-    // never split -- the FIFO rule lives inside one -- they are only shipped
-    // together. Filling by vehicle count rather than by queue count keeps the
-    // batches even when queue lengths vary.
-    const size_t per_batch =
-        std::max<size_t>(1, (total_queued + target_workloads - 1) / target_workloads);
+  // Pack whole queues into at most target_workloads messages. Queues are
+  // never split -- the FIFO rule lives inside one -- they are only shipped
+  // together. Filling by vehicle count rather than by queue count keeps the
+  // batches even when queue lengths vary.
+  const size_t per_batch =
+      std::max<size_t>(1, (total_queued + target_workloads - 1) / target_workloads);
 
-    std::vector<AdvanceTask> batch_tasks;
-    std::vector<int32_t> batch_offsets{0};
+  std::vector<AdvanceTask> batch_tasks;
+  std::vector<int32_t> batch_offsets{0};
 
-    // std::exchange, not std::move: handing the buffers over and starting fresh
-    // ones is ONE expression, so there is no window in which batch_tasks is a
-    // moved-from vector being relied on to behave. offsets restart at {0}
-    // because the CSR of every batch is zero-based.
-    auto flush_batch = [&]() {
-      if (batch_offsets.size() < 2) {
-        return;  // nothing accumulated since the last flush
-      }
-      auto wl = std::make_shared<QueueBatchWorkload>(
-          std::exchange(batch_tasks, std::vector<AdvanceTask>{}),
-          std::exchange(batch_offsets, std::vector<int32_t>{0}),
-          departure_epoch_us, los_tolerance_s);
-      ++dispatch_index;
-      comm->async_send(wl, dispatch_index % num_ranks);
-      ++g_phase_times.queue_workloads;
-    };
-
-    for (const auto& queue : queues) {
-      if (queue.empty()) continue;
-      batch_tasks.insert(batch_tasks.end(), queue.begin(), queue.end());
-      batch_offsets.push_back(static_cast<int32_t>(batch_tasks.size()));
-      if (batch_tasks.size() >= per_batch) {
-        flush_batch();
-      }
+  // std::exchange, not std::move: handing the buffers over and starting fresh
+  // ones is ONE expression, so there is no window in which batch_tasks is a
+  // moved-from vector being relied on to behave. offsets restart at {0}
+  // because the CSR of every batch is zero-based.
+  auto flush_batch = [&]() {
+    if (batch_offsets.size() < 2) {
+      return;  // nothing accumulated since the last flush
     }
-    flush_batch();
-  } else {
-    // Legacy: one whole queue per workload (never split across ranks).
-    for (const auto& queue : queues) {
-      if (queue.empty()) continue;
-      auto wl = std::make_shared<QueueWorkload>(queue, departure_epoch_us, los_tolerance_s);
-      ++dispatch_index;
-      comm->async_send(wl, dispatch_index % num_ranks);
-      ++g_phase_times.queue_workloads;
+    auto wl = std::make_shared<QueueBatchWorkload>(
+        std::exchange(batch_tasks, std::vector<AdvanceTask>{}),
+        std::exchange(batch_offsets, std::vector<int32_t>{0}),
+        departure_epoch_us, los_tolerance_s);
+    ++dispatch_index;
+    comm->async_send(wl, dispatch_index % num_ranks);
+    ++g_phase_times.queue_workloads;
+  };
+
+  for (const auto& queue : queues) {
+    if (queue.empty()) continue;
+    batch_tasks.insert(batch_tasks.end(), queue.begin(), queue.end());
+    batch_offsets.push_back(static_cast<int32_t>(batch_tasks.size()));
+    if (batch_tasks.size() >= per_batch) {
+      flush_batch();
     }
   }
+  flush_batch();
 
   g_phase_times.dispatch_ms = elapsed_ms(dispatch_started);
   const auto barrier_started = Clock::now();
@@ -172,8 +157,8 @@ void do_advance(const std::vector<AdvanceTask>& free_tasks,
   // Requires every rank at the barrier (workers are in run_worker_loop()). Issued
   // unconditionally (even with zero tasks) to keep the per-step barrier count
   // deterministic. The barrier is here in the dispatcher, NOT inside FreeVehicle/
-  // QueueWorkload::execute() (those run on scheduler threads and must not call a
-  // collective).
+  // QueueBatchWorkload::execute() (those run on scheduler threads and must not
+  // call a collective).
   comm->barrier();
   g_phase_times.barrier_ms = elapsed_ms(barrier_started);
 }

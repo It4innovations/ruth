@@ -26,14 +26,6 @@ QueueRegistry& QueueRegistry::instance() {
   return inst;
 }
 
-void QueueRegistry::clear() {
-  index_.clear();
-  order_.clear();
-  queues_.clear();
-  to_be_added_.clear();
-  to_be_removed_.clear();
-}
-
 size_t QueueRegistry::slot_for(int64_t node_from, int64_t node_to) {
   const Key key{node_from, node_to};
   const auto it = index_.find(key);

@@ -5,9 +5,10 @@
 // Two phase-1 families, mirroring ruth/simulator/route.py:
 //   * FreeVehicleWorkload : vehicles NOT in a queue. Order-independent,
 //                           evaluated with ace::parallelfor over the chunk.
-//   * QueueWorkload       : one WHOLE queue per unit. Evaluated SEQUENTIALLY
-//                           (FIFO, blocked-front-blocks-followers); parallelism
-//                           comes only from having many queues.
+//   * QueueBatchWorkload  : MANY whole queues per unit. Parallel across the
+//                           queues it carries, sequential within each one
+//                           (FIFO, blocked-front-blocks-followers). A queue is
+//                           packed with others but never split.
 //
 // Result flow: both the FCD samples and the per-vehicle deltas are accumulated
 // rank-locally during phase 1, then exchanged in a single per-step
@@ -24,14 +25,14 @@
 
 namespace ruthlib {
 
-/// Evaluate a batch of AdvanceTasks, accumulating both the FCD samples and the
-/// per-vehicle deltas into AdvanceState (they are exchanged later by the
-/// sync_allgatherv). `sequential` selects queue semantics (FIFO, stop at the
-/// first vehicle that does not move); otherwise the batch runs in parallel.
+/// Evaluate a batch of INDEPENDENT AdvanceTasks in parallel, accumulating both
+/// the FCD samples and the per-vehicle deltas into AdvanceState (they are
+/// exchanged later by the sync_allgatherv). Queue semantics -- FIFO, stop at the
+/// first vehicle that does not move -- are not here: they belong to one queue,
+/// and evaluate_one_queue implements them.
 void evaluate_batch(const std::vector<AdvanceTask>& tasks,
                     int64_t departure_epoch_us,
-                    double los_tolerance_s,
-                    bool sequential);
+                    double los_tolerance_s);
 
 // --- Free vehicles: order-independent, parallelfor over the chunk ----------
 class FreeVehicleWorkload : public ace::workload {
@@ -53,8 +54,8 @@ public:
 /// vehicle that does not move; everything behind it waits. Writes each delta at
 /// its flat index and appends that queue's FCDs to `out_fcds`.
 ///
-/// Split out so it can be exercised directly, and so the parallel and the
-/// sequential paths cannot drift apart.
+/// Split out so it can be exercised directly, and so the per-queue rule lives
+/// in exactly one place.
 void evaluate_one_queue(const std::vector<AdvanceTask>& tasks,
                         int32_t begin, int32_t end,
                         const GlobalView& gv,
@@ -74,7 +75,7 @@ void evaluate_queue_batch(const std::vector<AdvanceTask>& tasks,
 
 // --- Many queues in one workload -------------------------------------------
 //
-// WHY THIS EXISTS. do_advance used to send one QueueWorkload per queue, and the
+// WHY THIS EXISTS. do_advance used to send one workload per queue, and the
 // queues are tiny -- measured at 1.2 to 2.7 vehicles each, with up to 14,010 of
 // them per step. Every one cost its own make_shared, marshalled send buffer,
 // MPI message, scheduler waiting-map entry and notify_workload ack: about
@@ -98,24 +99,6 @@ public:
   QueueBatchWorkload(std::vector<AdvanceTask> tasks, std::vector<int32_t> offsets,
                      int64_t departure_epoch_us, double los_tolerance_s);
   QueueBatchWorkload(const std::shared_ptr<char> data, size_t size);
-
-  void execute() override;
-  size_t size() const override;
-  char* marshal() const override;
-};
-
-// --- Queue vehicles: one whole queue, FIFO, sequential ---------------------
-// Retained for ace.advance-batch=false, which restores one workload per queue
-// for an A/B of the batching.
-class QueueWorkload : public ace::workload {
-public:
-  std::vector<AdvanceTask> tasks;   // one queue, front-to-back order
-  int64_t departure_epoch_us = 0;
-  double los_tolerance_s = 0.0;
-
-  QueueWorkload();
-  QueueWorkload(std::vector<AdvanceTask> tasks, int64_t departure_epoch_us, double los_tolerance_s);
-  QueueWorkload(const std::shared_ptr<char> data, size_t size);
 
   void execute() override;
   size_t size() const override;
