@@ -589,6 +589,8 @@ def compute_alternatives(alternatives_providers: List[AlternativesProvider],
     combined_vehicles = []
     for provider in alternatives_providers:
         selected_vehicles = [v for v in vehicles if v.alternatives == provider.vehicle_behaviour]
+        if not selected_vehicles:
+            continue
         alts = provider.compute_alternatives(
             selected_vehicles,
             k=k_alternatives

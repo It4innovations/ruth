@@ -150,23 +150,22 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     if overwrite_h5:
         remove_existing_fcd_history_files("fcd_history")
 
-    ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
-                    los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
-                    buffer_size=buffer_size,
-                    max_records_per_file=max_records_per_file,
-                        async_fcd_writer=async_fcd_writer,
-                        fcd_writer_queue_size=fcd_writer_queue_size,
-                    stuck_detection=stuck_detection,
-                    plateau_default_route=plateau_default_route,
-                    mpi_advance=ace_args.mpi_advance,
-                    deterministic_order=ace_args.deterministic_order,
-                    trajectory_digest=ace_args.trajectory_digest,
-                    trajectory_dump_step=ace_args.trajectory_dump_step,
-                    store_shadow_check=ace_args.store_shadow_check)
-
     simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 
     if simulation is None:
+        ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
+                        los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
+                        buffer_size=buffer_size,
+                        max_records_per_file=max_records_per_file,
+                            async_fcd_writer=async_fcd_writer,
+                            fcd_writer_queue_size=fcd_writer_queue_size,
+                        stuck_detection=stuck_detection,
+                        plateau_default_route=plateau_default_route,
+                        mpi_advance=ace_args.mpi_advance,
+                        deterministic_order=ace_args.deterministic_order,
+                        trajectory_digest=ace_args.trajectory_digest,
+                        trajectory_dump_step=ace_args.trajectory_dump_step,
+                        store_shadow_check=ace_args.store_shadow_check)
         if vehicles_path is None:
             raise ValueError("Either vehicles_path or continue_from must be specified.")
         if os.path.isdir(vehicles_path):

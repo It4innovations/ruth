@@ -245,8 +245,7 @@ class Simulation:
         return timedelta(seconds=rounded_seconds), rounded_seconds
 
     def compute_current_offset(self):
-        return min(filter(None, map(lambda v: v.time_offset if v.active else None, self.vehicles)),
-                   default=None)
+        return min((v.time_offset for v in self.vehicles if v.active), default=None)
 
     @property
     def streaming(self):
@@ -341,6 +340,8 @@ class Simulation:
         return all(not v.active for v in self.vehicles) and not self.has_pending_vehicle_buckets()
 
     def store(self, path):
+        if self.history.writer is not None:
+            self.history.flush_to_disk()
         with open(path, 'wb') as f:
             pickle.dump(self, f)
 

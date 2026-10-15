@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ruth.simulator import Simulation
 from ruth.simulator.kernels import ShortestPathsAlternatives, FirstRouteSelection, FastestPathsAlternatives, \
-    RandomRouteSelection
+    RandomRouteSelection, MPIDistributedAlternatives
 from ruth.tools.simulator import CommonArgs, prepare_simulator, AlternativesRatio, RouteSelectionRatio
 
 
@@ -33,18 +33,30 @@ def setup_common_args():
         plateau_default_route=False,
         buffer_size=1000,
         max_records_per_file=10000,
+        map_graphml=str(Path(__file__).resolve().parent / "data" /
+                        "50_16568920000002-14_321441000000016-50_020240399999985-"
+                        "14_592499399999983_2024-01-10T00-00-00.graphml"),
     )
 
 
-@pytest.fixture(params=[[0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]])
+@pytest.fixture(params=[[0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]])
 def setup_alternatives_ratio(request):
     params = request.param
+    if params[3] > 0:
+        request.getfixturevalue("native_scheduler")
     return AlternativesRatio(
         default=params[0],
         dijkstra_fastest=params[1],
         dijkstra_shortest=params[2],
         plateau_fastest=params[3]
     )
+
+
+@pytest.fixture(scope="session")
+def native_scheduler():
+    from ruth.mpi_comm.distributor import MPIDistributor
+    with MPIDistributor(threads=2):
+        yield
 
 
 @pytest.fixture
@@ -57,12 +69,10 @@ def setup_route_selection_ratio():
     )
 
 
-vehicles_path_10 = os.path.join(os.path.dirname(__file__), "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet")
 test_graphml_path = (
-    Path(__file__).resolve().parent.parent
-    / "data"
+    Path(__file__).resolve().parent / "data"
     / "50_16568920000002-14_321441000000016-50_020240399999985-"
-      "14_592499399999983_2024-01-10T00-00-00_drive-v2.graphml"
+      "14_592499399999983_2024-01-10T00-00-00.graphml"
 )
 
 
@@ -139,11 +149,13 @@ def load_fcd_history(name):
     raise FileNotFoundError(f"No fcd_history files found for {name}")
 
 def run_inner_mock(common_args, vehicles_path, alternatives_ratio, route_selection_ratio, name,
-                   distributed_alt_provider=None):
+                   distributed_alt_provider=None, end_step_fns=None):
     simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
-    end_step_fns = []
+    end_step_fns = end_step_fns or []
 
     alternatives_providers = [ShortestPathsAlternatives(), FastestPathsAlternatives()]
+    if alternatives_ratio.plateau_fastest > 0:
+        alternatives_providers.append(MPIDistributedAlternatives())
     if distributed_alt_provider is not None:
         alternatives_providers.append(distributed_alt_provider)
 
@@ -177,15 +189,23 @@ def run_inner_mock(common_args, vehicles_path, alternatives_ratio, route_selecti
     return simulator
 
 
-def compare_simulation(simulation1, simulation2, sim_1_name="sim1", sim_2_name="sim2"):
+def compare_simulation(simulation1, simulation2, sim_1_name="sim1", sim_2_name="sim2",
+                       fcd_history_1=None, fcd_history_2=None):
     assert len(simulation1.steps_info) == len(simulation2.steps_info), "Steps info mismatch"
     assert simulation1.queues_manager.queues == simulation2.queues_manager.queues, "Queues mismatch"
+
+    assert [v.id for v in simulation1.vehicles] == [v.id for v in simulation2.vehicles]
 
     # check vehicles
     for i in range(len(simulation1.vehicles)):
         assert simulation1.vehicles[i].osm_route == simulation2.vehicles[i].osm_route, f"Route mismatch at index {i}"
         assert simulation1.vehicles[i].time_offset == simulation2.vehicles[
             i].time_offset, f"Time offset mismatch at index {i}"
+
+        assert simulation1.vehicles[i].start_index == simulation2.vehicles[i].start_index
+        assert simulation1.vehicles[i].start_distance_offset == simulation2.vehicles[i].start_distance_offset
+        assert simulation1.vehicles[i].active == simulation2.vehicles[i].active
+        assert simulation1.vehicles[i].status == simulation2.vehicles[i].status
 
     # check steps_info
     for i in range(len(simulation1.steps_info)):
@@ -196,20 +216,15 @@ def compare_simulation(simulation1, simulation2, sim_1_name="sim1", sim_2_name="
         assert simulation1.steps_info[i].need_new_route == simulation2.steps_info[
             i].need_new_route, f"Need new route mismatch at index {i}"
 
-    fcd_history_1 = load_fcd_history(sim_1_name)
-    fcd_history_2 = load_fcd_history(sim_2_name)
-    assert len(fcd_history_1) == len(fcd_history_2), "FCD history mismatch"
-    for i in range(len(fcd_history_1)):
-        assert fcd_history_1.iloc[i]['timestamp'] == fcd_history_2.iloc[i]['timestamp'], f"Datetime mismatch at index {i}"
-        assert fcd_history_1.iloc[i]['node_from'] == fcd_history_2.iloc[i]['node_from'], f" Node from mismatch at index {i}"
-        assert fcd_history_1.iloc[i]['node_to'] == fcd_history_2.iloc[i]['node_to'], f"Node to mismatch at index {i}"
-        assert fcd_history_1.iloc[i]['speed_mps'] == fcd_history_2.iloc[i]['speed_mps'], f"Speed mismatch at index {i}"
-        assert fcd_history_1.iloc[i]['vehicle_id'] == fcd_history_2.iloc[i]['vehicle_id'], f"Vehicle ID mismatch at index {i}"
-        assert fcd_history_1.iloc[i]['start_offset_m'] == fcd_history_2.iloc[i]['start_offset_m'], f"Start offset mismatch at index {i}"
-        assert fcd_history_1.iloc[i]['active'] == fcd_history_2.iloc[i]['active'], f"Active mismatch at index {i}"
+    if fcd_history_1 is None:
+        fcd_history_1 = load_fcd_history(sim_1_name)
+    if fcd_history_2 is None:
+        fcd_history_2 = load_fcd_history(sim_2_name)
+    pd.testing.assert_frame_equal(fcd_history_1.reset_index(drop=True),
+                                  fcd_history_2.reset_index(drop=True), check_exact=True)
 
 
-def test_simulation(setup_common_args):
+def test_simulation(setup_common_args, regression_vehicles_path):
     setup_alternatives_ratio = AlternativesRatio(
         default=1.0,
         dijkstra_fastest=0.0,
@@ -218,7 +233,7 @@ def test_simulation(setup_common_args):
     )
     setup_route_selection_ratio = RouteSelectionRatio(no_alternative=1.0, first=0.0, random=0.0, ptdr=0.0)
 
-    simulator1 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
+    simulator1 = run_inner_mock(setup_common_args, regression_vehicles_path, setup_alternatives_ratio,
                                 setup_route_selection_ratio, "sim1")
 
     assert simulator1.current_offset is None
@@ -229,14 +244,14 @@ def test_simulation(setup_common_args):
         assert vehicle.active is False
         assert vehicle.start_index == len(vehicle.osm_route) - 2  # last segment
 
-    simulator2 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
+    simulator2 = run_inner_mock(setup_common_args, regression_vehicles_path, setup_alternatives_ratio,
                                 setup_route_selection_ratio, "sim2")
 
     simulation2 = simulator2.state
     compare_simulation(simulation1, simulation2)
 
 
-def test_simulation_download_map(setup_common_args):
+def test_simulation_with_replaced_map(setup_common_args, tmp_path, regression_vehicles_path):
     setup_alternatives_ratio = AlternativesRatio(
         default=1.0,
         dijkstra_fastest=0.0,
@@ -245,24 +260,30 @@ def test_simulation_download_map(setup_common_args):
     )
     setup_route_selection_ratio = RouteSelectionRatio(no_alternative=1.0, first=0.0, random=0.0, ptdr=0.0)
 
-    simulator1 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
+    # Work with a private copy: this test must never remove the shared map fixture.
+    import shutil
+    private_map = tmp_path / test_graphml_path.name
+    shutil.copyfile(test_graphml_path, private_map)
+    setup_common_args.map_graphml = str(private_map)
+    simulator1 = run_inner_mock(setup_common_args, regression_vehicles_path, setup_alternatives_ratio,
                                 setup_route_selection_ratio, "sim1")
 
     assert simulator1.current_offset is None
     simulation1 = simulator1.state
 
-    map_path = simulator1.sim.routing_map.file_path
-    os.remove(map_path)
+    os.remove(private_map)
+    shutil.copyfile(test_graphml_path, private_map)
 
-    simulator2 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
+    simulator2 = run_inner_mock(setup_common_args, regression_vehicles_path, setup_alternatives_ratio,
                                 setup_route_selection_ratio, "sim2")
 
     simulation2 = simulator2.state
     compare_simulation(simulation1, simulation2)
 
 
-def test_simulation_with_alt(setup_common_args, setup_alternatives_ratio, setup_route_selection_ratio):
-    simulator1 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
+def test_simulation_with_alt(setup_common_args, setup_alternatives_ratio, setup_route_selection_ratio,
+                             regression_vehicles_path):
+    simulator1 = run_inner_mock(setup_common_args, regression_vehicles_path, setup_alternatives_ratio,
                                 setup_route_selection_ratio, "sim1")
 
     assert simulator1.current_offset is None
@@ -273,16 +294,17 @@ def test_simulation_with_alt(setup_common_args, setup_alternatives_ratio, setup_
         assert vehicle.active is False
         assert vehicle.start_index == len(vehicle.osm_route) - 2  # last segment
 
-    simulator2 = run_inner_mock(setup_common_args, vehicles_path_10, setup_alternatives_ratio,
+    simulator2 = run_inner_mock(setup_common_args, regression_vehicles_path, setup_alternatives_ratio,
                                 setup_route_selection_ratio, "sim2")
 
     simulation2 = simulator2.state
     compare_simulation(simulation1, simulation2)
 
 
-def test_single_file_and_bucket_simulations_emit_same_fcd_history(setup_common_args, tmp_path):
+def test_single_file_and_bucket_simulations_emit_same_fcd_history(setup_common_args, tmp_path,
+                                                               regression_vehicles_path):
     dataset_path = tmp_path / "vehicles_dataset"
-    write_bucket_dataset_copy(Path(vehicles_path_10), dataset_path)
+    write_bucket_dataset_copy(Path(regression_vehicles_path), dataset_path)
 
     alternatives_ratio = AlternativesRatio(
         default=0.0,
@@ -299,7 +321,7 @@ def test_single_file_and_bucket_simulations_emit_same_fcd_history(setup_common_a
 
     single_steps, single_fcd = run_input_equivalence_simulation(
         setup_common_args,
-        Path(vehicles_path_10),
+        Path(regression_vehicles_path),
         alternatives_ratio,
         route_selection_ratio,
         tmp_path / "single_run",
@@ -319,3 +341,62 @@ def test_single_file_and_bucket_simulations_emit_same_fcd_history(setup_common_a
         single_fcd.reset_index(drop=True),
         dataset_fcd.reset_index(drop=True),
     )
+
+
+def test_continue_from_matches_uninterrupted(setup_common_args, setup_alternatives_ratio,
+                                            setup_route_selection_ratio, regression_vehicles_path,
+                                            tmp_path):
+    full = run_inner_mock(setup_common_args, regression_vehicles_path, setup_alternatives_ratio,
+                          setup_route_selection_ratio, "full")
+    partial = run_inner_mock(setup_common_args, regression_vehicles_path, setup_alternatives_ratio,
+                             setup_route_selection_ratio, "partial",
+                             end_step_fns=[lambda state: state.number_of_steps >= 5])
+    assert not partial.state.finished()
+    checkpoint = tmp_path / "resume.pickle"
+    partial.state.store(checkpoint)
+    setup_common_args.continue_from = str(checkpoint)
+    resumed = run_inner_mock(setup_common_args, regression_vehicles_path, setup_alternatives_ratio,
+                             setup_route_selection_ratio, "resumed")
+    assert resumed.state.finished()
+    combined = pd.concat([load_fcd_history("partial"), load_fcd_history("resumed")], ignore_index=True)
+    compare_simulation(full.state, resumed.state, fcd_history_1=load_fcd_history("full"),
+                       fcd_history_2=combined)
+
+
+def test_continue_from_accepts_existing_fcd_parts(setup_common_args, regression_vehicles_path, tmp_path):
+    alternatives = AlternativesRatio(default=1.0, dijkstra_fastest=0.0,
+                                     dijkstra_shortest=0.0, plateau_fastest=0.0)
+    selection = RouteSelectionRatio(no_alternative=1.0, first=0.0, random=0.0, ptdr=0.0)
+    simulator = prepare_simulator(setup_common_args, regression_vehicles_path, alternatives, selection)
+    simulator.simulate([], [], max_steps=2)
+    checkpoint = tmp_path / "existing-history.pickle"
+    simulator.state.store(checkpoint)
+    existing = list(Path.cwd().glob("fcd_history-part*.h5"))
+    assert existing
+    setup_common_args.continue_from = str(checkpoint)
+    resumed = prepare_simulator(setup_common_args, regression_vehicles_path, alternatives, selection)
+    assert resumed.state.number_of_steps == 2
+    assert all(path.exists() for path in existing)
+
+
+def test_checkpoint_does_not_duplicate_flushed_history(setup_common_args, regression_vehicles_path, tmp_path):
+    from ruth.simulator import SingleNodeSimulator
+    alternatives = AlternativesRatio(default=1.0, dijkstra_fastest=0.0,
+                                     dijkstra_shortest=0.0, plateau_fastest=0.0)
+    selection = RouteSelectionRatio(no_alternative=1.0, first=0.0, random=0.0, ptdr=0.0)
+    simulator = prepare_simulator(setup_common_args, regression_vehicles_path, alternatives, selection)
+    checkpoint = tmp_path / "buffered-history.pickle"
+
+    def stop_and_save(state):
+        if state.number_of_steps == 2:
+            state.store(checkpoint)
+            return True
+        return False
+
+    simulator.simulate([], [], end_step_fns=[stop_and_save])
+    # Load directly to isolate serialization from the separate CLI file-existence bug.
+    resumed = SingleNodeSimulator(Simulation.load(checkpoint))
+    resumed.simulate([], [], max_steps=3)
+    files = sorted(Path.cwd().glob("fcd_history-part*.h5"))
+    combined = pd.concat([Simulation.load_h5_df(str(path))["df"] for path in files], ignore_index=True)
+    assert not combined.duplicated().any(), "Checkpoint replay duplicated FCD rows already flushed by graceful stop"

@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 import os
 import tempfile
@@ -12,20 +13,17 @@ from ruth.simulator.common import load_vehicles
 from ruth.simulator.kernels import ShortestPathsAlternatives
 from ruth.tools.simulator import CommonArgs, prepare_simulator, AlternativesRatio, RouteSelectionRatio
 
-vehicles_path = os.path.join(
-    os.path.dirname(__file__),
-    "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet",
-)
+
 
 
 @pytest.fixture
-def setup_vehicle():
-    vehicles, _, _ = load_vehicles(vehicles_path)
+def setup_vehicle(regression_vehicles_path):
+    vehicles, _, _ = load_vehicles(regression_vehicles_path)
     return vehicles[0]
 
 
 @pytest.fixture
-def setup_simulator():
+def setup_simulator(regression_vehicles_path):
     common_args = CommonArgs(
         task_id="test",
         departure_time=datetime(2021, 1, 1, 0, 0, 0),
@@ -44,6 +42,9 @@ def setup_simulator():
         plateau_default_route=False,
         buffer_size=1000,
         max_records_per_file=10000,
+        map_graphml=str(Path(__file__).resolve().parent / "data" /
+                        "50_16568920000002-14_321441000000016-50_020240399999985-"
+                        "14_592499399999983_2024-01-10T00-00-00.graphml"),
     )
 
     alternatives_ratio = AlternativesRatio(
@@ -60,7 +61,7 @@ def setup_simulator():
         ptdr=0.0
     )
 
-    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+    simulator = prepare_simulator(common_args, regression_vehicles_path, alternatives_ratio, route_selection_ratio)
     yield simulator
 
     # Cleanup: remove HDF5 file if it exists
@@ -169,3 +170,9 @@ def test_update_map_speeds_no_overlap(setup_simulator):
 # TODO: test sim update fcds
 # TODO: test drop old records
 # TODO: test change baseline alts
+
+
+def test_current_offset_includes_zero_departure(setup_simulator):
+    state = setup_simulator.state
+    state.vehicles[0].time_offset = timedelta(0)
+    assert state.compute_current_offset() == timedelta(0)
