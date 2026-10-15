@@ -28,6 +28,7 @@ class Simulator:
         self.sim = sim
         self.current_offset = self.sim.compute_current_offset()
         self._store_population_done = False
+        self._advance_state_ready = False
         self._vehicle_index = None
 
     @property
@@ -82,6 +83,15 @@ class Simulator:
 
         if self.sim.last_saved_speeds:
             self.sim.routing_map.update_current_speeds(self.sim.last_saved_speeds)
+            # Native routing providers loaded their own speed tables above.
+            for provider in alternatives_providers:
+                provider.update_map(self.sim.last_saved_speeds)
+
+        if self._use_mpi_advance() and not self._advance_state_ready:
+            if step > 0:
+                from .mpi_advance import restore_global_view
+                restore_global_view(self.sim.global_view)
+            self._advance_state_ready = True
 
         if step == 0 and not self.sim.streaming:
             for alternatives_provider in alternatives_providers:

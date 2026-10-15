@@ -480,6 +480,24 @@ def _reorder_fcds_to_serial(fcd_arrays: dict, vehicles_to_be_moved: List[Vehicle
     return {key: np.asarray(arr)[perm] for key, arr in fcd_arrays.items()}
 
 
+def restore_global_view(global_view):
+    """Seed every ACE replica from the checkpoint before advancing vehicles."""
+    fcds = global_view.__getstate__()["fcds"]
+    # Also support a new simulator wrapping an existing in-process state.
+    ruthlib.advance_drop_old(float("inf"))
+    ruthlib.advance_add_local_fcds(
+        np.ascontiguousarray(fcds["datetime_seconds"], dtype=np.float64),
+        np.ascontiguousarray(fcds["vehicle_id"], dtype=np.int32),
+        np.ascontiguousarray(fcds["segment_id"], dtype=np.int64),
+        np.ascontiguousarray(fcds["offset_from_start"], dtype=np.float64),
+        np.ascontiguousarray(fcds["vehicle_speed_mps"], dtype=np.float64),
+    )
+    ruthlib.sync_advance()
+    # Bootstrap records already belong to the stored history; never replay them.
+    ruthlib.get_advance_fcds()
+    ruthlib.get_advance_deltas()
+
+
 def advance_vehicles_mpi(vehicles_to_be_moved: List[Vehicle], departure_time,
                          routing_map: Map, queues_manager: QueuesManager,
                          los_vehicles_tolerance, drop_before_time=None,

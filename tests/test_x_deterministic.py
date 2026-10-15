@@ -400,3 +400,72 @@ def test_checkpoint_does_not_duplicate_flushed_history(setup_common_args, regres
     files = sorted(Path.cwd().glob("fcd_history-part*.h5"))
     combined = pd.concat([Simulation.load_h5_df(str(path))["df"] for path in files], ignore_index=True)
     assert not combined.duplicated().any(), "Checkpoint replay duplicated FCD rows already flushed by graceful stop"
+
+
+def test_ace_continue_from_with_retained_traffic(regression_vehicles_path, tmp_path):
+    """A fresh ACE process must restore traffic before its first resumed move."""
+    import hashlib
+    import re
+    import subprocess
+    import sys
+
+    project = Path(__file__).resolve().parent.parent
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join([
+        str(project), str(project / "binding/build"), str(project / "binding/build/lib")]))
+    config = {
+        "ruth-simulator": {
+            "departure-time": "2024-01-10 00:00:00", "round-frequency-s": 5,
+            "map-update-freq-s": 1, "los-vehicles-tolerance-s": 5,
+            "travel-time-limit-perc": 0.1, "seed": 7,
+            "plateau-default-route": False, "map-graphml": str(test_graphml_path),
+        },
+        "run": {"vehicles-path": regression_vehicles_path},
+        "alternatives": {"dijkstra-fastest": 0.0, "dijkstra-shortest": 0.0, "plateau-fastest": 1.0},
+        "route-selection": {"first": 1.0, "random": 0.0, "ptdr": 0.0},
+        "ace": {"threads": 2, "mpi-advance": True, "deterministic-order": True,
+                "trajectory-digest": True},
+    }
+
+    def run(directory, name, max_steps=None, checkpoint=None):
+        directory.mkdir(exist_ok=True)
+        (directory / "data").mkdir(exist_ok=True)
+        args = json.loads(json.dumps(config))
+        args["ruth-simulator"]["out"] = str(directory / f"{name}.pickle")
+        if max_steps is not None:
+            args["ruth-simulator"]["max-steps"] = max_steps
+        if checkpoint is not None:
+            args["ruth-simulator"]["continue-from"] = str(checkpoint)
+        path = directory / f"{name}.json"
+        path.write_text(json.dumps(args), encoding="utf-8")
+        log = directory / f"{name}.log"
+        with log.open("w") as stream:
+            result = subprocess.run([sys.executable, "-m", "ruth.tools.simulator_conf",
+                                     "--config-file", str(path), "run"],
+                                    cwd=directory, env=env, stdout=stream,
+                                    stderr=subprocess.STDOUT, timeout=180)
+        assert result.returncode == 0, log.read_text()[-6000:]
+        return Simulation.load(directory / f"{name}.pickle"), log
+
+    full_dir, split_dir = tmp_path / "full", tmp_path / "split"
+    full, full_log = run(full_dir, "full")
+    partial, partial_log = run(split_dir, "partial", max_steps=20)
+    assert not partial.finished() and partial.number_of_steps == 20
+    assert type(partial.global_view._cpp_view).__module__ == "globalview_cpp"
+    assert len(partial.global_view.__getstate__()["fcds"]) > 0
+    parts = {p: hashlib.sha256(p.read_bytes()).hexdigest()
+             for p in split_dir.glob("fcd_history-part*.h5")}
+    resumed, resumed_log = run(split_dir, "resumed", checkpoint=split_dir / "partial.pickle")
+    assert full.finished() and resumed.finished()
+    assert all(hashlib.sha256(p.read_bytes()).hexdigest() == digest for p, digest in parts.items())
+
+    def history(directory):
+        return pd.concat([Simulation.load_h5_df(str(p))["df"]
+                          for p in sorted(directory.glob("fcd_history-part*.h5"))], ignore_index=True)
+
+    compare_simulation(full, resumed, fcd_history_1=history(full_dir), fcd_history_2=history(split_dir))
+    for kind in ("trajectory_digest", "task_digest"):
+        def digests(logs):
+            return [(int(step), digest) for log in logs
+                    for step, digest in re.findall(rf"{kind}: step=(\d+).*?digest=([0-9a-f]+)", log.read_text())]
+        expected, actual = digests([full_log]), digests([partial_log, resumed_log])
+        assert expected and expected == actual
