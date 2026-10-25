@@ -270,8 +270,6 @@ private:
   std::vector<SegmentGeom> segments_;
   std::unordered_map<int32_t, int32_t> slot_by_vehicle_id_;
 
-  static const SegmentGeom kMissingSegment;
-
   void fill_segment_desc(SegmentDesc& desc, int64_t routing_id) const;
 };
 

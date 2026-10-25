@@ -252,7 +252,7 @@ class Vehicle:
     def set_current_travel_time(self, travel_time: float, map_id: int):
         self.current_travel_time = CurrentTravelTime(travel_time=travel_time,
                                                      map_id=map_id,
-                                                     start_segment_index=self.start_index + 1)
+                                                     start_segment_index=self.next_routing_start.index)
 
     def get_travel_time_limit(self, map_id: int, travel_time_limit_perc: float) -> Optional[float]:
         assert self.current_travel_time
@@ -282,9 +282,17 @@ class Vehicle:
             return
 
         tt_index = self.current_travel_time.start_segment_index
-        if tt_index != node_index:
-            passed_travel_time = routing_map.get_segment_travel_time(self.osm_route[tt_index],
-                                                                     self.osm_route[tt_index + 1])
+        if tt_index is None or not 0 <= tt_index <= node_index < len(self.osm_route):
+            raise ValueError(
+                f"vehicle {self.id}: invalid travel-time index {tt_index} for "
+                f"routing index {node_index}, position {self.start_index} "
+                f"+ {self.start_distance_offset} m, route length {len(self.osm_route)}"
+            )
+        if tt_index < node_index:
+            passed_travel_time = sum(
+                routing_map.get_segment_travel_time(self.osm_route[i], self.osm_route[i + 1])
+                for i in range(tt_index, node_index)
+            )
             self.subtract_from_travel_time(passed_travel_time, node_index)
 
         if suggested_route_travel_time is None:

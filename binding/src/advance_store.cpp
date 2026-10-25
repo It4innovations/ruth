@@ -37,8 +37,6 @@ namespace {
 
 }  // namespace
 
-const SegmentGeom VehicleStore::kMissingSegment{};
-
 VehicleStore& VehicleStore::instance() {
   static VehicleStore inst;
   return inst;
@@ -342,8 +340,13 @@ void VehicleStore::set_segment_closed(int64_t routing_id, int32_t is_closed) {
 }
 
 const SegmentGeom& VehicleStore::segment(int64_t routing_id) const {
-  if (routing_id < 0 || static_cast<size_t>(routing_id) >= segments_.size()) {
-    return kMissingSegment;
+  if (routing_id < 0 || static_cast<size_t>(routing_id) >= segments_.size() ||
+      segments_[static_cast<size_t>(routing_id)].valid == 0) {
+    std::fprintf(stderr,
+                 "[ruth] VehicleStore::segment: missing geometry for routing_id %lld "
+                 "(table holds %zu entries).\n",
+                 static_cast<long long>(routing_id), segments_.size());
+    fatal();
   }
   return segments_[static_cast<size_t>(routing_id)];
 }

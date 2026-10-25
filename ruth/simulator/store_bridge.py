@@ -105,6 +105,7 @@ def initialize(vehicles: Sequence, routing_map) -> None:
     max_routing_id = max(route_segment_ids) if route_segment_ids else 0
 
     ruthlib.advance_store_reset(n, acc, int(max_routing_id))
+    routing_map._store_pushed_segments = set()
 
     _push_segment_geometry(routing_map, route_segment_ids)
 
@@ -291,7 +292,6 @@ def _push_segment_geometry(routing_map, route_segment_ids) -> None:
                    if rid >= 0 and rid not in pushed})
     if not seen:
         return
-    pushed.update(seen)
 
     rid_arr = np.asarray(seen, dtype=np.int64)
     length_m = np.empty(len(seen), dtype=np.float64)
@@ -306,6 +306,7 @@ def _push_segment_geometry(routing_map, route_segment_ids) -> None:
         lanes[j] = segment.lanes
         closed[j] = 1 if routing_map.get_current_max_speed(node_from, node_to) == 0 else 0
     ruthlib.advance_store_set_segments(rid_arr, length_m, max_kph, lanes, closed)
+    pushed.update(seen)
 
 
 def tasks_for(vehicles: Sequence, task_dtype) -> np.ndarray:
