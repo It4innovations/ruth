@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <map>
 #include <vector>
 #include <deque>
 #include <shared_mutex>
@@ -10,6 +11,30 @@
 #include <set>
 #include <mutex>
 #include <unordered_set>
+#include <cstdio>
+#include <cstdlib>
+
+// A fatal check should tear down the whole job rather than one rank. This header
+// is compiled into ruth and ruthlib, which link ace, AND into globalview_cpp,
+// which deliberately does not: ruth runs single-process when MPI is absent
+// (run_inner's "MPI not available" branch), and simulation.py falls back to the
+// pure-Python GlobalView if globalview_cpp cannot load. Linking ace here would
+// give that module an MPI dependency and silently cost single-process runs the
+// C++ GlobalView. CMake defines RUTH_WITH_ACE only for the targets that link it.
+#ifdef RUTH_WITH_ACE
+#include "comm/comm_interface.hpp"
+#endif
+
+// Debug check for the ordering invariant get_segment_speed's dedup rests on.
+// Defined by CMake in Debug / RelWithDebInfo builds (RUTH_GV_CHECK_FCD_ORDER);
+// compiled out entirely otherwise, so Release pays nothing. A compile-time
+// toggle rather than a runtime one on purpose: this verifies a structural
+// property of the code, so it belongs to the build, not to a config file.
+#ifdef RUTH_GV_CHECK_FCD_ORDER
+inline constexpr bool kCheckFcdOrder = true;
+#else
+inline constexpr bool kCheckFcdOrder = false;
+#endif
 
 struct FCDRecord {
     double datetime_seconds;      // Timestamp as seconds (epoch)
@@ -137,12 +162,61 @@ public:
         }
         return total;
     }
+
+    const std::deque<FCDBatch>& batches() const {
+        return fcd_batches_;
+    }
 };
 
 class GlobalView {
 private:
     // Hash map: segment_id -> segment's FCD records
     std::unordered_map<int64_t, SegmentGlobalView> segments_;
+
+    // Verify the invariant get_segment_speed's dedup depends on: in storage
+    // order, a vehicle's records on a segment never go backwards in time, so the
+    // LAST one kept is its most recent one. Compiled out unless
+    // RUTH_GV_CHECK_FCD_ORDER (see kCheckFcdOrder above).
+    //
+    // This holds today because a vehicle is evaluated by exactly one workload on
+    // one rank, advance_one_vehicle emits its samples in increasing datetime,
+    // and evaluate_batch, append_fcds, the all-gather and add_batch_raw's
+    // group-by-segment all concatenate whole blocks without reordering inside
+    // them. Nothing enforces that chain, which is why it is checked rather than
+    // merely asserted in a comment.
+    //
+    // Fails loud: a wrong segment speed feeds update_current_speeds -> routing
+    // -> trajectories, where it would surface much later as an unexplained
+    // divergence rather than as a fault here.
+    static void check_per_vehicle_datetime_order(int64_t segment_id,
+                                                 const std::vector<FCDRecord>& fcds) {
+        std::unordered_map<int, double> last_seen;
+        last_seen.reserve(fcds.size());
+
+        for (const auto& fcd : fcds) {
+            const auto seen = last_seen.find(fcd.vehicle_id);
+            if (seen != last_seen.end() && fcd.datetime_seconds < seen->second) {
+                std::fprintf(stderr,
+                    "[ruth] GlobalView ordering invariant VIOLATED on segment %lld: "
+                    "vehicle %d has a record at t=%.9f stored after one at t=%.9f. "
+                    "get_segment_speed keeps the last record per vehicle, so it is no "
+                    "longer keeping the most recent one and the segment speed is wrong. "
+                    "Fix: select by max datetime explicitly instead of by position "
+                    "(see the note above get_segment_speed in globalview.hpp).\n",
+                    static_cast<long long>(segment_id), fcd.vehicle_id,
+                    fcd.datetime_seconds, seen->second);
+                std::fflush(stderr);
+#ifdef RUTH_WITH_ACE
+                // instance() is null before ACE is initialised; still terminate.
+                if (auto comm = ace::CommInterface::instance()) {
+                    comm->abort();
+                }
+#endif
+                std::abort();
+            }
+            last_seen[fcd.vehicle_id] = fcd.datetime_seconds;
+        }
+    }
 
     static constexpr double MILE_TO_METERS = 1609.344;
     static constexpr double ENDING_LENGTH = 200.0;
@@ -163,18 +237,25 @@ public:
         segments_[fcd.segment_id].add(fcd);
     }
 
-    void add_batch(const std::vector<FCDRecord>& fcds) {
-        if (fcds.empty()) return;
+    // Single-copy batch add from a raw contiguous buffer: records are copied
+    // once from `data` into per-segment vectors, which are then moved into
+    // storage. Safe to call with the GIL released (data must stay alive).
+    void add_batch_raw(const FCDRecord* data, size_t n) {
+        if (n == 0) return;
         std::unordered_map<int64_t, std::vector<FCDRecord>> by_segment;
         by_segment.reserve(32);  // Pre-allocate for common case
 
-        for (const auto& fcd : fcds) {
-            by_segment[fcd.segment_id].push_back(fcd);
+        for (size_t i = 0; i < n; ++i) {
+            by_segment[data[i].segment_id].push_back(data[i]);
         }
 
         for (auto& [segment_id, segment_fcds] : by_segment) {
-            segments_[segment_id].add_batch(segment_fcds);
+            segments_[segment_id].add_batch(std::move(segment_fcds));
         }
+    }
+
+    void add_batch(const std::vector<FCDRecord>& fcds) {
+        add_batch_raw(fcds.data(), fcds.size());
     }
 
     int number_of_vehicles_ahead(
@@ -238,6 +319,30 @@ public:
         );
     }
 
+    // Average of the per-vehicle speeds currently recorded on this segment.
+    //
+    // std::map rather than unordered_map, for ONE reason: the sum below must run
+    // in a fixed order. Floating-point addition is not associative, and
+    // unordered_map iteration order follows insertion order, which under the
+    // distributed advance is the all-gather order and so varies with rank count.
+    // Measured drift on the returned speed: ~9e-16, on ~60% of reorderings.
+    // round_speed() in map.py quantizes to whole km/h and hides that in all but
+    // a vanishingly rare case where the average sits within an ULP of a .5
+    // boundary -- but this speed feeds update_current_speeds -> routing ->
+    // trajectories, and ordering the map is cheaper than reasoning about when
+    // the quantization saves us.
+    //
+    // NOTE on the dedup: keeping the LAST record seen per vehicle is keeping its
+    // most recent one, but only because of an invariant nothing here enforces --
+    // a vehicle's records reach this container contiguous and in increasing
+    // datetime. advance_one_vehicle emits them that way; one vehicle is
+    // evaluated by exactly one workload on one rank; and evaluate_batch,
+    // append_fcds, the all-gather and add_batch_raw's group-by-segment all
+    // concatenate whole blocks without reordering within them. IF THAT EVER
+    // BREAKS -- a queue split across ranks, a parallel merge that interleaves
+    // one vehicle's samples -- this silently starts picking an arbitrary sample
+    // rather than the latest, and the fix is to select by max datetime
+    // explicitly instead of by position.
     double get_segment_speed(int64_t segment_id) const {
         const auto it = segments_.find(segment_id);
         if (it == segments_.end()) {
@@ -249,14 +354,20 @@ public:
             return std::numeric_limits<double>::quiet_NaN();
         }
 
-        std::unordered_map<int, double> speeds;
-        speeds.reserve(fcds.size() / 2);  // Pre-allocate
+        // Checked here, at the point of use, rather than at insertion: this is
+        // the only place the ordering actually matters, and checking it here
+        // needs no per-segment bookkeeping carried between calls.
+        if constexpr (kCheckFcdOrder) {
+            check_per_vehicle_datetime_order(segment_id, fcds);
+        }
+
+        std::map<int, double> speeds;
 
         for (const auto& fcd : fcds) {
             speeds[fcd.vehicle_id] = fcd.vehicle_speed_mps;
         }
 
-        // Calculate average
+        // Calculate average (vehicle-id order, see above)
         double sum = 0.0;
         for (const auto& [vid, speed] : speeds) {
             sum += speed;
@@ -298,22 +409,39 @@ public:
         segments_.clear();
     }
 
-    std::vector<FCDRecord> export_all_fcds() const {
-        std::vector<FCDRecord> all_fcds;
+    size_t total_fcds() const {
+        size_t total = 0;
         for (const auto& [segment_id, seg_view] : segments_) {
-            auto fcds = seg_view.get_fcds();
-            all_fcds.insert(all_fcds.end(), fcds.begin(), fcds.end());
+            total += seg_view.size();
         }
+        return total;
+    }
 
+    // Copy every stored record into `out`, which must hold total_fcds()
+    // entries. Writes straight from the internal batches — no intermediate
+    // per-segment vectors.
+    void export_all_fcds_into(FCDRecord* out) const {
+        for (const auto& [segment_id, seg_view] : segments_) {
+            for (const auto& batch : seg_view.batches()) {
+                std::memcpy(out, batch.fcds.data(), batch.fcds.size() * sizeof(FCDRecord));
+                out += batch.fcds.size();
+            }
+        }
+    }
+
+    std::vector<FCDRecord> export_all_fcds() const {
+        std::vector<FCDRecord> all_fcds(total_fcds());
+        export_all_fcds_into(all_fcds.data());
         return all_fcds;
     }
 
-    void import_all_fcds(const std::vector<FCDRecord>& fcds) {
+    void import_all_fcds_raw(const FCDRecord* data, size_t n) {
         segments_.clear();
+        add_batch_raw(data, n);
+    }
 
-        for (const auto& fcd : fcds) {
-            segments_[fcd.segment_id].add(fcd);
-        }
+    void import_all_fcds(const std::vector<FCDRecord>& fcds) {
+        import_all_fcds_raw(fcds.data(), fcds.size());
     }
 };
 

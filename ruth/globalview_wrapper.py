@@ -10,11 +10,14 @@ from datetime import timedelta
 from typing import Dict, List, Optional, Set, TYPE_CHECKING
 import math
 
+import numpy as np
+
 from .utils import datetime_to_timestamp
 
 try:
     from globalview_cpp import GlobalView as CppGlobalView
     from globalview_cpp import FCDRecord as CppFCDRecord
+    from globalview_cpp import fcd_dtype as FCD_DTYPE
 except ImportError as e:
     raise ImportError(
         "C++ GlobalView module (globalview_cpp) not found"
@@ -80,19 +83,19 @@ class GlobalView:
         if not fcds:
             return
 
-        cpp_fcds = []
-        for fcd in fcds:
-            segment_id_int = self._segment_id_to_int(fcd.segment.id)
-            cpp_fcd = CppFCDRecord(
+        # One structured array crosses the boundary in a single copy instead of
+        # a Python CppFCDRecord object per record plus a list conversion.
+        arr = np.empty(len(fcds), dtype=FCD_DTYPE)
+        for i, fcd in enumerate(fcds):
+            arr[i] = (
                 datetime_to_timestamp(fcd.datetime),
                 fcd.vehicle_id,
-                segment_id_int,
+                self._segment_id_to_int(fcd.segment.id),
                 fcd.offset_from_start,
                 fcd.vehicle_speed_mps,
             )
-            cpp_fcds.append(cpp_fcd)
 
-        self._cpp_view.add_batch(cpp_fcds)
+        self._cpp_view.add_batch_array(arr)
 
         # Track modifications
         for fcd in fcds:
@@ -104,6 +107,61 @@ class GlobalView:
                     self._car_to_segment[fcd.vehicle_id] = fcd.segment.id
             else:
                 self._car_to_segment[fcd.vehicle_id] = fcd.segment.id
+
+    def add_batch_columns(self, columns):
+        """Batch-add FCDs already held as numeric columns (FCDColumns).
+
+        Same effect as add_batch, without building a CppFCDRecord or an
+        FCDRecord per sample. Two things add_batch does per record have to be
+        preserved, and both reduce to work per DISTINCT segment or vehicle:
+
+          * every segment touched is marked modified; and
+          * when a vehicle's segment CHANGES, the segment it left is marked
+            modified too -- otherwise its speed never gets recomputed after the
+            last car leaves it.
+
+        `columns.segment_id` already holds routing ids, so no conversion is
+        needed on the way into C++.
+        """
+        n = len(columns)
+        if n == 0:
+            return
+
+        # Field names come from PYBIND11_NUMPY_DTYPE in globalview_bindings.cpp;
+        # assigning by name means a rename there fails here rather than silently
+        # writing the wrong column.
+        arr = np.empty(n, dtype=FCD_DTYPE)
+        arr["datetime_seconds"] = columns.datetime_seconds
+        arr["vehicle_id"] = columns.vehicle_id
+        arr["segment_id"] = columns.segment_id
+        arr["offset_from_start"] = columns.offset_from_start
+        arr["vehicle_speed_mps"] = columns.vehicle_speed_mps
+        self._cpp_view.add_batch_array(arr)
+
+        # Every segment in the batch is modified. One conversion per distinct
+        # routing id rather than one per record.
+        for routing_id in np.unique(columns.segment_id):
+            self._modified_segments.add(self._routing_map.int_to_segment_id(int(routing_id)))
+
+        # A vehicle's last sample in this batch is the segment it ends on; that
+        # is what add_batch would have left in _car_to_segment, since it applies
+        # the records in order.
+        vehicle_id = np.asarray(columns.vehicle_id)
+        segment_id = np.asarray(columns.segment_id)
+        order = np.lexsort((np.arange(n), vehicle_id))
+        sorted_vehicles = vehicle_id[order]
+        is_last = np.empty(n, dtype=bool)
+        is_last[:-1] = sorted_vehicles[:-1] != sorted_vehicles[1:]
+        is_last[-1] = True
+        last_index = order[is_last]
+
+        for i in last_index:
+            vid = int(vehicle_id[i])
+            new_segment = self._routing_map.int_to_segment_id(int(segment_id[i]))
+            old_segment = self._car_to_segment.get(vid)
+            if old_segment is not None and old_segment != new_segment:
+                self._modified_segments.add(old_segment)
+            self._car_to_segment[vid] = new_segment
 
     def number_of_vehicles_ahead(self, datetime, segment_id, tolerance=None, vehicle_id=-1, vehicle_offset_m=0) -> int:
         tolerance = tolerance if tolerance is not None else timedelta(seconds=0)
@@ -172,20 +230,10 @@ class GlobalView:
             self._modified_segments.add(original_segment_id)
 
     def __getstate__(self):
-        cpp_fcds = self._cpp_view.export_all_fcds()
-
-        serializable_fcds = []
-        for fcd in cpp_fcds:
-            serializable_fcds.append({
-                'datetime_seconds': fcd.datetime_seconds,
-                'vehicle_id': fcd.vehicle_id,
-                'segment_id': fcd.segment_id,
-                'offset_from_start': fcd.offset_from_start,
-                'vehicle_speed_mps': fcd.vehicle_speed_mps,
-            })
-
+        # Structured array: one contiguous buffer in the pickle instead of a
+        # dict per record.
         return {
-            'fcds': serializable_fcds,
+            'fcds': self._cpp_view.export_all_fcds_array(),
             'car_to_segment': self._car_to_segment,
             'modified_segments': self._modified_segments,
         }
@@ -200,14 +248,16 @@ class GlobalView:
         self._modified_segments = state['modified_segments']
 
         # Import FCDs back into C++ implementation
-        cpp_fcds = []
-        for fcd_dict in state['fcds']:
-            cpp_fcd = CppFCDRecord(fcd_dict['datetime_seconds'], fcd_dict['vehicle_id'], fcd_dict['segment_id'],
-                fcd_dict['offset_from_start'], fcd_dict['vehicle_speed_mps']
-            )
-            cpp_fcds.append(cpp_fcd)
-
-        self._cpp_view.import_all_fcds(cpp_fcds)
+        fcds = state['fcds']
+        if isinstance(fcds, np.ndarray):
+            self._cpp_view.import_all_fcds_array(fcds)
+        else:
+            # Pickles written before the structured-array format: list of dicts
+            arr = np.empty(len(fcds), dtype=FCD_DTYPE)
+            for i, d in enumerate(fcds):
+                arr[i] = (d['datetime_seconds'], d['vehicle_id'], d['segment_id'],
+                          d['offset_from_start'], d['vehicle_speed_mps'])
+            self._cpp_view.import_all_fcds_array(arr)
 
     def set_routing_map(self, routing_map):
         self._routing_map = routing_map

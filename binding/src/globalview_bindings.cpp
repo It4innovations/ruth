@@ -1,14 +1,23 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/numpy.h>
 #include "globalview.hpp"
 
 namespace py = pybind11;
+
+using FCDArray = py::array_t<FCDRecord, py::array::c_style | py::array::forcecast>;
 
 /**
  * Python bindings for the C++ GlobalView implementation
  */
 PYBIND11_MODULE(globalview_cpp, m) {
     m.doc() = "C++ implementation of GlobalView with spatial indexing";
+
+    // Structured-array view of FCDRecord: a NumPy array with this dtype maps
+    // byte-for-byte onto the POD, so batches cross the boundary without
+    // creating per-record Python objects.
+    PYBIND11_NUMPY_DTYPE(FCDRecord, datetime_seconds, vehicle_id, segment_id,
+                         offset_from_start, vehicle_speed_mps);
 
     // Bind FCDRecord struct
     py::class_<FCDRecord>(m, "FCDRecord")
@@ -33,6 +42,16 @@ PYBIND11_MODULE(globalview_cpp, m) {
         .def("add_batch", &GlobalView::add_batch,
             py::arg("fcds"),
             "Add multiple FCD records in batch (more efficient for bulk operations)")
+        .def("add_batch_array",
+            [](GlobalView& self, const FCDArray& fcds) {
+                auto buf = fcds.request();
+                const auto* data = static_cast<const FCDRecord*>(buf.ptr);
+                const auto n = static_cast<size_t>(buf.size);
+                py::gil_scoped_release release;
+                self.add_batch_raw(data, n);
+            },
+            py::arg("fcds"),
+            "Add records from a NumPy structured array (fcd_dtype); single copy, GIL released")
         .def("number_of_vehicles_ahead",
             &GlobalView::number_of_vehicles_ahead,
             py::arg("datetime_seconds"),
@@ -66,6 +85,7 @@ PYBIND11_MODULE(globalview_cpp, m) {
         .def("drop_old",
             &GlobalView::drop_old,
             py::arg("dt_threshold"),
+            py::call_guard<py::gil_scoped_release>(),
             "Remove FCD records older than threshold, returns modified segments")
         .def("clear",
             &GlobalView::clear,
@@ -76,5 +96,27 @@ PYBIND11_MODULE(globalview_cpp, m) {
         .def("import_all_fcds",
             &GlobalView::import_all_fcds,
             py::arg("fcds"),
-            "Import FCD records from serialization (unpickling)");
+            "Import FCD records from serialization (unpickling)")
+        .def("export_all_fcds_array",
+            [](const GlobalView& self) {
+                const size_t n = self.total_fcds();
+                py::array_t<FCDRecord> arr(static_cast<py::ssize_t>(n));
+                auto* out = static_cast<FCDRecord*>(arr.request().ptr);
+                py::gil_scoped_release release;
+                self.export_all_fcds_into(out);
+                return arr;
+            },
+            "Export all FCD records as a NumPy structured array (fcd_dtype); single copy")
+        .def("import_all_fcds_array",
+            [](GlobalView& self, const FCDArray& fcds) {
+                auto buf = fcds.request();
+                const auto* data = static_cast<const FCDRecord*>(buf.ptr);
+                const auto n = static_cast<size_t>(buf.size);
+                py::gil_scoped_release release;
+                self.import_all_fcds_raw(data, n);
+            },
+            py::arg("fcds"),
+            "Import records from a NumPy structured array (fcd_dtype); single copy, GIL released");
+
+    m.attr("fcd_dtype") = py::dtype::of<FCDRecord>();
 }

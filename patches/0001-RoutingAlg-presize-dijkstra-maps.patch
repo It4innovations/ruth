@@ -1,0 +1,146 @@
+From e02f45b7afe163a2e2998f8492a39c354455cae7 Mon Sep 17 00:00:00 2001
+From: Joao Barbosa <j.g.barbosa@outlook.pt>
+Date: Sun, 23 Aug 2026 10:01:33 +0100
+Subject: [PATCH] perf: pre-size Dijkstra visited maps, LTO, FindPlateaus copy
+ fix
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Adaptive pre-sizing of the per-query visited maps: profiling 50K-vehicle
+  runs (perf, 199 Hz, 141K samples/rank) showed ~20% of all cycles in
+  dense_hashtable::resize_delta + memmove — every query re-climbing the
+  bucket-growth ladder from a small initial map. Per-thread rolling hints
+  (max(hint/2, observed)) seed the forth/back maps; decay keeps one huge
+  query from pinning the bucket count high (oversized maps would slow
+  FindPlateaus, which iterates buckets). FindPlateaus' processed set is
+  pre-sized to its exact upper bound.
+- Link-time optimization on librouting (CheckIPOSupported): the Dijkstra
+  inner loops call tiny graph accessors (GetEdgesIn/Out,
+  GetStart/EndNodeByEdge) defined in other TUs — ~16% of cycles as call
+  overhead; IPO inlines them.
+- FindPlateaus iterates by const reference instead of copying a
+  VisitedNode per visited node per query; the first-solution special case
+  redirects a pointer instead of assigning into the loop variable.
+
+Prague 2K benchmark, 2 ranks: 4m57 -> 3m23 with pre-sizing alone; 1m49
+with all three (plus OD dedupe on the ruth side), FCD output bit-identical
+to the pre-change reference in both cases.
+---
+ CMakeLists.txt                                | 13 ++++++++
+ .../AlternativesPlateauAlgorithm.cpp          | 31 ++++++++++++++++---
+ 2 files changed, 39 insertions(+), 5 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 25ef8f2..a4b9898 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -301,6 +301,19 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+ 
+ # Build routing library
+ add_library(routing SHARED ${SOURCE_FILES})
++
++# Link-time optimization: the Dijkstra inner loops call tiny graph accessors
++# (GetEdgesIn/Out, GetStart/EndNodeByEdge) defined in other translation units;
++# profiling shows ~16% of cycles in their call overhead. IPO/LTO inlines them
++# across TUs within librouting.
++include(CheckIPOSupported)
++check_ipo_supported(RESULT ROUTING_IPO_OK OUTPUT ROUTING_IPO_MSG)
++if(ROUTING_IPO_OK)
++    set_property(TARGET routing PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
++    message(STATUS "librouting: LTO enabled")
++else()
++    message(STATUS "librouting: LTO not supported: ${ROUTING_IPO_MSG}")
++endif()
+ if(USE_MKL)
+     target_link_libraries(routing ${HDF5_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${MPI_CXX_LIBRARIES} ${MKL_LIBS} ${SQLITE3_LIBRARY} ${OPENMP_LIBRARIES} inih)
+ else()
+diff --git a/Routing/Algorithms/Alternatives/AlternativesPlateauAlgorithm.cpp b/Routing/Algorithms/Alternatives/AlternativesPlateauAlgorithm.cpp
+index 363899b..d3b917d 100644
+--- a/Routing/Algorithms/Alternatives/AlternativesPlateauAlgorithm.cpp
++++ b/Routing/Algorithms/Alternatives/AlternativesPlateauAlgorithm.cpp
+@@ -12,12 +12,23 @@ std::vector<std::vector<Segment>> Routing::Algorithms::AlternativesPlateauAlgori
+         int startId, int endId, unsigned int maxRoutes, bool multiThreading, int startTime,
+         bool useOriginSpeed) const {
+ 
++    // Adaptive pre-sizing of the visited maps: profiling 50K-vehicle runs
++    // showed ~20% of all cycles in dense_hashtable::resize_delta + memmove,
++    // re-paying the same bucket-growth ladder on every query. Seed each map
++    // with a per-thread rolling hint of recent visited-set sizes (decayed so
++    // one huge query does not pin the bucket count high forever — oversized
++    // maps would slow FindPlateaus, which iterates the buckets).
++    static thread_local size_t visitedHintForth = 1024;
++    static thread_local size_t visitedHintBack = 1024;
++
+     VisitedNodeHashMap closedSetForth;
+     closedSetForth.set_empty_key(std::numeric_limits<int>::min());
++    closedSetForth.resize(visitedHintForth);
+     BinHeap openSetForth;
+ 
+     VisitedNodeHashMap closedSetBack;
+     closedSetBack.set_empty_key(std::numeric_limits<int>::min());
++    closedSetBack.resize(visitedHintBack);
+     BinHeap openSetBack;
+ 
+     Node startNode, endNode;
+@@ -91,6 +102,11 @@ std::vector<std::vector<Segment>> Routing::Algorithms::AlternativesPlateauAlgori
+     filterGeometryRootForth.DeleteAllFilter();
+     filterGeometryRootBack.DeleteAllFilter();
+ 
++    // Update the pre-size hints: track the just-observed sizes, decaying the
++    // old hint so the estimate follows the workload in both directions.
++    visitedHintForth = std::max(visitedHintForth / 2, closedSetForth.size());
++    visitedHintBack = std::max(visitedHintBack / 2, closedSetBack.size());
++
+     auto solutions = FindPlateaus(closedSetForth, closedSetBack, startId, endId, settings.filterSettings.typeOfFilter,
+                                   multiThreading);
+ 
+@@ -366,10 +382,16 @@ std::vector<Routing::Algorithms::RouteSolution> Routing::Algorithms::Alternative
+ 
+     HashSet processedNodeIds;
+     processedNodeIds.set_empty_key(std::numeric_limits<int>::min());
++    // Upper bound is known exactly here: at most one entry per forth-visited node.
++    processedNodeIds.resize(closedSetForth.size());
+     std::vector<RouteSolution> solutions;
+ 
+-    for (std::pair<const int, Routing::Algorithms::VisitedNode> intersectionForthNode : closedSetForth) {
++    // Iterate by const reference: the by-value form copied a VisitedNode per
++    // visited node per query. The one place that substituted the node (the
++    // first-solution special case) now redirects a pointer instead.
++    for (const std::pair<const int, Routing::Algorithms::VisitedNode> &intersectionForthNode : closedSetForth) {
+         intersectionId = intersectionForthNode.first;
++        const Routing::Algorithms::VisitedNode *forthNode = &intersectionForthNode.second;
+ 
+         if (firstSolution) {
+             if ((closedSetForth.find(startId) != closedSetForth.end()) &&
+@@ -377,8 +399,7 @@ std::vector<Routing::Algorithms::RouteSolution> Routing::Algorithms::Alternative
+                 if ((closedSetBack.find(startId) != closedSetBack.end()) &&
+                     (closedSetBack.find(endId) != closedSetBack.end())) {
+                     intersectionId = startId;
+-                    auto startNode = closedSetForth.find(startId);
+-                    intersectionForthNode.second = startNode->second;
++                    forthNode = &closedSetForth.find(startId)->second;
+                     processedNodeIds.insert(intersectionForthNode.first);
+                 }
+             }
+@@ -396,7 +417,7 @@ std::vector<Routing::Algorithms::RouteSolution> Routing::Algorithms::Alternative
+             int plateauLength = 0;
+             float plateauTime = 0;
+ 
+-            if (intersectionForthNode.second.PreviousNodeId == intersectionBackNode->second.PreviousNodeId) {
++            if (forthNode->PreviousNodeId == intersectionBackNode->second.PreviousNodeId) {
+                 continue;
+             }
+ 
+@@ -404,7 +425,7 @@ std::vector<Routing::Algorithms::RouteSolution> Routing::Algorithms::Alternative
+                              intersectionBackNode->second.PreviousNodeId, plateauLength, plateauTime);
+ 
+             BackPartPlateau(closedSetForth, closedSetBack, processedNodeIds, intersectionId,
+-                            intersectionForthNode.second.PreviousNodeId, plateauLength, plateauTime);
++                            forthNode->PreviousNodeId, plateauLength, plateauTime);
+ 
+ 
+             if (plateauTime > 0 && plateauTime > solutionTimeLock) {
+-- 
+2.52.0
+

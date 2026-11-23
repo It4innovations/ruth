@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
 
 import numpy as np
@@ -48,7 +49,10 @@ def test_map_provenance_supports_negative_coordinates():
 @pytest.fixture(scope='module')
 def routing_map():
     bbox = BBox(50.16568920000002, 14.321441000000016, 50.020240399999985, 14.592499399999983)
-    routing_map = Map(bbox=bbox, download_date='2024-01-10T00:00:00', with_speeds=True)
+    graphml = (Path(__file__).parent / "data" /
+               "50_16568920000002-14_321441000000016-50_020240399999985-"
+               "14_592499399999983_2024-01-10T00-00-00.graphml")
+    routing_map = Map(bbox=bbox, graphml_file=str(graphml), with_speeds=True)
     return routing_map
 
 
@@ -440,3 +444,9 @@ def test_has_temporary_speeds_planned_false(routing_map):
     """Test checking if temporary speeds are planned (false case)."""
     routing_map.temporary_speeds = []
     assert routing_map.has_temporary_speeds_planned() is False
+
+
+def test_graphml_coordinates_keep_longitude_in_x(routing_map):
+    node = routing_map.original_network.nodes[172512]
+    assert node["x"] == pytest.approx(14.4041771)
+    assert node["y"] == pytest.approx(50.0769181)

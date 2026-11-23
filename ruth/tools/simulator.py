@@ -51,6 +51,42 @@ class CommonArgs:
 
 
 @dataclass
+class AceArgs:
+    """ACE runtime settings (config.json "ace" section)."""
+    # Scheduler worker threads per rank. None / <= 0 -> use all cores.
+    threads: Optional[int] = None
+    # Distribute the vehicle-advance phase over ACE instead of running it serially.
+    mpi_advance: bool = False
+    # ACE scheduler queue policy: "prioritized" (no_redist/notify/lambda first) or "fifo".
+    queue: str = "prioritized"
+    # Reorder each step's FCDs into serial's write order (history row order only,
+    # never vehicle positions). Validation aid for diffing against a serial run.
+    deterministic_order: bool = False
+    # Log a hash of the post-advance movement state each step; the compliance
+    # check for "same vehicle positions at every timestep".
+    trajectory_digest: bool = False
+    # When >= 0, dump the full per-vehicle state for that step to CSV.
+    trajectory_dump_step: int = -1
+    # Verify the C++ VehicleStore builds the same AdvanceTasks as Python.
+    # Verification only and slow; see ruth/simulator/store_bridge.py.
+    store_shadow_check: bool = False
+
+
+@dataclass
+class ConsoleArgs:
+    """Live monitoring/steering console settings (config.json "console" section)."""
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8787
+    # Publish a snapshot every N steps (1 = every step).
+    snapshot_every_steps: int = 1
+    # Number of most-loaded segments highlighted on the map.
+    top_segments: int = 20
+    # Vehicle dots are stride-sampled above this payload cap.
+    max_vehicles_in_snapshot: int = 2000
+
+
+@dataclass
 class AlternativesRatio:
     default: float
     dijkstra_fastest: float
@@ -85,8 +121,11 @@ class RouteSelectionRatio:
 
 
 def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio: AlternativesRatio,
-                      route_selection_ratio: RouteSelectionRatio) \
+                      route_selection_ratio: RouteSelectionRatio,
+                      ace_args: Optional[AceArgs] = None) \
         -> SingleNodeSimulator:
+    if ace_args is None:
+        ace_args = AceArgs()
     departure_time = common_args.departure_time
     round_frequency = common_args.round_frequency
     k_alternatives = common_args.k_alternatives
@@ -111,18 +150,22 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     if overwrite_h5:
         remove_existing_fcd_history_files("fcd_history")
 
-    ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
-                    los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
-                    buffer_size=buffer_size,
-                    max_records_per_file=max_records_per_file,
-                        async_fcd_writer=async_fcd_writer,
-                        fcd_writer_queue_size=fcd_writer_queue_size,
-                    stuck_detection=stuck_detection,
-                    plateau_default_route=plateau_default_route)
-
     simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 
     if simulation is None:
+        ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
+                        los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
+                        buffer_size=buffer_size,
+                        max_records_per_file=max_records_per_file,
+                            async_fcd_writer=async_fcd_writer,
+                            fcd_writer_queue_size=fcd_writer_queue_size,
+                        stuck_detection=stuck_detection,
+                        plateau_default_route=plateau_default_route,
+                        mpi_advance=ace_args.mpi_advance,
+                        deterministic_order=ace_args.deterministic_order,
+                        trajectory_digest=ace_args.trajectory_digest,
+                        trajectory_dump_step=ace_args.trajectory_dump_step,
+                        store_shadow_check=ace_args.store_shadow_check)
         if vehicles_path is None:
             raise ValueError("Either vehicles_path or continue_from must be specified.")
         if os.path.isdir(vehicles_path):
@@ -430,27 +473,67 @@ def run(ctx,
 
 
 def run_inner(common_args: CommonArgs, vehicles_path: Path,
-              alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio) -> Optional[Simulation]:
+              alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio,
+              ace_args: Optional[AceArgs] = None,
+              console_args: Optional[ConsoleArgs] = None) -> Optional[Simulation]:
+    if ace_args is None:
+        ace_args = AceArgs()
+    if console_args is None:
+        console_args = ConsoleArgs()
 
     if MPIDistributor.allow_mpi():
-        with MPIDistributor() as distributor:
+        with MPIDistributor(threads=ace_args.threads, queue=ace_args.queue) as distributor:
             if distributor.is_master():
-                simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+                # The master drives the whole simulation; setup() runs the step
+                # loop, which issues the per-step barriers (do_alternatives,
+                # do_advance) that the workers pair with below.
+                try:
+                    simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio,
+                                      ace_args, console_args)
+                finally:
+                    # BSP shutdown handshake — MUST run even if setup()/simulate()
+                    # raised (e.g. FileExistsError on leftover FCD parts, an
+                    # assertion mid-loop, or SIGUSR2's sys.exit). Otherwise the
+                    # master unwinds straight to __exit__/finalize() without ever
+                    # releasing the workers, which hang forever in
+                    # run_worker_loop() barriers the master will never pair.
+                    # finish_simulation() flips the running flag on every rank
+                    # (broadcast); the single trailing barrier() pairs each
+                    # worker's pending barrier so their next flag check returns and
+                    # all ranks reach finalize() collectively. The original
+                    # exception (if any) still propagates after this.
+                    distributor.ru.finish_simulation()
+                    distributor.ru.barrier()
+            else:
+                # Workers spend the entire run in the barrier loop, pairing every
+                # barrier the master issues (this is what lets ACE's work-stealer
+                # migrate load onto them); their scheduler threads execute the
+                # dispatched/stolen workloads and broadcast collectives. They do
+                # NOT fall through to finalize() here — __exit__ calls it once the
+                # loop returns at shutdown.
+                distributor.ru.run_worker_loop()
     else:
         # no MPI available, run as a single process
         logging.warning("MPI not available, running in single-process mode.")
-        simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+        simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio,
+                          ace_args, console_args)
 
     return simulator.state if MPIDistributor.is_master() else None
 
 def setup(common_args: CommonArgs, vehicles_path: Path,
-            alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio) -> SingleNodeSimulator:
+            alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio,
+            ace_args: Optional[AceArgs] = None,
+            console_args: Optional[ConsoleArgs] = None) -> SingleNodeSimulator:
+    if ace_args is None:
+        ace_args = AceArgs()
+    if console_args is None:
+        console_args = ConsoleArgs()
     out = common_args.out
     walltime = common_args.walltime
     saving_interval = common_args.saving_interval
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
-    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio, ace_args)
     end_step_fns = []
     alternatives_providers = create_alternatives_providers(alternatives_ratio,
                                                            plateu_default_route=common_args.plateau_default_route)
@@ -459,6 +542,12 @@ def setup(common_args: CommonArgs, vehicles_path: Path,
 
     if saving_interval is not None:
         end_step_fns.append(store_simulation_at_interval(saving_interval, f"run{task_id}"))
+
+    if console_args.enabled and MPIDistributor.is_master():
+        # Lazy import: the console costs nothing when disabled.
+        from ruth.console import create_console
+        console = create_console(console_args)
+        end_step_fns.append(console.end_step)
 
     zmq_ctx = ZeroMqContext()
     route_selection_providers = create_route_selection_providers(route_selection_ratio, zeromq_ctx=zmq_ctx,

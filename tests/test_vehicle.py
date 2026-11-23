@@ -263,7 +263,7 @@ def test_map_id_property(sample_vehicle):
 
     assert sample_vehicle.current_travel_time is not None
     assert sample_vehicle.current_travel_time.travel_time == 100.0
-    assert sample_vehicle.current_travel_time.start_segment_index == 1
+    assert sample_vehicle.current_travel_time.start_segment_index == 0
 
 
 def test_get_travel_time_limit(sample_vehicle):
@@ -350,6 +350,39 @@ def test_update_followup_route_exceeds_time_limit(sample_vehicle, routing_map):
 
     # 60.0 > 50.0 (100 * 0.5), so route should NOT be updated
     assert sample_vehicle.osm_route == original_route
+
+
+def test_update_followup_route_reports_stale_travel_time_index(sample_vehicle):
+    sample_vehicle.osm_route = [172512, 172513, 172514]
+    sample_vehicle.start_index = 1
+    sample_vehicle.start_distance_offset = LengthMeters(1.0)
+    sample_vehicle.alternatives = VehicleAlternatives.DIJKSTRA_FASTEST
+    sample_vehicle.current_travel_time = CurrentTravelTime(50.0, 1, 3)
+    routing_map = MagicMock()
+    with pytest.raises(ValueError, match=r"vehicle 1: invalid travel-time index 3.*routing index 2"):
+        sample_vehicle.update_followup_route(([172514], TravelTime(95.0)), routing_map,
+                                             travel_time_limit_perc=0.1)
+
+    routing_map.get_path_travel_time.assert_not_called()
+    assert sample_vehicle.osm_route == [172512, 172513, 172514]
+    assert sample_vehicle.current_travel_time == CurrentTravelTime(50.0, 1, 3)
+
+
+def test_update_followup_route_subtracts_all_passed_segments(sample_vehicle):
+    sample_vehicle.start_index = 2
+    sample_vehicle.start_distance_offset = LengthMeters(1.0)
+    sample_vehicle.alternatives = VehicleAlternatives.DIJKSTRA_FASTEST
+    sample_vehicle.current_travel_time = CurrentTravelTime(100.0, 1, 1)
+    routing_map = MagicMock()
+    routing_map.get_segment_travel_time.side_effect = [10.0, 15.0]
+
+    sample_vehicle.update_followup_route(([172513, 172514], TravelTime(70.0)), routing_map,
+                                         travel_time_limit_perc=0.1)
+
+    assert routing_map.get_segment_travel_time.call_count == 2
+    assert sample_vehicle.current_travel_time == CurrentTravelTime(75.0, 1, 3)
+    assert sample_vehicle.osm_route == [172512, 300107261, 3896663846, 172513, 172514]
+
 
 def test_is_at_the_end_of_segment(sample_vehicle, routing_map):
     """Test checking if vehicle is at the end of segment."""

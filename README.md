@@ -29,6 +29,27 @@ cd ruth
 pip install -e .
 ```
 
+#### RoutingAlg performance patch (required for the pinned submodule)
+
+The `binding/RoutingAlg` submodule is pinned to commit `e02f45b` (adaptive
+visited-map pre-sizing, LTO, FindPlateaus copy elimination — Prague 2K −31%
+on the routing phase), which is **not available from the RoutingAlg remote**.
+The commit ships with this repository in `patches/`:
+
+```bash
+# after cloning with --recurse-submodules (RoutingAlg will be at the pinned
+# commit's parent or report a missing commit):
+cd binding/RoutingAlg
+git fetch ../../patches/RoutingAlg-presize.bundle perf/presize-dijkstra-maps:perf/presize-dijkstra-maps
+git checkout e02f45b   # the exact pinned commit; `git submodule status` is clean again
+```
+
+The bundle recreates the commit byte-for-byte, so the submodule pointer
+resolves exactly. For human review, the same change is also provided as a
+plain diff in `patches/0001-RoutingAlg-presize-dijkstra-maps.patch`
+(appliable with `git am` onto RoutingAlg `master`, producing an equivalent
+commit with a different hash).
+
 #### Option 2: Install this branch directly from GitHub
 
 ```bash
@@ -205,6 +226,16 @@ Configuration file with all available options:
 | `overwrite-h5`             | Remove existing FCD HDF5 parts before starting               | false                    |
 | `max-vehicles`             | Maximum number of vehicles loaded from the input             | unlimited                |
 
+The optional `"console"` section enables the live monitoring/steering console (see [Live console](#live-console-monitoring--steering)):
+
+| Parameter                  | Description                                                  | Default                  |
+|----------------------------|--------------------------------------------------------------|--------------------------|
+| `enabled`                  | Start the console HTTP server                                | false                    |
+| `host` / `port`            | Bind address                                                 | 127.0.0.1:8787           |
+| `snapshot-every-steps`     | Publish a state snapshot every N steps                       | 1                        |
+| `top-segments`             | Number of most-loaded segments highlighted on the map        | 20                       |
+| `max-vehicles-in-snapshot` | Vehicle dots are stride-sampled above this payload cap       | 2000                     |
+
 ### Command-line Arguments
 
 Alternatively, you can use command-line arguments instead of a configuration file. 
@@ -272,6 +303,44 @@ You can specify temporary speed restrictions via CSV file using the `speeds-path
 node_from;node_to;speed;timestamp_from;timestamp_to
 8400868548;10703818;0;2026-08-03 00:10:00;2026-08-03 00:25:00
 ```
+
+## Live console (monitoring + steering)
+
+With `"console": {"enabled": true}` in the config, the master rank serves a live
+console at `http://127.0.0.1:8787`:
+
+- **Map** (OpenStreetMap tiles when reachable, plain background offline) with
+  vehicle positions colored by destination and the segments carrying the most
+  traffic at the current step highlighted by load. Click any road on the map to
+  select it for a restriction.
+- **Simulation metrics** as live line graphs (active/finished vehicles,
+  rerouting per step, mean speed, congestion index, occupied segments,
+  simulation speed-up, FCD records per step) — every metric has a `?` opening
+  a plain-language explanation.
+- **Performance**: step wall-time chart plus per-phase timing graphs
+  (`alternatives`, `advance_vehicle`, `selected_routes`, ...), smoothed with a
+  rolling mean over the raw series.
+- **Steering**: change `k-alternatives`, `map-update-freq-s`,
+  `los-vehicles-tolerance-s`, `travel-time-limit-perc` and `stuck-detection`
+  mid-run; add temporary speed restrictions (speed 0 closes a road; selecting a
+  road pre-fills the form) and remove them again with the ✕ button (active
+  restrictions restore the original speed on the next step); pause/resume,
+  save a checkpoint, or stop gracefully.
+
+On a cluster, forward the port: `ssh -L 8787:localhost:8787 <login-node>`.
+
+The same control channel is scriptable via the CLI attach tool:
+
+```bash
+ruth-console status --watch 2          # live text dashboard incl. metrics + top segments
+ruth-console set k-alternatives 3
+ruth-console restrict <node_from> <node_to> 0 --duration-s 600   # close a road
+ruth-console unrestrict <node_from> <node_to>                    # lift it again
+ruth-console pause | resume | checkpoint | stop
+```
+
+The console is off by default and adds nothing to the simulation loop when
+disabled; when enabled, its cost appears in the logged `end_step` step timer.
 
 ## Animation
 To create animation of the simulation, `FFmpeg` needs to be installed. Using option `--gif` to generate 

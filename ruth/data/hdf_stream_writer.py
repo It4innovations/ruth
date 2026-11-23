@@ -22,6 +22,68 @@ compound_dtype = np.dtype([
 ])
 
 
+def fcd_columns_to_array(datetime_seconds, vehicle_id, segment_id, offset_from_start,
+                         vehicle_speed_mps, active, routing_map) -> np.ndarray:
+    """Vectorised counterpart of fcd_records_to_array, straight from columns.
+
+    The distributed advance already has these values as numeric arrays; building
+    FCDRecord objects just to take them apart again costs an O(records) Python
+    pass at each end. Everything here is whole-array work except one dict lookup
+    per DISTINCT segment in the batch, which is far fewer than one per record.
+
+    `segment_id` holds routing ids (Map.segment_id_to_int). node_from, node_to
+    and the segment length are resolved through a cache keyed by routing id.
+    """
+    n = len(vehicle_id)
+    if n == 0:
+        return np.empty((0,), dtype=compound_dtype)
+
+    unique_ids, inverse = np.unique(segment_id, return_inverse=True)
+    node_from = np.empty(len(unique_ids), dtype=np.int64)
+    node_to = np.empty(len(unique_ids), dtype=np.int64)
+    length = np.empty(len(unique_ids), dtype=np.int32)
+    for i, routing_id in enumerate(unique_ids):
+        nf, nt, seg_len = _segment_row(routing_map, int(routing_id))
+        node_from[i] = nf
+        node_to[i] = nt
+        length[i] = seg_len
+
+    out = np.empty(n, dtype=compound_dtype)
+    # int(...) on the record path truncates toward zero; astype does the same.
+    out["timestamp"] = np.asarray(datetime_seconds, dtype=np.float64).astype(np.int64)
+    out["node_from"] = node_from[inverse]
+    out["node_to"] = node_to[inverse]
+    out["segment_length"] = length[inverse]
+    out["vehicle_id"] = np.asarray(vehicle_id, dtype=np.int64)
+    out["start_offset_m"] = np.asarray(offset_from_start, dtype=np.float32)
+    out["speed_mps"] = np.asarray(vehicle_speed_mps, dtype=np.float32)
+    out["active"] = np.asarray(active, dtype=np.bool_)
+    return out
+
+
+def _segment_row(routing_map, routing_id: int):
+    """routing_id -> (node_from, node_to, int(length)), memoised.
+
+    The cache hangs off the MAP, not off this module. Routing ids are only
+    meaningful relative to the map that assigned them, so a module-global cache
+    would hand out another map's geometry the moment a process used a second map
+    -- which a test suite does even though a run does not.
+    """
+    cache = getattr(routing_map, "_fcd_segment_rows", None)
+    if cache is None:
+        cache = {}
+        routing_map._fcd_segment_rows = cache
+
+    row = cache.get(routing_id)
+    if row is None:
+        node_from, node_to = routing_map.int_to_segment_id(routing_id)
+        segment = routing_map.get_osm_segment(node_from, node_to)
+        # int() not round(): matches int(fcd.segment.length) on the record path.
+        row = (int(node_from), int(node_to), int(segment.length))
+        cache[routing_id] = row
+    return row
+
+
 def fcd_records_to_array(buffer: List) -> np.ndarray:
     """Convert FCDRecord objects to the compact HDF5 compound-array representation.
 

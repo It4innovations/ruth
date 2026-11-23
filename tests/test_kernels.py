@@ -1,3 +1,4 @@
+from pathlib import Path
 from cmath import isclose
 import os
 
@@ -11,20 +12,17 @@ from ruth.simulator.kernels import FastestPathsAlternatives
 # from ruth.simulator.kernels import ZeroMQDistributedAlternatives
 from ruth.tools.simulator import CommonArgs, prepare_simulator, AlternativesRatio, RouteSelectionRatio, ZeroMqContext
 
-vehicles_path = os.path.join(
-    os.path.dirname(__file__),
-    "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet",
-)
+
 
 
 @pytest.fixture
-def setup_vehicle():
-    vehicles, _, _ = load_vehicles(vehicles_path)
+def setup_vehicle(regression_vehicles_path):
+    vehicles, _, _ = load_vehicles(regression_vehicles_path)
     return vehicles[0]
 
 
 @pytest.fixture
-def setup_simulator():
+def setup_simulator(regression_vehicles_path):
     common_args = CommonArgs(
         task_id="test",
         departure_time=datetime(2021, 1, 1, 0, 0, 0),
@@ -43,6 +41,9 @@ def setup_simulator():
         plateau_default_route=False,
         buffer_size=1000,
         max_records_per_file=10000,
+        map_graphml=str(Path(__file__).resolve().parent / "data" /
+                        "50_16568920000002-14_321441000000016-50_020240399999985-"
+                        "14_592499399999983_2024-01-10T00-00-00.graphml"),
     )
 
     alternatives_ratio = AlternativesRatio(
@@ -59,7 +60,7 @@ def setup_simulator():
         ptdr=0.0
     )
 
-    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+    simulator = prepare_simulator(common_args, regression_vehicles_path, alternatives_ratio, route_selection_ratio)
     return simulator
 
 
@@ -151,3 +152,20 @@ def test_compute_alt_with_map_update(setup_vehicle, setup_simulator, fastest_alt
     #     assert isclose(cpp_travel_time, expected_travel_time + expected_travel_time_change, abs_tol=1)
     # else:
     #     print("Travel time not received from evkit")
+
+
+def test_alternatives_dispatch_skips_unused_provider():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from ruth.simulator.singlenode import compute_alternatives
+    from ruth.vehicle import VehicleAlternatives
+
+    vehicle = SimpleNamespace(alternatives=VehicleAlternatives.DIJKSTRA_FASTEST)
+    dijkstra = Mock(vehicle_behaviour=VehicleAlternatives.DIJKSTRA_FASTEST)
+    dijkstra.compute_alternatives.return_value = [[([1, 2], None)]]
+    plateau = Mock(vehicle_behaviour=VehicleAlternatives.PLATEAU_FASTEST)
+    plateau.compute_alternatives.side_effect = AssertionError("Unused provider received an empty workload")
+    vehicles, alternatives = compute_alternatives([dijkstra, plateau], [vehicle], 1)
+    assert vehicles == [vehicle]
+    assert alternatives == [[([1, 2], None)]]
+    plateau.compute_alternatives.assert_not_called()

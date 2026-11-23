@@ -12,3 +12,5 @@ venv/
 !benchmarks/**/*.manifest.json
 simulation_output.h5
 .DS_Store
+wiki/
+graphify-out/

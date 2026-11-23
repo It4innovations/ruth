@@ -8,6 +8,7 @@ from random import random, seed as rnd_seed
 from typing import Dict, List, Optional
 
 import h5py
+import numpy as np
 import pandas as pd
 
 from .queues import QueuesManager
@@ -33,6 +34,29 @@ class FCDRecord:
     vehicle_speed_mps: SpeedMps
     status: str
     active: bool
+
+
+@dataclass(frozen=True)
+class FCDColumns:
+    """One step's FCD samples as numeric columns rather than FCDRecord objects.
+
+    The distributed advance produces these columns already; the only two things
+    that consume a step's FCDs -- the GlobalView and the history writer -- both
+    want arrays back. Materialising an object per record in between costs an
+    O(records) Python pass to build and another to take apart, and FCDRecord's
+    `status` field is not read by either.
+
+    `segment_id` holds routing ids (Map.segment_id_to_int), not SegmentId tuples.
+    """
+    datetime_seconds: "np.ndarray"
+    vehicle_id: "np.ndarray"
+    segment_id: "np.ndarray"
+    offset_from_start: "np.ndarray"
+    vehicle_speed_mps: "np.ndarray"
+    active: "np.ndarray"
+
+    def __len__(self):
+        return len(self.vehicle_id)
 
 
 @dataclass
@@ -80,6 +104,34 @@ class SimSetting:
     fcd_writer_queue_size: int = 4
     stuck_detection: int = 0
     plateau_default_route: bool = False
+    # Distribute the vehicle-advance phase over ACE (barrier-based BSP) instead of
+    # running it serially on the master. Sourced from the config.json "ace" section.
+    mpi_advance: bool = False
+    # Reorder each step's gathered FCDs into serial's write order so the FCD
+    # history file can be diffed against a serial baseline. Affects the ORDER of
+    # the history rows only -- never vehicle positions, which are order-
+    # independent (see GlobalView::get_segment_speed). Validation aid; off in
+    # production runs because it costs a sort per step.
+    deterministic_order: bool = False
+    # Log one hash of the post-advance movement state per step. This is the
+    # compliance check for "same vehicle positions at every timestep"; comparing
+    # two runs means comparing the logged digest column. Costs one O(N) pass per
+    # step, so off by default.
+    trajectory_digest: bool = False
+    # When >= 0, also dump the full per-vehicle state for that step to CSV. Set
+    # it to the first step whose digest differs to find the diverging vehicle.
+    trajectory_dump_step: int = -1
+    # Run the C++ VehicleStore alongside the Python Vehicle objects and check it
+    # builds byte-identical AdvanceTasks. Verification only -- the store's output
+    # is discarded -- and slow, so off by default. See store_bridge.py.
+    store_shadow_check: bool = False
+    # NOTE: how the distributed advance builds its tasks, returns its FCDs,
+    # replays its deltas, packs its workloads and selects its vehicles used to be
+    # five more flags here. Each existed only so the new implementation could be
+    # measured against the old one while the series was being built; each is now
+    # the only implementation, and mpi_advance alone decides whether it runs.
+    # _build_task_array and _build_history survive as the references
+    # store_shadow_check holds the production path to, nothing else.
     fcd_history_base_name: str = "fcd_history"
 
     def __post_init__(self, seed: Optional[int]):
@@ -116,6 +168,7 @@ class Simulation:
         self.map_graphml = map_graphml
         self._routing_map = Map(self.bbox, download_date=self.map_download_date,
                                 graphml_file=self.map_graphml, with_speeds=True)
+        self.history.routing_map = self._routing_map
         self.global_view = GlobalView(routing_map=self._routing_map)
         self.vehicles = vehicles
         self.vehicle_source = vehicle_source
@@ -156,6 +209,7 @@ class Simulation:
         if self._routing_map is None:
             self._routing_map = Map(self.bbox, download_date=self.map_download_date,
                                     graphml_file=self.map_graphml, with_speeds=True)
+            self.history.routing_map = self._routing_map
 
             if self.global_view is None:
                 self.global_view = GlobalView(routing_map=self._routing_map)
@@ -191,8 +245,7 @@ class Simulation:
         return timedelta(seconds=rounded_seconds), rounded_seconds
 
     def compute_current_offset(self):
-        return min(filter(None, map(lambda v: v.time_offset if v.active else None, self.vehicles)),
-                   default=None)
+        return min((v.time_offset for v in self.vehicles if v.active), default=None)
 
     @property
     def streaming(self):
@@ -228,7 +281,17 @@ class Simulation:
         if self.streaming:
             self.vehicles = [v for v in self.vehicles if v.active]
 
-    def update(self, fcds: List[FCDRecord]):
+    def update(self, fcds):
+        """Feed a step's FCDs into the global view.
+
+        Takes either a list of FCDRecord (the serial path, unchanged) or an
+        FCDColumns (the distributed path), so the step loop does not have to
+        know which produced them.
+        """
+        if isinstance(fcds, FCDColumns):
+            self.global_view.add_batch_columns(fcds)
+            return
+
         # TODO: consider adding a batch update to python global view as well for better performance
         if hasattr(self.global_view, 'add_batch'):
             self.global_view.add_batch(fcds)
@@ -277,6 +340,8 @@ class Simulation:
         return all(not v.active for v in self.vehicles) and not self.has_pending_vehicle_buckets()
 
     def store(self, path):
+        if self.history.writer is not None:
+            self.history.flush_to_disk()
         with open(path, 'wb') as f:
             pickle.dump(self, f)
 
