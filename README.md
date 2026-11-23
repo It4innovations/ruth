@@ -29,27 +29,6 @@ cd ruth
 pip install -e .
 ```
 
-#### RoutingAlg performance patch (required for the pinned submodule)
-
-The `binding/RoutingAlg` submodule is pinned to commit `e02f45b` (adaptive
-visited-map pre-sizing, LTO, FindPlateaus copy elimination — Prague 2K −31%
-on the routing phase), which is **not available from the RoutingAlg remote**.
-The commit ships with this repository in `patches/`:
-
-```bash
-# after cloning with --recurse-submodules (RoutingAlg will be at the pinned
-# commit's parent or report a missing commit):
-cd binding/RoutingAlg
-git fetch ../../patches/RoutingAlg-presize.bundle perf/presize-dijkstra-maps:perf/presize-dijkstra-maps
-git checkout e02f45b   # the exact pinned commit; `git submodule status` is clean again
-```
-
-The bundle recreates the commit byte-for-byte, so the submodule pointer
-resolves exactly. For human review, the same change is also provided as a
-plain diff in `patches/0001-RoutingAlg-presize-dijkstra-maps.patch`
-(appliable with `git am` onto RoutingAlg `master`, producing an equivalent
-commit with a different hash).
-
 #### Option 2: Install this branch directly from GitHub
 
 ```bash
@@ -76,7 +55,7 @@ python -m pip install --no-index --find-links ruth-wheels -e .
 
 
 
-To use **Plateau** algorithm or **multi-node** execution, ACE library must be compiled from source.
+To use **Plateau** routing, **C++ vehicle advancement**, or **multi-node** execution, the native bindings and ACE library must be compiled from source.
 
 #### Load Required Modules (HPC environments)
 
@@ -142,14 +121,17 @@ echo $PYTHONPATH
 
 ### Multi-node Execution with MPI
 
-Each MPI process spawns threads to utilize all available cores on the node.
+Each MPI process uses ACE worker threads.
+Set `"threads"` in the `"ace"` config section to control the worker count per process, `null` lets ACE choose automatically.
+Set `"mpi-advance": true` to distribute vehicle advancement through ACE.
+The default is `false`, which keeps Python vehicle advancement. Plateau routing can use ACE independently.
 
 
 ```bash
 # Basic multi-node execution
 mpirun -n 2 ruth-simulator-conf --config-file="config.json" run
 
-# Example: 16 processes, 8 per node, 16 cores each, bind to core
+# Example: 16 processes, 8 per node, 16 cores each; set ace.threads to 16
 mpirun -n 16 --map-by ppr:8:node:PE=16 -bind-to core ruth-simulator-conf --config-file="config.json" run
 ```
 
@@ -161,7 +143,7 @@ Platform-specific compiler, MPI, and module configurations may vary between syst
 
 ### Configuration File
 
-Configuration file with all available options:
+Example configuration file:
 
 ```json
 {
@@ -177,7 +159,6 @@ Configuration file with all available options:
     "saving-interval-s": 100,
     "speeds-path": "",
     "travel-time-limit-perc": 0.1,
-    "ptdr-path": "",
     "continue-from": "",
     "stuck-detection": 0,
     "plateau-default-route": false,
@@ -198,6 +179,12 @@ Configuration file with all available options:
     "first": 0.3,
     "random": 0.0,
     "ptdr": 0.0
+  },
+  "ace": {
+    "threads": null,
+    "mpi-advance": false,
+    "queue": "prioritized",
+    "deterministic-order": false
   }
 }
 ```
@@ -217,7 +204,6 @@ Configuration file with all available options:
 | `saving-interval-s`        | Interval for saving intermediate results                     | -                        |
 | `speeds-path`              | Path to CSV with temporary speed restrictions                | -                        |
 | `travel-time-limit-perc`   | Travel time limit as percentage                              | 0.1                      |
-| `ptdr-path`                | Path to PTDR route selection data                            | -                        |
 | `continue-from`            | Path to pickle file to continue previous simulation          | -                        |
 | `stuck-detection`          | Number of steps before stuck detection triggers (0=disabled) | 0                        |
 | `plateau-default-route`    | Recalculate default route with Plateau                       | false                    |
@@ -225,6 +211,22 @@ Configuration file with all available options:
 | `max-records-per-file`     | Rotate HDF5 file after this many records                     | 1000000000               |
 | `overwrite-h5`             | Remove existing FCD HDF5 parts before starting               | false                    |
 | `max-vehicles`             | Maximum number of vehicles loaded from the input             | unlimited                |
+
+The optional `"ace"` section controls native execution and validation:
+
+| Parameter                  | Description                                                  | Default                  |
+|----------------------------|--------------------------------------------------------------|--------------------------|
+| `threads`                  | ACE worker threads per MPI process (`null` = automatic)      | null                     |
+| `mpi-advance`              | Use distributed C++ vehicle advancement instead of Python    | false                    |
+| `queue`                    | ACE scheduler queue: `prioritized` or `fifo`                  | prioritized              |
+| `deterministic-order`      | Reorder FCD output to match Python row order                  | false                    |
+| `trajectory-digest`        | Log per-step movement and task hashes for comparison         | false                    |
+| `trajectory-dump-step`     | Dump vehicle/task state at a selected step (`-1` = disabled)  | -1                       |
+| `store-shadow-check`       | Compare native advance tasks against Python                  | false                    |
+
+The last four options are diagnostic aids and add runtime cost. With
+`"deterministic-order": false`, distributed FCD output can have a different row
+order; compare record contents when validating results.
 
 The optional `"console"` section enables the live monitoring/steering console (see [Live console](#live-console-monitoring--steering)):
 
@@ -252,7 +254,7 @@ ruth-simulator \
 For the C++-based execution (with MPI), select Plateau-based routing, and set remaining parameters as needed: 
 
 ```bash
-ruth-simulator mpirun -n 128 \
+mpirun -n 128 ruth-simulator \
   --departure-time="2026-10-03 07:00:00" \
   --k-alternatives=4 \
   --seed=7 \

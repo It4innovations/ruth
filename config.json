@@ -14,7 +14,7 @@
     "continue-from": "",
     "stuck-detection": 0,
     "plateau-default-route": true,
-    "max_records_per_file": 10000000
+    "max-records-per-file": 10000000
   },
   "run": {
     "vehicles-path": "benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet"
@@ -38,14 +38,7 @@
     "threads": null,
     "mpi-advance": false,
     "queue": "prioritized",
-    "deterministic-order": false,
-    "trajectory-digest": false,
-    "trajectory-dump-step": -1,
-    "store-shadow-check": false,
-    "store-tasks": true,
-    "fcd-columns": true,
-    "fast-replay": true,
-    "advance-batch": true
+    "deterministic-order": false
   },
   "console": {
     "enabled": false,
