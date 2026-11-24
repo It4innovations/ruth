@@ -10,9 +10,10 @@ from typing import List, Optional
 import click
 import signal
 
-from ..vehicle import set_vehicle_behavior
 from ..simulator import SimSetting, Simulation, SingleNodeSimulator, \
     load_vehicles
+from ..simulator.common import VehicleDatasetSource, remove_existing_fcd_history_files, \
+    set_vehicle_behavior_stable_for_vehicles
 from ..simulator.kernels import AlternativesProvider, FastestPathsAlternatives, FirstRouteSelection, \
     RandomRouteSelection, RouteSelectionProvider, ShortestPathsAlternatives, \
     MPIDistributedAlternatives, ZeroMQDistributedPTDRRouteSelection
@@ -39,6 +40,50 @@ class CommonArgs:
     plateau_default_route: bool
     buffer_size: int
     max_records_per_file: int
+    max_steps: Optional[int] = None
+    vehicle_frequency_override: Optional[timedelta] = None
+    fcd_sampling_period_override: Optional[timedelta] = None
+    async_fcd_writer: bool = False
+    fcd_writer_queue_size: int = 4
+    map_graphml: Optional[str] = None
+    overwrite_h5: bool = False
+    max_vehicles: Optional[int] = None
+
+
+@dataclass
+class AceArgs:
+    """ACE runtime settings (config.json "ace" section)."""
+    # Scheduler worker threads per rank. None / <= 0 -> use all cores.
+    threads: Optional[int] = None
+    # Distribute the vehicle-advance phase over ACE instead of running it serially.
+    mpi_advance: bool = False
+    # ACE scheduler queue policy: "prioritized" (no_redist/notify/lambda first) or "fifo".
+    queue: str = "prioritized"
+    # Reorder each step's FCDs into serial's write order (history row order only,
+    # never vehicle positions). Validation aid for diffing against a serial run.
+    deterministic_order: bool = False
+    # Log a hash of the post-advance movement state each step; the compliance
+    # check for "same vehicle positions at every timestep".
+    trajectory_digest: bool = False
+    # When >= 0, dump the full per-vehicle state for that step to CSV.
+    trajectory_dump_step: int = -1
+    # Verify the C++ VehicleStore builds the same AdvanceTasks as Python.
+    # Verification only and slow; see ruth/simulator/store_bridge.py.
+    store_shadow_check: bool = False
+
+
+@dataclass
+class ConsoleArgs:
+    """Live monitoring/steering console settings (config.json "console" section)."""
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8787
+    # Publish a snapshot every N steps (1 = every step).
+    snapshot_every_steps: int = 1
+    # Number of most-loaded segments highlighted on the map.
+    top_segments: int = 20
+    # Vehicle dots are stride-sampled above this payload cap.
+    max_vehicles_in_snapshot: int = 2000
 
 
 @dataclass
@@ -76,8 +121,11 @@ class RouteSelectionRatio:
 
 
 def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio: AlternativesRatio,
-                      route_selection_ratio: RouteSelectionRatio) \
+                      route_selection_ratio: RouteSelectionRatio,
+                      ace_args: Optional[AceArgs] = None) \
         -> SingleNodeSimulator:
+    if ace_args is None:
+        ace_args = AceArgs()
     departure_time = common_args.departure_time
     round_frequency = common_args.round_frequency
     k_alternatives = common_args.k_alternatives
@@ -88,29 +136,75 @@ def prepare_simulator(common_args: CommonArgs, vehicles_path, alternatives_ratio
     speeds_path = common_args.speeds_path
     buffer_size = common_args.buffer_size
     max_records_per_file = common_args.max_records_per_file
+    async_fcd_writer = common_args.async_fcd_writer
+    fcd_writer_queue_size = common_args.fcd_writer_queue_size
     continue_from = common_args.continue_from
     stuck_detection = common_args.stuck_detection
     plateau_default_route = common_args.plateau_default_route
+    vehicle_frequency_override = common_args.vehicle_frequency_override
+    fcd_sampling_period_override = common_args.fcd_sampling_period_override
+    map_graphml = getattr(common_args, "map_graphml", None)
+    overwrite_h5 = getattr(common_args, "overwrite_h5", False)
+    max_vehicles = getattr(common_args, "max_vehicles", None)
 
-    ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
-                    los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
-                    buffer_size=buffer_size,
-                    max_records_per_file=max_records_per_file,
-                    stuck_detection=stuck_detection,
-                    plateau_default_route=plateau_default_route)
+    if overwrite_h5:
+        remove_existing_fcd_history_files("fcd_history")
 
-    simulation = Simulation.load(continue_from) if continue_from != '' else None
+    simulation = Simulation.load(continue_from, map_graphml=map_graphml) if continue_from != '' else None
 
     if simulation is None:
+        ss = SimSetting(departure_time, round_frequency, k_alternatives, map_update_freq,
+                        los_vehicles_tolerance, travel_time_limit_perc, seed, speeds_path=speeds_path,
+                        buffer_size=buffer_size,
+                        max_records_per_file=max_records_per_file,
+                            async_fcd_writer=async_fcd_writer,
+                            fcd_writer_queue_size=fcd_writer_queue_size,
+                        stuck_detection=stuck_detection,
+                        plateau_default_route=plateau_default_route,
+                        mpi_advance=ace_args.mpi_advance,
+                        deterministic_order=ace_args.deterministic_order,
+                        trajectory_digest=ace_args.trajectory_digest,
+                        trajectory_dump_step=ace_args.trajectory_dump_step,
+                        store_shadow_check=ace_args.store_shadow_check)
         if vehicles_path is None:
             raise ValueError("Either vehicles_path or continue_from must be specified.")
-        vehicles, bbox, download_date = load_vehicles(vehicles_path)
+        if os.path.isdir(vehicles_path):
+            vehicle_source = VehicleDatasetSource(
+                vehicles_path,
+                alternatives_ratio.to_list(),
+                route_selection_ratio.to_list(),
+                seed,
+                vehicle_frequency_override,
+                fcd_sampling_period_override,
+                max_vehicles,
+            )
+            vehicles = vehicle_source.load_next_bucket()
+            simulation = Simulation(vehicles, ss, vehicle_source.bbox,
+                                    vehicle_source.download_date,
+                                    vehicle_source=vehicle_source,
+                                    map_graphml=map_graphml)
+        else:
+            vehicles, bbox, download_date = load_vehicles(
+                vehicles_path,
+                vehicle_frequency_override,
+                fcd_sampling_period_override,
+                max_vehicles,
+            )
 
-        set_vehicle_behavior(vehicles, alternatives_ratio.to_list(), route_selection_ratio.to_list())
+            set_vehicle_behavior_stable_for_vehicles(
+                vehicles,
+                alternatives_ratio.to_list(),
+                route_selection_ratio.to_list(),
+                seed,
+            )
 
-        simulation = Simulation(vehicles, ss, bbox, download_date)
+            simulation = Simulation(vehicles, ss, bbox, download_date, map_graphml=map_graphml)
 
-        simulation.routing_map.fix_osm_routes(vehicles)
+            routed_vehicles = [
+                vehicle for vehicle in vehicles
+                if not getattr(vehicle, "needs_default_route", False)
+            ]
+            simulation.routing_map.fix_osm_routes(routed_vehicles)
 
         if speeds_path is not None:
             simulation.routing_map.init_temporary_max_speeds(speeds_path)
@@ -122,12 +216,14 @@ def store_simulation_at_walltime(walltime: Optional[timedelta], name: str):
     saved = False
     start_time = datetime.now()
 
-    def store(simulation: Simulation):
+    def store(simulation: Simulation) -> bool:
         nonlocal saved
-        """Store the state of the simulation at walltime."""
+        """Store the state at walltime and request a graceful simulation stop."""
         if walltime is not None and (datetime.now() - start_time) >= walltime and not saved:
             simulation.store(f"{name}-at-walltime.pickle")
             saved = True
+            return True
+        return False
 
     return store
 
@@ -224,6 +320,18 @@ def start_zeromq_cluster(
               help="Buffer size (number of FCD records) before flushing to disk.")
 @click.option("--max-records-per-file", type=int, default=int(1e9),
               help="Rotate HDF5 file after this many records. If not set, defaults to a very large number (1e9).")
+@click.option("--vehicle-frequency-override-s", type=int, default=None,
+              help="Override per-vehicle rerouting/update period from the input data, in seconds.")
+@click.option("--fcd-sampling-period-override-s", type=int, default=None,
+              help="Override per-vehicle FCD sampling period from the input data, in seconds.")
+@click.option("--async-fcd-writer/--sync-fcd-writer", default=False,
+              help="Write FCD HDF5 batches in a separate process using a bounded queue.")
+@click.option("--fcd-writer-queue-size", type=int, default=4,
+              help="Maximum number of pending FCD batches allowed in the async writer queue.")
+@click.option("--overwrite-h5/--no-overwrite-h5", default=False,
+              help="Remove existing FCD HDF5 part files before starting the simulation.")
+@click.option("--max-vehicles", type=click.IntRange(min=1), default=None,
+              help="Maximum number of vehicles loaded from the input.")
 @click.pass_context
 def single_node_simulator(ctx,
                           debug,
@@ -239,6 +347,12 @@ def single_node_simulator(ctx,
                           seed,
                           buffer_size,
                           max_records_per_file,
+                          vehicle_frequency_override_s,
+                          fcd_sampling_period_override_s,
+                          async_fcd_writer,
+                          fcd_writer_queue_size,
+                          overwrite_h5,
+                          max_vehicles,
                           walltime_s,
                           saving_interval_s,
                           continue_from,
@@ -251,6 +365,10 @@ def single_node_simulator(ctx,
     walltime = timedelta(seconds=walltime_s) if walltime_s is not None else None
     saving_interval = timedelta(
         seconds=saving_interval_s) if saving_interval_s is not None else None
+    vehicle_frequency_override = timedelta(
+        seconds=vehicle_frequency_override_s) if vehicle_frequency_override_s is not None else None
+    fcd_sampling_period_override = timedelta(
+        seconds=fcd_sampling_period_override_s) if fcd_sampling_period_override_s is not None else None
 
     ctx.obj['common-args'] = CommonArgs(
         task_id=task_id,
@@ -265,6 +383,12 @@ def single_node_simulator(ctx,
         seed=seed,
         buffer_size=buffer_size,
         max_records_per_file=max_records_per_file,
+        vehicle_frequency_override=vehicle_frequency_override,
+        fcd_sampling_period_override=fcd_sampling_period_override,
+        async_fcd_writer=async_fcd_writer,
+        fcd_writer_queue_size=fcd_writer_queue_size,
+        overwrite_h5=overwrite_h5,
+        max_vehicles=max_vehicles,
         walltime=walltime,
         saving_interval=saving_interval,
         continue_from=continue_from,
@@ -349,27 +473,67 @@ def run(ctx,
 
 
 def run_inner(common_args: CommonArgs, vehicles_path: Path,
-              alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio) -> Optional[Simulation]:
+              alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio,
+              ace_args: Optional[AceArgs] = None,
+              console_args: Optional[ConsoleArgs] = None) -> Optional[Simulation]:
+    if ace_args is None:
+        ace_args = AceArgs()
+    if console_args is None:
+        console_args = ConsoleArgs()
 
     if MPIDistributor.allow_mpi():
-        with MPIDistributor() as distributor:
+        with MPIDistributor(threads=ace_args.threads, queue=ace_args.queue) as distributor:
             if distributor.is_master():
-                simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+                # The master drives the whole simulation; setup() runs the step
+                # loop, which issues the per-step barriers (do_alternatives,
+                # do_advance) that the workers pair with below.
+                try:
+                    simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio,
+                                      ace_args, console_args)
+                finally:
+                    # BSP shutdown handshake — MUST run even if setup()/simulate()
+                    # raised (e.g. FileExistsError on leftover FCD parts, an
+                    # assertion mid-loop, or SIGUSR2's sys.exit). Otherwise the
+                    # master unwinds straight to __exit__/finalize() without ever
+                    # releasing the workers, which hang forever in
+                    # run_worker_loop() barriers the master will never pair.
+                    # finish_simulation() flips the running flag on every rank
+                    # (broadcast); the single trailing barrier() pairs each
+                    # worker's pending barrier so their next flag check returns and
+                    # all ranks reach finalize() collectively. The original
+                    # exception (if any) still propagates after this.
+                    distributor.ru.finish_simulation()
+                    distributor.ru.barrier()
+            else:
+                # Workers spend the entire run in the barrier loop, pairing every
+                # barrier the master issues (this is what lets ACE's work-stealer
+                # migrate load onto them); their scheduler threads execute the
+                # dispatched/stolen workloads and broadcast collectives. They do
+                # NOT fall through to finalize() here — __exit__ calls it once the
+                # loop returns at shutdown.
+                distributor.ru.run_worker_loop()
     else:
         # no MPI available, run as a single process
         logging.warning("MPI not available, running in single-process mode.")
-        simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+        simulator = setup(common_args, vehicles_path, alternatives_ratio, route_selection_ratio,
+                          ace_args, console_args)
 
     return simulator.state if MPIDistributor.is_master() else None
 
 def setup(common_args: CommonArgs, vehicles_path: Path,
-            alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio) -> SingleNodeSimulator:
+            alternatives_ratio: AlternativesRatio, route_selection_ratio: RouteSelectionRatio,
+            ace_args: Optional[AceArgs] = None,
+            console_args: Optional[ConsoleArgs] = None) -> SingleNodeSimulator:
+    if ace_args is None:
+        ace_args = AceArgs()
+    if console_args is None:
+        console_args = ConsoleArgs()
     out = common_args.out
     walltime = common_args.walltime
     saving_interval = common_args.saving_interval
     task_id = f"-task-{common_args.task_id}" if common_args.task_id is not None else ""
 
-    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio, ace_args)
     end_step_fns = []
     alternatives_providers = create_alternatives_providers(alternatives_ratio,
                                                            plateu_default_route=common_args.plateau_default_route)
@@ -378,6 +542,12 @@ def setup(common_args: CommonArgs, vehicles_path: Path,
 
     if saving_interval is not None:
         end_step_fns.append(store_simulation_at_interval(saving_interval, f"run{task_id}"))
+
+    if console_args.enabled and MPIDistributor.is_master():
+        # Lazy import: the console costs nothing when disabled.
+        from ruth.console import create_console
+        console = create_console(console_args)
+        end_step_fns.append(console.end_step)
 
     zmq_ctx = ZeroMqContext()
     route_selection_providers = create_route_selection_providers(route_selection_ratio, zeromq_ctx=zmq_ctx,
@@ -400,14 +570,12 @@ def setup(common_args: CommonArgs, vehicles_path: Path,
     signal.signal(signal.SIGUSR1, handle_save_only)
     signal.signal(signal.SIGUSR2, handle_save_and_exit)
 
-    try:
-        simulator.simulate(
-            alternatives_providers=alternatives_providers,
-            route_selection_providers=route_selection_providers,
-            end_step_fns=end_step_fns,
-        )
-    except Exception as error:
-        print(f"An error occurred: {error}")
+    simulator.simulate(
+        alternatives_providers=alternatives_providers,
+        route_selection_providers=route_selection_providers,
+        end_step_fns=end_step_fns,
+        max_steps=common_args.max_steps,
+    )
 
     simulation = simulator.state
     simulation.store(out)

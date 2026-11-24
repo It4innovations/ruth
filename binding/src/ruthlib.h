@@ -12,7 +12,7 @@ namespace ruthlib {
     void setup_map(std::string path);
     void init_routes();
     bool is_master();
-    void do_alternatives(std::vector<std::pair<int, int>> OD_matrix, int max_routes);
+    void do_alternatives(std::vector<std::pair<int, int>> OD_matrix, int max_routes, bool use_origin_speeds = false);
     std::tuple<std::vector<int>, std::vector<std::vector<std::vector<int>>>, std::vector<std::vector<float>>> get_routes();
     void do_travel_times(std::vector<std::vector<int>> routes);
     std::vector<float> get_travel_times();

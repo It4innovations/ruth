@@ -4,6 +4,7 @@ import itertools
 import logging
 import os
 import pickle
+import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
@@ -23,6 +24,19 @@ from ..data.segment import Route, Segment, SegmentId, SpeedKph
 
 cl = logging.getLogger(__name__)
 cl.propagate = True
+
+MAP_POLICY_VERSION = "drive-v2"
+CUSTOM_DRIVE_FILTER = (
+    '["highway"]'
+    '["area"!~"yes"]'
+    '["access"!~"private"]'
+    '["highway"!~"abandoned|bridleway|bus_guideway|construction|corridor|cycleway|elevator|escalator'
+    '|footway|no|path|pedestrian|planned|platform|proposed|raceway|razed|steps|track|closed"]'
+    '["motor_vehicle"!~"no"]'
+    '["motorcar"!~"no"]'
+    '["service"!~"alley|driveway|emergency_access|parking|parking_aisle|private"]'
+)
+
 
 @dataclass
 class TemporarySpeed:
@@ -84,6 +98,48 @@ class BBox:
     @property
     def name(self):
         return f"{self.north}-{self.west}-{self.south}-{self.east}".replace('.', "_")
+
+
+def map_provenance_from_filename(graphml_file):
+    """Return bbox and download date encoded in a RUTH GraphML filename.
+
+    RUTH map files are named
+    ``<north>-<west>-<south>-<east>_<download-date>[_<policy>].graphml``.
+    Coordinates use underscores as decimal separators and the date uses
+    hyphens in its time component.
+    """
+    stem = Path(graphml_file).stem
+    match = re.match(
+        r"^(?P<bbox>.+)_(?P<date>\d{4}-\d{2}-\d{2}[T ]\d{2}-\d{2}-\d{2})"
+        r"(?:_[a-zA-Z0-9-]+)?$",
+        stem,
+    )
+    if not match:
+        return None, None
+
+    coord_pattern = r"-?\d+(?:_\d+)?"
+    bbox_match = re.match(
+        rf"^(?P<north>{coord_pattern})-(?P<west>{coord_pattern})-"
+        rf"(?P<south>{coord_pattern})-(?P<east>{coord_pattern})$",
+        match.group("bbox"),
+    )
+    if not bbox_match:
+        return None, None
+
+    def parse_coord(name):
+        return float(bbox_match.group(name).replace("_", "."))
+
+    date_value = match.group("date")
+    date_separator = "T" if "T" in date_value else " "
+    date_part, time_part = date_value.split(date_separator, 1)
+    download_date = f"{date_part}{date_separator}{time_part.replace('-', ':')}"
+
+    return BBox(
+        parse_coord("north"),
+        parse_coord("west"),
+        parse_coord("south"),
+        parse_coord("east"),
+    ), download_date
 
 
 def concat_nodes(main_node, next_nodes, roundabout_nodes, concated, network):
@@ -162,12 +218,23 @@ class Map:
         self.download_date = download_date
         self.data_dir = data_dir
         self.graphml_file = None
+        self.map_policy_version = os.environ.get("RUTH_MAP_POLICY", MAP_POLICY_VERSION)
+        if self.map_policy_version not in ("drive-v1", MAP_POLICY_VERSION):
+            raise ValueError("RUTH_MAP_POLICY must be 'drive-v1' or 'drive-v2'.")
 
         if graphml_file is not None:
-            cl.info(f"Loading map from {graphml_file}, ignoring bbox and download_date.")
+            # Fail loudly rather than let load_graphml raise a cryptic error (or, in
+            # other call paths, silently fall through to a bbox-derived map).
+            if not os.path.isfile(graphml_file):
+                raise FileNotFoundError(
+                    f"map-graphml '{Path(graphml_file).absolute()}' does not exist or is "
+                    f"not a file.")
+            cl.info(f"Loading map from {graphml_file}.")
             self.graphml_file = graphml_file
             self.network = load_graphml(graphml_file)
-            self.bbox, self.download_date = None, None
+            filename_bbox, filename_download_date = map_provenance_from_filename(graphml_file)
+            self.bbox = filename_bbox
+            self.download_date = filename_download_date
             fresh_data = False
         elif bbox is None or download_date is None:
             raise ValueError("Either graphml_file or both bbox and download_date must be provided.")
@@ -237,13 +304,14 @@ class Map:
             if v.osm_route:
                 v.osm_route = [key for key, _ in itertools.groupby(
                     [self.remapped_nodes.get(node, node) for node in v.osm_route])]
-
-                for node_from, node_to in zip(v.osm_route[:-1], v.osm_route[1:]):
-                    if not self.original_network.has_edge(node_from, node_to):
-                        cl.error(f"No link between {node_from} and {node_to} in the network.")
-                        v.osm_route = []
-                        v.active = False
-                        break
+                
+                if len(v.osm_route) > 2:
+                    for node_from, node_to in zip(v.osm_route[:-1], v.osm_route[1:]):
+                        if not self.original_network.has_edge(node_from, node_to):
+                            cl.error(f"No link between {node_from} and {node_to} in the network.")
+                            v.osm_route = []
+                            v.active = False
+                            break
 
                 if v.osm_route:
                     v.origin_node = v.osm_route[0]
@@ -277,7 +345,15 @@ class Map:
             return self.graphml_file
 
         """Path to locally stored map."""
-        return os.path.join(self.data_dir, f"{self.name}.graphml")
+        policy = getattr(self, "map_policy_version", "drive-v2")
+        return os.path.join(self.data_dir, f"{self.name}_{policy}.graphml")
+
+    def provenance(self) -> Dict[str, Optional[str]]:
+        return {
+            "policy_version": self.network.graph.get("ruth_map_policy_version"),
+            "custom_filter": self.network.graph.get("ruth_custom_filter"),
+            "osmnx_version": self.network.graph.get("ruth_osmnx_version"),
+        }
 
     @property
     def name(self):
@@ -329,12 +405,14 @@ class Map:
         passed in `segments_to_update`.
         """
         self.map_id = self.map_id + 1
-        max_speeds = nx.get_edge_attributes(self.current_network, name='speed_kph')
 
         new_current_speeds = {}
         for ((node_from, node_to), speed) in segments_to_update.items():
             edge = self.current_network[node_from][node_to]
-            max_speed = max_speeds[(node_from, node_to)]
+            # Read the limit from the edge dict already in hand: building the
+            # whole-graph attribute dict (nx.get_edge_attributes) here cost
+            # ~10% of the step wall time to look up a handful of segments.
+            max_speed = edge['speed_kph']
             speed = max_speed if speed is None else speed
             speed = min(speed, max_speed)
             speed = round_speed(speed)
@@ -463,17 +541,29 @@ class Map:
             cl.info("Map loaded from memory object.")
             return self.network, False
         elif os.path.exists(self.file_path):
-            cl.info(f"Loading network for '{self.name}' from local map.")
+            cl.info(f"Loading network for '{self.file_path}' from local map.")
             return load_graphml(self.file_path), False
         else:
-            cl.info(f"Loading map for {self.name} via OSM API...")
-
-            osmnx.settings.overpass_settings = f"[out:json][timeout:{{timeout}}][date:'{self.download_date}']"
+            cl.info(f"Loading map for {self.file_path} via OSM API...")
 
             north, west, south, east = self.bbox.get_coords()
-            network = graph_from_bbox(bbox=(north, south, east, west),
-                                      network_type="drive",
-                                      retain_all=False)
+            custom_filter = None if self.map_policy_version == "drive-v1" else CUSTOM_DRIVE_FILTER
+            previous_settings = osmnx.settings.overpass_settings
+            try:
+                osmnx.settings.overpass_settings = (
+                    f"[out:json][timeout:{{timeout}}]{{maxsize}}[date:'{self.download_date}']"
+                )
+                network = graph_from_bbox(bbox=(north, south, east, west),
+                                          network_type="drive",
+                                          retain_all=False,
+                                          custom_filter=custom_filter)
+            finally:
+                osmnx.settings.overpass_settings = previous_settings
+            network.graph.update({
+                "ruth_map_policy_version": self.map_policy_version,
+                "ruth_custom_filter": custom_filter or "osmnx:drive",
+                "ruth_osmnx_version": ox.__version__,
+            })
 
             cl.info(f"{self.name}'s map loaded.")
             return network, True

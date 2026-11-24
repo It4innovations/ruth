@@ -20,6 +20,8 @@ setup(
     author="IT4Innovation",
     author_email="paulo.silva@vsb.cz",
     packages=find_packages(),
+    package_data={"ruth": ["console/static/*", "console/static/vendor/*"]},
+    include_package_data=True,
     install_requires=requirements,
     entry_points={
         "console_scripts": [
@@ -29,6 +31,7 @@ setup(
             "ruth-od-matrix-to-simulator-input = ruth.tools.odmatrix2simulatorinput:convert",
             "ruth-combine-od-matrix = ruth.tools.combineodmatrix:combine_odmatrix",
             "traffic-flow-map = ruth.flowmap.app:main",
+            "ruth-console = ruth.tools.console_cli:main",
         ]
     }
 )

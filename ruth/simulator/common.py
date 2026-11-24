@@ -1,4 +1,9 @@
+import glob
+import hashlib
+import json
 import logging
+import os
+from pathlib import Path
 from dataclasses import asdict
 from datetime import timedelta
 from typing import List, Tuple, Optional
@@ -6,37 +11,332 @@ from typing import List, Tuple, Optional
 import pandas as pd
 
 from ..data.map import BBox
-from ..vehicle import Vehicle
+from ..vehicle import Vehicle, VehicleAlternatives, VehicleRouteSelection
 
 logger = logging.getLogger(__name__)
 
 
-def load_vehicles(input_path: str) -> Tuple[List[Vehicle], Optional[BBox], Optional[str]]:
+ALTERNATIVES_BY_INDEX = [
+    VehicleAlternatives.DEFAULT,
+    VehicleAlternatives.DIJKSTRA_FASTEST,
+    VehicleAlternatives.DIJKSTRA_SHORTEST,
+    VehicleAlternatives.PLATEAU_FASTEST,
+]
+
+ROUTE_SELECTION_BY_INDEX = [
+    VehicleRouteSelection.NO_ALTERNATIVE,
+    VehicleRouteSelection.FIRST,
+    VehicleRouteSelection.RANDOM,
+    VehicleRouteSelection.PTDR,
+]
+
+
+def remove_existing_fcd_history_files(base_path: str) -> List[str]:
+    """Remove HDF5 part files that conflict with a new FCD history output."""
+    base_no_ext = os.path.splitext(base_path)[0]
+    existing_parts = sorted(glob.glob(f"{base_no_ext}-part*.h5"))
+    for path in existing_parts:
+        os.remove(path)
+        logger.info("Removed existing FCD history file: %s", path)
+    return existing_parts
+
+
+def choose_by_stable_ratio(ratios: List[float], choices: List, seed: Optional[int], vehicle_id: int, salt: str):
+    digest = hashlib.blake2b(
+        f"{seed or 0}:{vehicle_id}:{salt}".encode("utf-8"),
+        digest_size=8,
+    ).digest()
+    value = int.from_bytes(digest, byteorder="big") / float(1 << 64)
+    cumulative = 0.0
+    for ratio, choice in zip(ratios, choices):
+        cumulative += ratio
+        if value <= cumulative:
+            return choice
+    return choices[-1]
+
+
+def set_vehicle_behavior_stable(vehicle: Vehicle,
+                                alternatives_ratio: List[float],
+                                route_selection_ratio: List[float],
+                                seed: Optional[int]):
+    if abs(alternatives_ratio[0] - route_selection_ratio[0]) > 1e-8:
+        raise ValueError("Default alternatives ratio must equal no-alternative route selection ratio.")
+
+    vehicle.alternatives = choose_by_stable_ratio(alternatives_ratio, ALTERNATIVES_BY_INDEX,
+                                                  seed, vehicle.id, "alternatives")
+
+    if vehicle.alternatives == VehicleAlternatives.DEFAULT:
+        vehicle.route_selection = VehicleRouteSelection.NO_ALTERNATIVE
+        return
+
+    selection_tail = route_selection_ratio[1:]
+    selection_total = sum(selection_tail)
+    if selection_total <= 0:
+        vehicle.route_selection = VehicleRouteSelection.NO_ALTERNATIVE
+        return
+
+    selection_ratios = [ratio / selection_total for ratio in selection_tail]
+    vehicle.route_selection = choose_by_stable_ratio(selection_ratios, ROUTE_SELECTION_BY_INDEX[1:],
+                                                     seed, vehicle.id, "route-selection")
+
+
+def set_vehicle_behavior_stable_for_vehicles(vehicles: List[Vehicle],
+                                             alternatives_ratio: List[float],
+                                             route_selection_ratio: List[float],
+                                             seed: Optional[int]):
+    for vehicle in vehicles:
+        set_vehicle_behavior_stable(vehicle, alternatives_ratio, route_selection_ratio, seed)
+
+
+def _is_missing(value) -> bool:
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def period_to_timedelta(value, name: str, default: Optional[timedelta] = None) -> timedelta:
+    if _is_missing(value):
+        if default is not None:
+            return default
+        raise ValueError(f"Missing required vehicle period: {name}")
+
+    if isinstance(value, timedelta):
+        return value
+
+    if hasattr(value, "to_pytimedelta"):
+        return value.to_pytimedelta()
+
+    if isinstance(value, (int, float)):
+        if value <= 0:
+            raise ValueError(f"{name} must be positive, got {value!r}")
+        return timedelta(seconds=float(value))
+
+    parsed = pd.to_timedelta(value)
+    if hasattr(parsed, "to_pytimedelta"):
+        return parsed.to_pytimedelta()
+    if isinstance(parsed, timedelta):
+        return parsed
+    raise TypeError(f"Cannot convert {name}={value!r} to timedelta")
+
+
+def vehicle_from_record(record, frequency_default=None, fcd_sampling_period_default=None):
+    osm_route = record["osm_route"]
+    origin_node = record["origin_node"]
+    dest_node = record["dest_node"]
+    needs_default_route = not osm_route or len(osm_route) <= 2
+
+    if (not osm_route or len(osm_route) < 2) and origin_node is not None and dest_node is not None:
+        osm_route = [origin_node, dest_node]
+
+    frequency = period_to_timedelta(
+        frequency_default if frequency_default is not None else record.get("frequency"),
+        "frequency",
+        default=timedelta(seconds=20),
+    )
+    fcd_sampling_period = period_to_timedelta(
+        fcd_sampling_period_default
+        if fcd_sampling_period_default is not None
+        else record.get("fcd_sampling_period"),
+        "fcd_sampling_period",
+        default=timedelta(seconds=5),
+    )
+
+    vehicle = Vehicle(
+        id=record["id"],
+        time_offset=record["time_offset"],
+        frequency=frequency,
+        start_index=record["start_index"],
+        start_distance_offset=record["start_distance_offset"],
+        origin_node=origin_node,
+        dest_node=dest_node,
+        osm_route=osm_route,
+        active=record["active"],
+        fcd_sampling_period=fcd_sampling_period,
+        status=record["status"],
+    )
+    vehicle.needs_default_route = needs_default_route
+    return vehicle
+
+
+def load_manifest(dataset_path: Path):
+    manifest_path = dataset_path / "manifest.json"
+    if manifest_path.exists():
+        with manifest_path.open(encoding="utf-8") as f:
+            return json.load(f)
+    return None
+
+
+def metadata_from_manifest(manifest):
+    shared = manifest.get("shared_columns", {}) if manifest else {}
+    bbox_data = shared.get("bbox", {})
+    bbox = BBox(
+        bbox_data.get("lat_max"),
+        bbox_data.get("lon_min"),
+        bbox_data.get("lat_min"),
+        bbox_data.get("lon_max"),
+    )
+    return bbox, shared.get("download_date"), shared
+
+
+def metadata_from_dataframe(df):
+    if df.empty:
+        return None, None, {}
+
+    row = df.iloc[0]
+    shared = {
+        "frequency": row.get("frequency"),
+        "fcd_sampling_period": row.get("fcd_sampling_period"),
+    }
+    bbox = BBox(
+        row.get("bbox_lat_max"),
+        row.get("bbox_lon_min"),
+        row.get("bbox_lat_min"),
+        row.get("bbox_lon_max"),
+    )
+    return bbox, row.get("download_date"), shared
+
+
+def has_complete_map_metadata(bbox, download_date):
+    return (
+        bbox is not None
+        and bbox.north is not None
+        and bbox.west is not None
+        and bbox.south is not None
+        and bbox.east is not None
+        and download_date is not None
+    )
+
+
+def bucket_start_from_path(path: Path):
+    if "=" not in path.name:
+        return None
+    key, value = path.name.split("=", 1)
+    if key != "start_bucket_s":
+        return None
+    return int(value)
+
+
+class VehicleDatasetSource:
+    def __init__(self, input_path: str, alternatives_ratio: List[float],
+                 route_selection_ratio: List[float], seed: Optional[int],
+                 frequency_override: Optional[timedelta] = None,
+                 fcd_sampling_period_override: Optional[timedelta] = None,
+                 max_vehicles: Optional[int] = None):
+        self.input_path = Path(input_path)
+        self.manifest = load_manifest(self.input_path)
+        self.alternatives_ratio = alternatives_ratio
+        self.route_selection_ratio = route_selection_ratio
+        self.seed = seed
+        self.frequency_override = frequency_override
+        self.fcd_sampling_period_override = fcd_sampling_period_override
+        self.max_vehicles = max_vehicles
+        self.loaded_vehicle_count = 0
+        self.bucket_paths = self.discover_bucket_paths()
+        self.bucket_index = 0
+
+        if not self.bucket_paths:
+            raise ValueError(f"No parquet buckets found in {self.input_path}")
+
+        self.bbox, self.download_date, self.shared_defaults = metadata_from_manifest(self.manifest)
+        if not has_complete_map_metadata(self.bbox, self.download_date):
+            first_bucket = pd.read_parquet(self.bucket_paths[0], engine="fastparquet")
+            self.bbox, self.download_date, fallback_defaults = metadata_from_dataframe(first_bucket)
+            manifest_defaults = {
+                key: value for key, value in self.shared_defaults.items()
+                if value is not None and not pd.isna(value)
+            }
+            self.shared_defaults = {**fallback_defaults, **manifest_defaults}
+
+        if not has_complete_map_metadata(self.bbox, self.download_date):
+            raise ValueError(f"Cannot load map metadata from manifest or parquet columns in {self.input_path}")
+
+    def discover_bucket_paths(self):
+        bucket_paths = [
+            path for path in self.input_path.iterdir()
+            if path.is_dir() and bucket_start_from_path(path) is not None
+        ]
+        return sorted(bucket_paths, key=bucket_start_from_path)
+
+    def has_next_bucket(self):
+        return (
+            self.bucket_index < len(self.bucket_paths)
+            and (self.max_vehicles is None or self.loaded_vehicle_count < self.max_vehicles)
+        )
+
+    def next_bucket_start_s(self):
+        if not self.has_next_bucket():
+            return None
+        return bucket_start_from_path(self.bucket_paths[self.bucket_index])
+
+    def load_next_bucket(self) -> List[Vehicle]:
+        if not self.has_next_bucket():
+            return []
+
+        bucket_path = self.bucket_paths[self.bucket_index]
+        self.bucket_index += 1
+        logger.info("Loading vehicle bucket %s", bucket_path)
+        df = pd.read_parquet(bucket_path, engine="fastparquet")
+        if df.empty:
+            return []
+
+        frequency_default = self.frequency_override or period_to_timedelta(
+            self.shared_defaults.get("frequency"),
+            "frequency",
+            default=timedelta(seconds=20),
+        )
+        fcd_sampling_period_default = self.fcd_sampling_period_override or period_to_timedelta(
+            self.shared_defaults.get("fcd_sampling_period"),
+            "fcd_sampling_period",
+            default=timedelta(seconds=5),
+        )
+
+        vehicles = []
+        for record in df.to_dict(orient="records"):
+            vehicle = vehicle_from_record(
+                record,
+                frequency_default,
+                fcd_sampling_period_default
+            )
+            if vehicle.active and vehicle.osm_route and len(vehicle.osm_route) >= 2:
+                vehicles.append(vehicle)
+        set_vehicle_behavior_stable_for_vehicles(vehicles, self.alternatives_ratio,
+                                                 self.route_selection_ratio, self.seed)
+        if self.max_vehicles is not None:
+            remaining = self.max_vehicles - self.loaded_vehicle_count
+            vehicles = vehicles[:remaining]
+        self.loaded_vehicle_count += len(vehicles)
+        logger.info("Loaded %d active vehicles from %s", len(vehicles), bucket_path.name)
+        return vehicles
+
+
+def load_vehicles(input_path: str,
+                  frequency_override: Optional[timedelta] = None,
+                  fcd_sampling_period_override: Optional[timedelta] = None,
+                  max_vehicles: Optional[int] = None) \
+        -> Tuple[List[Vehicle], Optional[BBox], Optional[str]]:
     logger.info("Loading data... %s", input_path)
+    if frequency_override is not None:
+        logger.info("Overriding vehicle frequency with %s", frequency_override)
+    if fcd_sampling_period_override is not None:
+        logger.info("Overriding FCD sampling period with %s", fcd_sampling_period_override)
+
     df = pd.read_parquet(input_path, engine="fastparquet")
     if df.empty:
         raise ValueError(f"No vehicle data found in {input_path}")
 
-    records = df.to_dict(orient="records")
-    vehicles: List[Vehicle] = []
-    for r in records:
-        vehicles.append(Vehicle(
-            id=r.get("id"),
-            time_offset=r.get("time_offset"),
-            frequency=timedelta(seconds=5),  # TODO: Placeholder, actual frequency may vary
-            start_index=r.get("start_index"),
-            start_distance_offset=r.get("start_distance_offset"),
-            origin_node=r.get("origin_node"),
-            dest_node=r.get("dest_node"),
-            osm_route=r.get("osm_route"),
-            active=r.get("active", True),
-            fcd_sampling_period=r.get("fcd_sampling_period"),
-            status=r.get("status"),
-        ))
+    vehicles = [
+        vehicle_from_record(record, frequency_override, fcd_sampling_period_override)
+        for record in df.to_dict(orient="records")
+    ]
 
     # Filter vehicles with missing or too-short routes or inactive flag
     pre_count = len(vehicles)
     vehicles = [v for v in vehicles if v.active and v.osm_route and len(v.osm_route) >= 2]
+    if max_vehicles is not None:
+        vehicles = vehicles[:max_vehicles]
     filtered_count = pre_count - len(vehicles)
     if filtered_count > 0:
         logger.info(f"Filtered {filtered_count} vehicles with too short or missing routes.")

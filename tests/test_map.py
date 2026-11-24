@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
 
 import numpy as np
@@ -5,31 +6,88 @@ import pytest
 from datetime import datetime
 import csv
 
-from ruth.data.map import BBox, Map, TemporarySpeed
+from ruth.data.map import BBox, Map, TemporarySpeed, map_provenance_from_filename
 from ruth.data.segment import SpeedKph, SegmentId
+
+
+def test_map_provenance_is_parsed_from_versioned_graphml_filename():
+    graph_path = (
+        "/maps/50_16568920000002-14_321441000000016-"
+        "50_020240399999985-14_592499399999983_"
+        "2024-01-10T00-00-00_drive-v2.graphml"
+    )
+
+    bbox, download_date = map_provenance_from_filename(graph_path)
+
+    assert bbox.get_coords() == (
+        50.16568920000002,
+        14.321441000000016,
+        50.020240399999985,
+        14.592499399999983,
+    )
+    assert download_date == "2024-01-10T00:00:00"
+
+
+def test_map_provenance_supports_negative_coordinates():
+    graph_path = (
+        "/maps/42_84357356810164--89_40122346620633-"
+        "40_99480844658554--86_48623027701692_"
+        "2026-06-05T00-00-00.graphml"
+    )
+
+    bbox, download_date = map_provenance_from_filename(graph_path)
+
+    assert bbox.get_coords() == (
+        42.84357356810164,
+        -89.40122346620633,
+        40.99480844658554,
+        -86.48623027701692,
+    )
+    assert download_date == "2026-06-05T00:00:00"
 
 
 @pytest.fixture(scope='module')
 def routing_map():
     bbox = BBox(50.16568920000002, 14.321441000000016, 50.020240399999985, 14.592499399999983)
-    routing_map = Map(bbox=bbox, download_date='2024-01-10T00:00:00', with_speeds=True)
+    graphml = (Path(__file__).parent / "data" /
+               "50_16568920000002-14_321441000000016-50_020240399999985-"
+               "14_592499399999983_2024-01-10T00-00-00.graphml")
+    routing_map = Map(bbox=bbox, graphml_file=str(graphml), with_speeds=True)
     return routing_map
 
 
 @pytest.fixture
-def setup_segment():
+def setup_segment(routing_map):
+    node_from = node_middle = node_to = None
+    for candidate_from, candidate_middle in routing_map.original_network.edges():
+        successors = list(routing_map.original_network.successors(candidate_middle))
+        if successors:
+            node_from, node_middle, node_to = candidate_from, candidate_middle, successors[0]
+            break
+    assert node_from is not None, "The routing fixture must contain a two-edge path."
+
+    first_data = routing_map.original_network[node_from][node_middle]
+    second_data = routing_map.original_network[node_middle][node_to]
+    for u, v, data in (
+        (node_from, node_middle, first_data),
+        (node_middle, node_to, second_data),
+    ):
+        routing_map.current_network[u][v]["speed_kph"] = data["maxspeed"]
+    routing_map.init_current_speeds()
+    routing_map.temporary_speeds = []
+
     segment1 = MagicMock()
-    segment1.node_from = 25664661
-    segment1.node_to = 27349583
-    segment1.speed_kph = 50.0
-    segment1.length = 753
+    segment1.node_from = node_from
+    segment1.node_to = node_middle
+    segment1.speed_kph = first_data["maxspeed"]
+    segment1.length = first_data["length"]
     segment1.current_travel_time = segment1.length / (segment1.speed_kph / 3.6)
 
     segment2 = MagicMock()
-    segment2.node_from = 27349583
-    segment2.node_to = 27350859
-    segment2.speed_kph = 50.0
-    segment2.length = 133
+    segment2.node_from = node_middle
+    segment2.node_to = node_to
+    segment2.speed_kph = second_data["maxspeed"]
+    segment2.length = second_data["length"]
     segment2.current_travel_time = segment2.length / (segment2.speed_kph / 3.6)
 
     return [segment1, segment2]
@@ -386,3 +444,9 @@ def test_has_temporary_speeds_planned_false(routing_map):
     """Test checking if temporary speeds are planned (false case)."""
     routing_map.temporary_speeds = []
     assert routing_map.has_temporary_speeds_planned() is False
+
+
+def test_graphml_coordinates_keep_longitude_in_x(routing_map):
+    node = routing_map.original_network.nodes[172512]
+    assert node["x"] == pytest.approx(14.4041771)
+    assert node["y"] == pytest.approx(50.0769181)

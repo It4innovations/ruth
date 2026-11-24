@@ -1,6 +1,9 @@
 import pytest
 from unittest.mock import MagicMock
 from datetime import datetime, timedelta
+from types import SimpleNamespace
+
+import numpy as np
 
 from ruth.data.map import Map
 from ruth.data.segment import LengthMeters, Segment, SpeedKph, speed_kph_to_mps, SpeedMps
@@ -115,6 +118,71 @@ def test_vehicle_advances_normally(setup_vehicle, mock_gv_db, mock_routing_map, 
         assert fcd_records[i].vehicle_speed_mps == expected_fcd_records[i].vehicle_speed_mps
         assert fcd_records[i].status == expected_fcd_records[i].status
         assert fcd_records[i].active == expected_fcd_records[i].active
+
+
+def test_store_rebuild_retains_segment_geometry(setup_vehicle):
+    ruthlib = pytest.importorskip("ruthlib")
+    from ruth.simulator import store_bridge
+    from ruth.simulator.mpi_advance import ADVANCE_TASK_DTYPE
+
+    segments = {
+        (0, 1): Segment(0, 1, LengthMeters(100.0), SpeedKph(50.0), 1),
+        (1, 2): Segment(1, 2, LengthMeters(0.0), SpeedKph(50.0), 1),
+        (2, 3): Segment(2, 3, LengthMeters(80.0), SpeedKph(50.0), 1),
+    }
+    ids = {key: i for i, key in enumerate(segments, start=1)}
+    keys = {routing_id: key for key, routing_id in ids.items()}
+    routing_map = SimpleNamespace(
+        segment_id_to_int=lambda key: ids[key],
+        int_to_segment_id=lambda routing_id: keys[routing_id],
+        get_osm_segment=lambda node_from, node_to: segments[(node_from, node_to)],
+        get_current_max_speed=lambda node_from, node_to: SpeedKph(50.0),
+    )
+
+    def vehicle(vehicle_id, route):
+        return Vehicle(
+            id=vehicle_id, time_offset=timedelta(), frequency=timedelta(seconds=10),
+            start_index=0, start_distance_offset=LengthMeters(0.0),
+            origin_node=route[0], dest_node=route[-1], osm_route=route,
+            active=True, fcd_sampling_period=timedelta(seconds=5), status="",
+        )
+
+    zero_length = vehicle(1, [1, 2])
+    added = vehicle(2, [2, 3])
+    store_bridge.initialize([setup_vehicle, zero_length], routing_map)
+    assert store_bridge.ensure_population([setup_vehicle, zero_length, added], routing_map)
+
+    tasks = store_bridge.build_tasks([setup_vehicle, zero_length, added], ADVANCE_TASK_DTYPE)
+    assert tasks["seg0_len"].tolist() == [100.0, 0.0, 80.0]
+    assert tasks["seg0_valid"].tolist() == [1, 1, 1]
+    selected = np.asarray([0, 1, 2], dtype=np.int32)
+    assert ruthlib.advance_store_at_segment_end(selected).tolist() == [1]
+
+
+def test_store_rejects_missing_segment_geometry():
+    pytest.importorskip("ruthlib")
+    import subprocess
+    import sys
+
+    # A native fatal error must run in a child process so it cannot stop pytest.
+    child = """
+import resource
+import numpy as np
+import ruthlib
+resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+i4 = lambda values: np.asarray(values, dtype=np.int32)
+i8 = lambda values: np.asarray(values, dtype=np.int64)
+f8 = lambda values: np.asarray(values, dtype=np.float64)
+ruthlib.advance_store_reset(1, 2, 1)
+ruthlib.advance_store_add_vehicles(
+    i4([7]), i4([0]), f8([0.0]), i8([0]), i8([10_000_000]),
+    i8([5_000_000]), i4([1]), i8([2]), i8([1, 2]), i8([1, -1]), i4([0, 2]),
+)
+ruthlib.advance_store_at_segment_end(i4([7]))
+"""
+    result = subprocess.run([sys.executable, "-c", child], capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "missing geometry for routing_id 1" in result.stderr
 
 
 def test_vehicle_reaches_end_of_segment(setup_vehicle, mock_gv_db, mock_routing_map, mock_queues_manager, current_time):

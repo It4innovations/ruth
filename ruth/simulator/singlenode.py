@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Callable, List, Optional, Tuple
 
@@ -11,6 +12,7 @@ from ..utils import TimerSet
 from ..vehicle import Vehicle, VehicleAlternatives
 
 logger = logging.getLogger(__name__)
+PLATEAU_DEFAULT_ROUTE_SPEEDS_ENV = "RUTH_PLATEAU_DEFAULT_ROUTE_SPEEDS"
 
 
 class Simulator:
@@ -25,6 +27,9 @@ class Simulator:
         """
         self.sim = sim
         self.current_offset = self.sim.compute_current_offset()
+        self._store_population_done = False
+        self._advance_state_ready = False
+        self._vehicle_index = None
 
     @property
     def state(self):
@@ -34,7 +39,8 @@ class Simulator:
             self,
             alternatives_providers: List[AlternativesProvider],
             route_selection_providers: List[RouteSelectionProvider],
-            end_step_fns: Optional[List[Callable[[Simulation], None]]] = None
+            end_step_fns: Optional[List[Callable[[Simulation], bool]]] = None,
+            max_steps: Optional[int] = None,
     ):
         """Perform the simulation.
 
@@ -42,15 +48,34 @@ class Simulator:
         -----------
             :param alternatives_providers: Implementation of alternatives.
             :param route_selection_providers: Implementation of route selection.
-            :param end_step_fns: An arbitrary functions that are called at the end of each step with
-            the current state of simulation. It can be used for storing the state, for example.
+            :param end_step_fns: Functions called at the end of each step with the current state.
+            Returning True requests a graceful stop after the current step.
+            :param max_steps: Stop after this many total steps. Steps from a resumed simulation
+            count toward the limit. None runs the simulation to completion.
         """
-        self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
+        if max_steps is not None and max_steps < 1:
+            raise ValueError("max_steps must be at least 1.")
 
         for alternatives_provider in alternatives_providers:
             alternatives_provider.load_map(self.sim.routing_map)
 
+        if self.sim.streaming:
+            self.prepare_loaded_vehicles(self.sim.vehicles, alternatives_providers)
+            self.sim.prune_inactive_vehicles()
+            self.load_due_streaming_vehicles(alternatives_providers)
+            self.current_offset = self.sim.compute_current_offset()
+
+        if self.current_offset is None:
+            logger.warning("No active vehicles found. Simulation cannot proceed.")
+            return
+
         step = self.sim.number_of_steps
+        if max_steps is not None and step >= max_steps:
+            logger.info("Simulation already reached the configured limit of %s steps.", max_steps)
+            return
+
+        self.sim.routing_map.update_temporary_max_speeds(self.sim.setting.departure_time + self.current_offset)
+
         moved_last_step = True
         last_map_update = self.current_offset
         last_time_moved = self.current_offset
@@ -58,17 +83,27 @@ class Simulator:
 
         if self.sim.last_saved_speeds:
             self.sim.routing_map.update_current_speeds(self.sim.last_saved_speeds)
+            # Native routing providers loaded their own speed tables above.
+            for provider in alternatives_providers:
+                provider.update_map(self.sim.last_saved_speeds)
 
-        if step == 0:
+        if self._use_mpi_advance() and not self._advance_state_ready:
+            if step > 0:
+                from .mpi_advance import restore_global_view
+                restore_global_view(self.sim.global_view)
+            self._advance_state_ready = True
+
+        if step == 0 and not self.sim.streaming:
             for alternatives_provider in alternatives_providers:
                 if self.sim.setting.plateau_default_route and isinstance(alternatives_provider, MPIDistributedAlternatives):
                     self.change_baseline_alternatives(self.sim.vehicles, alternatives_provider)
 
+        last_saved_hour = -1
         with self.sim.history:
             # save the initial map to hdf5
             self.sim.history.writer.save_map(self.sim.routing_map, self.sim.setting.departure_time, self.sim.setting.round_freq)
 
-            while self.current_offset is not None:
+            while self.current_offset is not None and (max_steps is None or step < max_steps):
                 step_start_dt = datetime.now()
                 timer_set = TimerSet()
 
@@ -84,17 +119,18 @@ class Simulator:
                             break
                 # END if self.sim.setting.stuck_detection
 
+                with timer_set.get("store_sync"):
+                    self.sync_store_population()
+
                 with timer_set.get("update_map_speeds"):
                     last_map_update, updated_speeds = self.update_map_speeds(updated_speeds, last_map_update,
                                                                              alternatives_providers)
 
                 with timer_set.get("allowed_vehicles"):
-                    vehicles_to_be_moved = [v for v in self.sim.vehicles
-                                            if self.sim.is_vehicle_within_offset(v, offset_seconds)]
+                    vehicles_to_be_moved, need_new_route = self.select_vehicles(offset_seconds)
 
-                    need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
-                                      vehicle.is_at_the_end_of_segment(self.sim.routing_map)
-                                      and vehicle.alternatives != VehicleAlternatives.DEFAULT]
+                with timer_set.get("store_shadow_check"):
+                    self.shadow_check_selection(offset_seconds, vehicles_to_be_moved)
 
                 with timer_set.get("alternatives"):
                     computed_vehicles, alts = compute_alternatives(alternatives_providers,
@@ -115,24 +151,53 @@ class Simulator:
 
                     check_travel_times(self.sim.routing_map, alternatives_providers, selected_plans)
 
+                    # update_followup_route only assigns a new osm_route when it
+                    # ACCEPTS the suggestion: with travel_time_limit_perc set it
+                    # keeps the old route whenever the alternative is not enough
+                    # faster. Pushing the whole selected set re-sent routes that
+                    # had not moved, and a route push is proportional to route
+                    # LENGTH, so the waste was the expensive kind. Comparing list
+                    # identity is O(1) and exact -- an accepted suggestion builds
+                    # a new list, a rejected one leaves the attribute untouched.
+                    routes_before = [v.osm_route for (v, _) in selected_plans]
                     for (vehicle, route) in selected_plans:
                         vehicle.update_followup_route(route, self.sim.routing_map,
                                                       self.sim.setting.travel_time_limit_perc)
 
+                    # The store holds each vehicle's route; these just changed.
+                    self.push_store_routes([
+                        vehicle for (vehicle, _), previous
+                        in zip(selected_plans, routes_before)
+                        if vehicle.osm_route is not previous])
+
                 with timer_set.get("advance_vehicle"):
+                    # advance_vehicles arms the task digest, which needs the step
+                    # number; it is not otherwise threaded down there.
+                    self._current_step = step
                     fcds, has_moved = self.advance_vehicles(vehicles_to_be_moved.copy())
                     moved_last_step = False
                     if has_moved or self.sim.routing_map.has_temporary_speeds_planned():
                         last_time_moved = self.current_offset
                         moved_last_step = True
+                # Post-advance state, before pruning changes the population: this
+                # is the point both the serial and the distributed path must agree
+                # on, step for step.
+                self.emit_trajectory_digest(step)
 
-                with timer_set.get("update"):
+                with timer_set.get("update_global_view"):
                     self.sim.update(fcds)
+
+                with timer_set.get("fcd_history_extend"):
                     self.sim.history.extend(fcds)
 
                 with timer_set.get("compute_offset"):
-                    current_offset_new = self.sim.compute_current_offset()
-                    if current_offset_new == self.current_offset:
+                    previous_offset = self.current_offset
+                    self.sim.prune_inactive_vehicles()
+                    current_offset_new = self.current_offset_from_store()
+                    if self.sim.streaming:
+                        self.load_due_streaming_vehicles(alternatives_providers)
+                        current_offset_new = self.sim.compute_current_offset()
+                    if current_offset_new == previous_offset:
                         logger.error(
                             f"The consecutive step with the same offset: {self.current_offset}.")
                         break
@@ -146,21 +211,284 @@ class Simulator:
                     f"{step}. active: {len(vehicles_to_be_moved)}, need_new_route: {len(need_new_route)}, duration: {step_dur / timedelta(milliseconds=1)} ms, time: {self.current_offset}")
                 self.sim.duration += step_dur
 
-                if end_step_fns is not None:
-                    with timer_set.get("end_step"):
-                        for fn in end_step_fns:
-                            fn(self.state)
+                parts = timer_set.collect()
+                parts.update(self.sim.history.collect_step_metrics(reset=True))
+                parts.update(getattr(self, "advance_phase_times", None) or {})
+
+                logger.info(
+                    "step_timers: step=%s %s",
+                    step,
+                    " ".join(f"{key}={value:.3f}" for key, value in sorted(parts.items()))
+                )
 
                 self.sim.save_step_info(self.current_offset, step, len(vehicles_to_be_moved),
-                                        step_dur, timer_set.collect(), len(need_new_route))
+                                        step_dur, parts, len(need_new_route))
                 step += 1
+
+                if end_step_fns is not None:
+                    with timer_set.get("end_step"):
+                        stop_requested = False
+                        for fn in end_step_fns:
+                            stop_requested = fn(self.state) or stop_requested
+
+                if end_step_fns is not None and stop_requested:
+                    logger.info("Simulation stopped by an end-of-step callback.")
+                    break
             # END while self.current_offset is not None
 
             self.sim.history.writer.save_computational_time(self.sim.duration.total_seconds())
+            if max_steps is not None and step >= max_steps and self.current_offset is not None:
+                logger.info("Simulation stopped after reaching the configured limit of %s steps.", max_steps)
             logger.info(f"Simulation done in {self.sim.duration}.")
+
+    def emit_trajectory_digest(self, step: int):
+        """Log one hash of the post-advance movement state (ace.trajectory-digest).
+
+        This is the compliance check for "the vehicles are in the same exact
+        position": diff the logged digest column between a serial run and a
+        distributed run at any rank count, and the first differing line is the
+        first diverging step. It deliberately does not look at the FCD history,
+        whose row order is allowed to differ.
+
+        Off by default — it costs one O(N) pass per step.
+        """
+        setting = self.sim.setting
+        # getattr throughout: see the note in advance_vehicles about checkpoints
+        # written before these settings existed.
+        if not getattr(setting, "trajectory_digest", False):
+            return
+
+        # Imported lazily so the module is not a hard dependency of a normal run.
+        from .trajectory_digest import dump_trajectory, trajectory_digest
+
+        logger.info("trajectory_digest: step=%s n=%s digest=%s",
+                    step, len(self.sim.vehicles), trajectory_digest(self.sim.vehicles))
+
+        # The kernel is a pure function of (task, GlobalView). Logging the task
+        # digest next to the position digest says which of the two diverged:
+        # if the task digests already differ at the first diverging step the
+        # inputs are at fault, and if they agree the GlobalView is the only
+        # input left. Absent on the serial path, which builds no tasks.
+        if self._use_mpi_advance():
+            from . import mpi_advance
+            if mpi_advance.last_task_digest is not None:
+                logger.info("task_digest: step=%s digest=%s",
+                            step, mpi_advance.last_task_digest)
+
+        dump_step = getattr(setting, "trajectory_dump_step", -1)
+        if dump_step is not None and dump_step >= 0 and step == dump_step:
+            path = f"trajectory-step{step:06d}.csv"
+            rows = dump_trajectory(self.sim.vehicles, path)
+            logger.info("trajectory_digest: wrote %s rows of step %s state to %s",
+                        rows, step, path)
+
+    def arm_task_digest(self, mpi_advance) -> None:
+        """Tell mpi_advance whether to hash (and dump) this step's tasks.
+
+        Shares ace.trajectory-digest and ace.trajectory-dump-step with the
+        trajectory digest: the two numbers are only useful read together, and a
+        separate flag would just be one more thing to forget to turn on.
+        """
+        setting = self.sim.setting
+        enabled = bool(getattr(setting, "trajectory_digest", False))
+        mpi_advance.task_digest_enabled = enabled
+
+        dump_step = getattr(setting, "trajectory_dump_step", -1)
+        step = getattr(self, "_current_step", None)
+        if enabled and dump_step is not None and dump_step >= 0 and step == dump_step:
+            mpi_advance.task_dump_path = "tasks-step%06d.csv" % step
+        else:
+            mpi_advance.task_dump_path = None
+
+    def select_vehicles(self, offset_seconds: int):
+        """The vehicles moving this step, and those of them needing a new route.
+
+        Both passes used to walk every vehicle in Python: at 936k vehicles that
+        was ~384 ms per step no matter how few were active, which became the
+        largest single cost in the run once the advance itself got cheap. The
+        store answers both from its own columns, so the Python work is
+        proportional to the ANSWER rather than to the population.
+
+        Falls back to the original comprehensions when the store is not in
+        use, which is how the serial path keeps behaving exactly as it did.
+        """
+        if not self._use_store():
+            vehicles_to_be_moved = [v for v in self.sim.vehicles
+                                    if self.sim.is_vehicle_within_offset(v, offset_seconds)]
+            need_new_route = [vehicle for vehicle in vehicles_to_be_moved if
+                              vehicle.is_at_the_end_of_segment(self.sim.routing_map)
+                              and vehicle.alternatives != VehicleAlternatives.DEFAULT]
+            return vehicles_to_be_moved, need_new_route
+
+        from . import store_select
+
+        by_id = self._vehicle_by_id()
+        selected_ids = store_select.select_within_offset(offset_seconds,
+                                                         self.sim._freq_seconds)
+        vehicles_to_be_moved = [by_id[int(i)] for i in selected_ids]
+
+        # The store answers the geometric half (sitting exactly at a segment
+        # end); the behaviour half is a Python-only attribute, and it filters a
+        # set that is already small.
+        at_end_ids = store_select.at_segment_end(selected_ids)
+        need_new_route = [by_id[int(i)] for i in at_end_ids]
+        need_new_route = [v for v in need_new_route
+                          if v.alternatives != VehicleAlternatives.DEFAULT]
+        return vehicles_to_be_moved, need_new_route
+
+    def current_offset_from_store(self):
+        """compute_current_offset() answered from the store's columns."""
+        if not self._use_store():
+            return self.sim.compute_current_offset()
+
+        from . import store_select
+        offset_us = store_select.min_active_time_offset_us()
+        return None if offset_us is None else timedelta(microseconds=int(offset_us))
+
+    def _vehicle_by_id(self):
+        """id -> Vehicle, rebuilt only when the population changes."""
+        index = getattr(self, "_vehicle_index", None)
+        if index is None or len(index) != len(self.sim.vehicles):
+            index = {v.id: v for v in self.sim.vehicles}
+            self._vehicle_index = index
+        return index
+
+    def _use_store(self) -> bool:
+        """Whether the C++ VehicleStore is in use this run.
+
+        Exactly ace.mpi-advance. The store is not an option within the
+        distributed advance -- it is how the distributed advance builds its
+        tasks, selects its vehicles and replays its deltas. The serial path
+        never populates it and must therefore never read or push to it.
+        """
+        return bool(getattr(self.sim.setting, "mpi_advance", False))
+
+    def sync_store_population(self):
+        """Re-initialise the store if the vehicle population changed.
+
+        Streaming adds vehicles and pruning removes them, and the store is keyed
+        by vehicle id, so a population change has to be noticed before anything
+        asks it for a task. Comparing the id vectors is cheap and, unlike a
+        dirty flag maintained at every call site that mutates the list, cannot
+        be forgotten.
+        """
+        if not self._use_store():
+            return
+
+        # Only streaming adds or removes vehicles: load_next_vehicle_bucket and
+        # prune_inactive_vehicles are both no-ops otherwise. Rebuilding the id
+        # vector every step to discover that cost ~46 ms at 936k vehicles, so
+        # after the first population it is only re-checked when it can change.
+        if self._store_population_done and not self.sim.streaming:
+            return
+
+        from .store_bridge import ensure_population
+        if ensure_population(self.sim.vehicles, self.sim.routing_map):
+            self._vehicle_index = None
+            logger.info("store: re-initialised for %d vehicles", len(self.sim.vehicles))
+        self._store_population_done = True
+
+    def push_store_routes(self, vehicles: List[Vehicle]):
+        """Push rewritten routes into the store."""
+        if not self._use_store() or not vehicles:
+            return
+
+        from .store_bridge import push_routes
+        push_routes(vehicles, self.sim.routing_map)
+
+    def push_store_closures(self, segment_keys):
+        """Push changed segment closures into the store.
+
+        `is_closed` in a task mirrors `get_current_max_speed(...) == 0`, and only
+        Map.update_temporary_max_speeds writes the field behind it. Missing an
+        update here would leave a vehicle driving through a closed segment, so
+        it is fed straight from that call's return value.
+        """
+        if not self._use_store() or not segment_keys:
+            return
+
+        from .store_bridge import push_closures
+        push_closures(segment_keys, self.sim.routing_map)
+
+    def shadow_check_selection(self, offset_seconds: int, selected: List[Vehicle]):
+        """Check the C++ VehicleStore reproduces this step's selection.
+
+        Verification only (ace.store-shadow-check); nothing here feeds the
+        simulation.
+
+        Gated on BOTH ace.store-shadow-check and _use_store(), and it needs both:
+
+          * store_shadow_check, because everything here is verification. It
+            pushes all ~936k vehicles into the store, walks the selected set in
+            Python for `is_at_the_end_of_segment`, and calls
+            compute_current_offset() over the whole population -- the three
+            costs the C++ selection exists to remove. Measured at ~605 ms per
+            step, and invisible, because the call site had no timer on it.
+          * _use_store(), because the serial path must behave exactly as it
+            always has: it never populates the store, so it must never read or
+            push to it either.
+
+
+        It populates the store separately from the task check rather than
+        sharing one population: update_followup_route rewrites routes between
+        this point and task construction, so a population made here would be
+        stale by then.
+        """
+        if not (self._use_store()
+                and getattr(self.sim.setting, "store_shadow_check", False)):
+            return
+
+        from .store_bridge import push_movement, shadow_check_selection
+
+        # Selection looks at every vehicle, not just the moving ones, so the
+        # whole population's movement state has to be current. In production only
+        # the moving subset is pushed (in mpi_advance), which is all a task needs.
+        push_movement(self.sim.vehicles)
+
+        # The geometric half of need_new_route on its own; the alternatives mode
+        # is a Python-only attribute the store does not carry.
+        at_segment_end = [vehicle for vehicle in selected
+                          if vehicle.is_at_the_end_of_segment(self.sim.routing_map)]
+
+        shadow_check_selection(self.sim.vehicles, self.sim.routing_map,
+                               offset_seconds, self.sim._freq_seconds,
+                               selected, at_segment_end,
+                               self.sim.compute_current_offset())
+
+    def _use_mpi_advance(self) -> bool:
+        # Driven by the config.json "ace" section (ace.mpi-advance), carried on the
+        # SimSetting. Previously toggled via the RUTH_MPI_ADVANCE env var.
+        return self.sim.setting.mpi_advance
 
     def advance_vehicles(self, vehicles: List[Vehicle]) -> Tuple[List[FCDRecord], bool]:
         """Move the vehicles on its route and generate FCD records"""
+        # Per-phase times of the distributed advance, merged into step_timers by
+        # the step loop. advance_vehicle is one timer over nine phases, and which
+        # of them is slow decides what to fix.
+        self.advance_phase_times = {}
+
+        if self._use_mpi_advance():
+            # LoS is evaluated against the C++ GlobalView replicas (kept in sync
+            # by the all-gather), so the Python global_view is not passed here.
+            from . import mpi_advance
+            from .mpi_advance import advance_vehicles_mpi
+
+            self.arm_task_digest(mpi_advance)
+            drop_before = (self.sim.setting.departure_time + self.current_offset
+                           if self.current_offset is not None else None)
+            # getattr: a simulation resumed from a checkpoint written before this
+            # setting existed unpickles a SimSetting without the field (dataclass
+            # defaults do not apply to __setstate__), and must keep running.
+            return advance_vehicles_mpi(vehicles, self.sim.setting.departure_time,
+                                        self.sim.routing_map,
+                                        self.sim.queues_manager,
+                                        self.sim.setting.los_vehicles_tolerance,
+                                        drop_before_time=drop_before,
+                                        deterministic_order=getattr(
+                                            self.sim.setting, "deterministic_order", False),
+                                        store_shadow_check=getattr(
+                                            self.sim.setting, "store_shadow_check", False),
+                                        phase_times=self.advance_phase_times)
 
         return advance_vehicles_with_queues(vehicles, self.sim.setting.departure_time,
                                             self.sim.global_view,
@@ -172,10 +500,13 @@ class Simulator:
                                      vehicles: List[Vehicle],
                                      alternatives_provider: AlternativesProvider):
         vehicles = [v for v in vehicles if v.osm_route is not None]
-        logger.info(f"Computing default routes with {alternatives_provider.vehicle_behaviour}")
+        use_origin_speeds = not self.plateau_default_route_uses_current_speeds()
+        speed_mode = "max" if use_origin_speeds else "current"
+        logger.info(f"Computing default routes with {alternatives_provider.vehicle_behaviour} using {speed_mode} speeds")
         alts = alternatives_provider.compute_alternatives(
             vehicles,
-            k=1
+            k=1,
+            use_origin_speeds=use_origin_speeds
         )
 
         assert len(vehicles) == len(alts)
@@ -188,11 +519,61 @@ class Simulator:
                 vehicle.active = False
                 vehicle.status = "no plateau route"
 
+    def prepare_loaded_vehicles(self, vehicles: List[Vehicle],
+                                alternatives_providers: List[AlternativesProvider]):
+        vehicles = [v for v in vehicles if not getattr(v, "streaming_prepared", False)]
+        if not vehicles:
+            return
+
+        routed_vehicles = [v for v in vehicles if not getattr(v, "needs_default_route", False)]
+        if routed_vehicles:
+            self.sim.routing_map.fix_osm_routes(routed_vehicles)
+
+        unrouted_vehicles = [
+            v for v in vehicles
+            if v.active and getattr(v, "needs_default_route", False)
+        ]
+        if unrouted_vehicles:
+            plateau_provider = next(
+                (provider for provider in alternatives_providers
+                 if isinstance(provider, MPIDistributedAlternatives)),
+                None,
+            )
+            if plateau_provider is None:
+                logger.error("Cannot compute default Plateau routes for %d streamed vehicles: Plateau provider missing.",
+                             len(unrouted_vehicles))
+                for vehicle in unrouted_vehicles:
+                    vehicle.active = False
+                    vehicle.status = "no plateau provider for default route"
+            else:
+                self.change_baseline_alternatives(unrouted_vehicles, plateau_provider)
+
+        for vehicle in vehicles:
+            vehicle.streaming_prepared = True
+            vehicle.needs_default_route = False
+
+    def load_due_streaming_vehicles(self, alternatives_providers: List[AlternativesProvider]):
+        while self.sim.should_load_next_vehicle_bucket():
+            vehicles = self.sim.load_next_vehicle_bucket()
+            self.prepare_loaded_vehicles(vehicles, alternatives_providers)
+            self.sim.prune_inactive_vehicles()
+
+    def plateau_default_route_uses_current_speeds(self):
+        return os.environ.get(PLATEAU_DEFAULT_ROUTE_SPEEDS_ENV, "max").strip().lower() in {
+            "current",
+            "current_speed",
+            "current_speeds",
+        }
+
     def update_map_speeds(self, updated_speeds: dict, last_map_update: timedelta,
                           alternatives_providers: List[AlternativesProvider]) -> Tuple[timedelta, dict]:
         # Get segments where max speeds changed
-        updated_speeds.update(self.sim.routing_map.update_temporary_max_speeds(
-            self.sim.setting.departure_time + self.current_offset))
+        # The return value is exactly the segments whose speed_kph was rewritten,
+        # which is the only thing that can change a closure.
+        temporary_changed = self.sim.routing_map.update_temporary_max_speeds(
+            self.sim.setting.departure_time + self.current_offset)
+        updated_speeds.update(temporary_changed)
+        self.push_store_closures(list(temporary_changed.keys()))
 
         if self.current_offset - last_map_update >= self.sim.setting.map_update_freq_s:
             # Update speeds based on the global view
@@ -218,6 +599,8 @@ def compute_alternatives(alternatives_providers: List[AlternativesProvider],
     combined_vehicles = []
     for provider in alternatives_providers:
         selected_vehicles = [v for v in vehicles if v.alternatives == provider.vehicle_behaviour]
+        if not selected_vehicles:
+            continue
         alts = provider.compute_alternatives(
             selected_vehicles,
             k=k_alternatives

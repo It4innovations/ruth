@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 import os
 import tempfile
@@ -8,35 +9,21 @@ import pytest
 from datetime import datetime, timedelta
 
 from ruth.data.segment import LengthMeters
+from ruth.simulator.common import load_vehicles
 from ruth.simulator.kernels import ShortestPathsAlternatives
 from ruth.tools.simulator import CommonArgs, prepare_simulator, AlternativesRatio, RouteSelectionRatio
 
-from ruth.vehicle import Vehicle
 
-
-@pytest.fixture
-def setup_vehicle():
-    vehicle = Vehicle(
-        id=1,
-        time_offset=timedelta(seconds=120),
-        frequency=timedelta(seconds=10),
-        start_index=0,
-        start_distance_offset=LengthMeters(0.0),
-        origin_node=25664661,
-        dest_node=305832258,
-        osm_route=[25664661, 27349583, 27350859, 1421692706, 302546398, 292456769, 1839597743, 1467045348, 21713539,
-                   2158126162, 386387776, 25665323, 236788246, 32438879, 4823824959, 21673412, 29527230, 344481246,
-                   29527229, 29527228, 11267251949, 1483392086, 21311889, 25972978, 170348063, 25972980, 25972985,
-                   306614568, 9254639009, 29403188, 305832258],
-        active=True,
-        fcd_sampling_period=timedelta(seconds=5),
-        status=""
-    )
-    return vehicle
 
 
 @pytest.fixture
-def setup_simulator():
+def setup_vehicle(regression_vehicles_path):
+    vehicles, _, _ = load_vehicles(regression_vehicles_path)
+    return vehicles[0]
+
+
+@pytest.fixture
+def setup_simulator(regression_vehicles_path):
     common_args = CommonArgs(
         task_id="test",
         departure_time=datetime(2021, 1, 1, 0, 0, 0),
@@ -55,6 +42,9 @@ def setup_simulator():
         plateau_default_route=False,
         buffer_size=1000,
         max_records_per_file=10000,
+        map_graphml=str(Path(__file__).resolve().parent / "data" /
+                        "50_16568920000002-14_321441000000016-50_020240399999985-"
+                        "14_592499399999983_2024-01-10T00-00-00.graphml"),
     )
 
     alternatives_ratio = AlternativesRatio(
@@ -71,8 +61,7 @@ def setup_simulator():
         ptdr=0.0
     )
 
-    vehicles_path = os.path.join(os.path.dirname(__file__), "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet")
-    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+    simulator = prepare_simulator(common_args, regression_vehicles_path, alternatives_ratio, route_selection_ratio)
     yield simulator
 
     # Cleanup: remove HDF5 file if it exists
@@ -132,10 +121,21 @@ def test_stuck_detection(mock, setup_vehicle, setup_simulator):
 
     # TEST stuck detection
     setup_simulator.simulate([], [])
-    mock.assert_called_with("The simulation is stuck at 0:02:20.")
+    mock.assert_called_with(f"The simulation is stuck at {stop_offset}.")
 
     assert setup_vehicle.start_index == 0
     assert setup_vehicle.start_distance_offset == segment_length
+
+
+def test_max_steps(setup_simulator):
+    setup_simulator.simulate([], [], max_steps=2)
+
+    assert setup_simulator.state.number_of_steps == 2
+    assert setup_simulator.current_offset is not None
+
+    setup_simulator.simulate([], [], max_steps=2)
+
+    assert setup_simulator.state.number_of_steps == 2
 
 
 def test_update_map_speeds_no_overlap(setup_simulator):
@@ -170,3 +170,9 @@ def test_update_map_speeds_no_overlap(setup_simulator):
 # TODO: test sim update fcds
 # TODO: test drop old records
 # TODO: test change baseline alts
+
+
+def test_current_offset_includes_zero_departure(setup_simulator):
+    state = setup_simulator.state
+    state.vehicles[0].time_offset = timedelta(0)
+    assert state.compute_current_offset() == timedelta(0)

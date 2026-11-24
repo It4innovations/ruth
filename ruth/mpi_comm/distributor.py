@@ -1,12 +1,21 @@
-import multiprocessing
-
 class MPIDistributor:
+
+    def __init__(self, threads=None, queue="prioritized"):
+        # Number of ACE scheduler worker threads per rank, from the config.json
+        # "ace" section (ace.threads). None / <= 0 falls back to all cores.
+        self.threads = threads
+        # ACE scheduler queue policy (ace.queue): "prioritized" or "fifo".
+        self.queue = queue
 
     def __enter__(self):
         import ruthlib as ru
         self.ru = ru
-        num_threads = multiprocessing.cpu_count()  # Use all available CPU cores
-        ru.setup_ace(num_threads)
+        # Explicit ace.threads wins verbatim (ACE honors it exactly). Otherwise
+        # pass 0 to signal "auto": ACE resizes best-effort from the available cores
+        # and local ranks. (Previously this pre-filled cpu_count(), which ACE then
+        # treated as an explicit request and re-divided.)
+        num_threads = self.threads if self.threads and self.threads > 0 else 0
+        ru.setup_ace(num_threads, self.queue)
         ru.init_routes()
         return self
 

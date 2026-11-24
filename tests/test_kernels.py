@@ -1,3 +1,4 @@
+from pathlib import Path
 from cmath import isclose
 import os
 
@@ -6,42 +7,22 @@ import pytest
 from datetime import datetime, timedelta, timezone
 
 from ruth.data.segment import LengthMeters, SpeedKph, speed_kph_to_mps
+from ruth.simulator.common import load_vehicles
 from ruth.simulator.kernels import FastestPathsAlternatives
 # from ruth.simulator.kernels import ZeroMQDistributedAlternatives
 from ruth.tools.simulator import CommonArgs, prepare_simulator, AlternativesRatio, RouteSelectionRatio, ZeroMqContext
 
-from ruth.vehicle import Vehicle
 
-expected_alt = [25664661, 27349583, 27350859, 1421692706, 302546398, 292456769, 1839597743, 1467045348, 21713539,
-                2158126162, 386387776, 25665323, 236788246, 32438879, 4823824959, 21673412, 29527230, 344481246,
-                29527229, 244011412, 11267251949, 1483392086, 21311889, 25972978, 170348063, 25972980, 25972985,
-                306614568, 9254639009, 29403188, 305832258]
-expected_travel_time = 345
 
 
 @pytest.fixture
-def setup_vehicle():
-    vehicle = Vehicle(
-        id=1,
-        time_offset=timedelta(seconds=120),
-        frequency=timedelta(seconds=10),
-        start_index=0,
-        start_distance_offset=LengthMeters(0.0),
-        origin_node=25664661,
-        dest_node=305832258,
-        osm_route=[25664661, 27349583, 27350859, 1421692706, 302546398, 292456769, 1839597743, 1467045348, 21713539,
-                   2158126162, 386387776, 25665323, 236788246, 32438879, 4823824959, 21673412, 29527230, 344481246,
-                   29527229, 29527228, 11267251949, 1483392086, 21311889, 25972978, 170348063, 25972980, 25972985,
-                   306614568, 9254639009, 29403188, 305832258],
-        active=True,
-        fcd_sampling_period=timedelta(seconds=5),
-        status=""
-    )
-    return vehicle
+def setup_vehicle(regression_vehicles_path):
+    vehicles, _, _ = load_vehicles(regression_vehicles_path)
+    return vehicles[0]
 
 
 @pytest.fixture
-def setup_simulator():
+def setup_simulator(regression_vehicles_path):
     common_args = CommonArgs(
         task_id="test",
         departure_time=datetime(2021, 1, 1, 0, 0, 0),
@@ -60,6 +41,9 @@ def setup_simulator():
         plateau_default_route=False,
         buffer_size=1000,
         max_records_per_file=10000,
+        map_graphml=str(Path(__file__).resolve().parent / "data" /
+                        "50_16568920000002-14_321441000000016-50_020240399999985-"
+                        "14_592499399999983_2024-01-10T00-00-00.graphml"),
     )
 
     alternatives_ratio = AlternativesRatio(
@@ -76,8 +60,7 @@ def setup_simulator():
         ptdr=0.0
     )
 
-    vehicles_path = os.path.join(os.path.dirname(__file__), "../benchmarks/od-matrices/INPUT-od-matrix-10-vehicles.parquet")
-    simulator = prepare_simulator(common_args, vehicles_path, alternatives_ratio, route_selection_ratio)
+    simulator = prepare_simulator(common_args, regression_vehicles_path, alternatives_ratio, route_selection_ratio)
     return simulator
 
 
@@ -109,9 +92,10 @@ def test_compute_alternatives(setup_vehicle, setup_simulator, fastest_alt_provid
     # one vehicle - 3 alternatives
     assert len(py_alternatives) == 1
     assert len(py_alternatives[0]) == 3
-    assert py_alternatives[0][0][0] == expected_alt
+    assert py_alternatives[0][0][0] == setup_vehicle.osm_route
     py_travel_time = routing_map.get_path_travel_time(py_alternatives[0][0][0])
-    assert round(py_travel_time) == expected_travel_time
+    expected_travel_time = routing_map.get_path_travel_time(setup_vehicle.osm_route)
+    assert round(py_travel_time) == round(expected_travel_time)
 
     # assert len(cpp_alternatives) == 1
     # assert len(cpp_alternatives[0]) == 3
@@ -134,10 +118,10 @@ def test_compute_alt_with_map_update(setup_vehicle, setup_simulator, fastest_alt
     # distributed_alt_provider.load_map(routing_map)
     fastest_alt_provider.load_map(routing_map)
 
-    # Change speed on (27349583, 27350859) segment
-    segment = routing_map.get_osm_segment(27349583, 27350859)
+    node_from, node_to = setup_vehicle.osm_route[:2]
+    segment = routing_map.get_osm_segment(node_from, node_to)
     new_speed = SpeedKph(segment.max_allowed_speed_kph * 0.6)
-    current_travel_time = routing_map.get_path_travel_time([27349583, 27350859])
+    current_travel_time = routing_map.get_path_travel_time([node_from, node_to])
     expected_travel_time_change = ((segment.length / speed_kph_to_mps(new_speed))
                                    - (segment.length / speed_kph_to_mps(segment.max_allowed_speed_kph)))
 
@@ -145,20 +129,21 @@ def test_compute_alt_with_map_update(setup_vehicle, setup_simulator, fastest_alt
     # _ = distributed_alt_provider.compute_alternatives(vehicles, k)
 
     # Update speeds
-    updated_speeds = {(27349583, 27350859): new_speed}
+    updated_speeds = {(node_from, node_to): new_speed}
     new_speeds = routing_map.update_current_speeds(updated_speeds)
     # distributed_alt_provider.update_map(new_speeds)
 
-    new_travel_time = routing_map.get_path_travel_time([27349583, 27350859])
+    new_travel_time = routing_map.get_path_travel_time([node_from, node_to])
     assert isclose(new_travel_time, current_travel_time + expected_travel_time_change, abs_tol=1)
 
     # Compute alternatives
     # cpp_alternatives = distributed_alt_provider.compute_alternatives(vehicles, k)
     py_alternatives = fastest_alt_provider.compute_alternatives(vehicles, k)
 
-    # Check that alt is the same
-    # assert cpp_alternatives[0][0][0] == expected_alt
-    assert py_alternatives[0][0][0] == expected_alt
+    updated_route = py_alternatives[0][0][0]
+    assert updated_route[0] == setup_vehicle.origin_node
+    assert updated_route[-1] == setup_vehicle.dest_node
+    assert (node_from, node_to) not in zip(updated_route[:-1], updated_route[1:])
 
     # cpp_travel_time = routing_map.get_path_travel_time(cpp_alternatives[0][0][0])
     # assert isclose(cpp_travel_time, expected_travel_time + expected_travel_time_change, abs_tol=1)
@@ -167,3 +152,20 @@ def test_compute_alt_with_map_update(setup_vehicle, setup_simulator, fastest_alt
     #     assert isclose(cpp_travel_time, expected_travel_time + expected_travel_time_change, abs_tol=1)
     # else:
     #     print("Travel time not received from evkit")
+
+
+def test_alternatives_dispatch_skips_unused_provider():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from ruth.simulator.singlenode import compute_alternatives
+    from ruth.vehicle import VehicleAlternatives
+
+    vehicle = SimpleNamespace(alternatives=VehicleAlternatives.DIJKSTRA_FASTEST)
+    dijkstra = Mock(vehicle_behaviour=VehicleAlternatives.DIJKSTRA_FASTEST)
+    dijkstra.compute_alternatives.return_value = [[([1, 2], None)]]
+    plateau = Mock(vehicle_behaviour=VehicleAlternatives.PLATEAU_FASTEST)
+    plateau.compute_alternatives.side_effect = AssertionError("Unused provider received an empty workload")
+    vehicles, alternatives = compute_alternatives([dijkstra, plateau], [vehicle], 1)
+    assert vehicles == [vehicle]
+    assert alternatives == [[([1, 2], None)]]
+    plateau.compute_alternatives.assert_not_called()
